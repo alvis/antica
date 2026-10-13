@@ -1,0 +1,34 @@
+name: antica-development
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: antica
+      POSTGRES_USER: antica
+      POSTGRES_PASSWORD: antica_dev_password
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U antica -d antica"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: antica_development
+      MINIO_ROOT_PASSWORD: antica_development_only
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+    volumes:
+      - media-data:/data
+
+volumes:
+  postgres-data:
+  media-data:

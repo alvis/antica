@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- tapOn: Sign in with WhatsApp
+- tapOn: Authorized phone number
+- inputText: ${PHONE_NUMBER}
+- tapOn: Continue
+- assertVisible: Six-digit code

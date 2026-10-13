@@ -1,0 +1,14 @@
+{
+  "version": "authored-synthetic-v1",
+  "provenance": "Authored synthetic fixtures created for Antica development; no private collection or published book content.",
+  "rights": "Project-authored text and synthetic pixels; usable with this repository.",
+  "limitations": [
+    "Fixtures are software regression examples, not antique authenticity ground truth.",
+    "Development model outputs and pixel descriptors do not measure cloud model quality.",
+    "Traditional Chinese, unsupported assertions, uncertainty handling, source disagreements, and next-action usefulness require human review."
+  ],
+  "snapshots": ["synthetic-evidence-v1", "synthetic-no-evidence-v1"],
+  "retrievalCorpus": "retrieval.json",
+  "imageFixtures": ["red.png", "blue.png", "dark-red.png"],
+  "imageProvenance": "Project-authored 8 by 8 solid RGB PNGs; ranking queries use separate asset IDs from matching candidate pixels."
+}

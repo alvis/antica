@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: antica
+          POSTGRES_PASSWORD: antica_ci_password
+          POSTGRES_DB: antica_acceptance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U antica -d antica_acceptance"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: true
+      NODE_ENV: test
+      DATABASE_URL: postgresql://antica:antica_ci_password@127.0.0.1:5432/antica_acceptance
+      ANTICA_TEST_DATABASE_URL: postgresql://antica:antica_ci_password@127.0.0.1:5432/antica_acceptance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.6.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate tool configuration
+        run: pnpm bootstrap
+      - name: Apply acceptance database migrations
+        run: pnpm --filter @antica/platform db:migrate
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Integration tests
+        run: pnpm test:int
+      - name: Coverage
+        run: pnpm test:coverage
+      - name: Build
+        run: pnpm build
+      - name: Export Android JavaScript bundle
+        env:
+          EXPO_PUBLIC_API_URL: https://antica.invalid
+        run: pnpm --filter @antica/mobile exec expo export --platform android --output-dir dist/android
+      - name: Preserve diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics
+          path: |
+            coverage/
+            packages/*/coverage/
+            apps/*/coverage/
+            tools/*/coverage/
+            apps/mobile/dist/android/
+          if-no-files-found: ignore

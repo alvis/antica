@@ -1,0 +1,50 @@
+{
+  "name": "@antica/platform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ai": "./src/ai/index.ts",
+    "./database": "./src/database/index.ts",
+    "./search": "./src/search/index.ts"
+  },
+  "scripts": {
+    "build": "run build",
+    "db:generate": "tsx src/database/generate.ts",
+    "db:migrate": "tsx src/database/migrate.ts",
+    "db:seed": "tsx src/database/seed.ts",
+    "lint": "run lint --",
+    "test": "run test --",
+    "test:coverage": "run test:coverage --",
+    "typecheck": "tsc6 --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.92",
+    "@antica/application": "workspace:*",
+    "@antica/contracts": "workspace:*",
+    "@antica/domain": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1150.0",
+    "@aws-sdk/s3-request-presigner": "^3.1150.0",
+    "@better-auth/expo": "^1.7.7",
+    "@llamaindex/llama-cloud": "^2.18.0",
+    "@qdrant/js-client-rest": "^1.19.0",
+    "ai": "^7.0.138",
+    "better-auth": "^1.7.7",
+    "drizzle-orm": "^0.45.4",
+    "exa-js": "^2.0.0",
+    "inngest": "^4.23.0",
+    "pdfjs-dist": "^5.4.0",
+    "postgres": "^3.4.0",
+    "sharp": "^0.34.0",
+    "voyageai": "^0.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "drizzle-kit": "^0.31.0",
+    "tsx": "^4.20.0",
+    "vitest": "4.1.11"
+  }
+}

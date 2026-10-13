@@ -1,0 +1,40 @@
+{
+  "name": "@antica/monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.6.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "bootstrap": "presetter bootstrap --projects . --projects 'packages/*' --projects 'apps/*' --projects 'tools/*'",
+    "build": "pnpm --filter '!@antica/mobile' -r run build",
+    "dev": "pnpm --parallel --filter @antica/api --filter @antica/mobile run dev",
+    "install": "presetter bootstrap --projects . --projects 'packages/*' --projects 'apps/*' --projects 'tools/*'",
+    "db:benchmark": "pnpm --filter @antica/storage-benchmark run benchmark",
+    "jobs:drain": "pnpm --filter @antica/api run jobs:drain",
+    "lint": "prettier --check package.json pnpm-workspace.yaml presetter.config.ts tooling && eslint --flag v10_config_lookup_from_file --format stylish --max-warnings 0 presetter.config.ts tooling && pnpm -r run lint",
+    "test": "vitest run --passWithNoTests --configLoader runner --project='*:UNIT' && pnpm run test:tooling && pnpm --filter @antica/ui test && pnpm --filter @antica/mobile test",
+    "test:coverage": "vitest run --passWithNoTests --configLoader runner --project='*:UNIT' --project='*:INT' --coverage --coverage.provider=istanbul --coverage.thresholds.perFile --coverage.thresholds.statements=100 --coverage.thresholds.branches=100 --coverage.thresholds.functions=100 --coverage.thresholds.lines=100 && pnpm --filter @antica/ui test:coverage && pnpm --filter @antica/mobile test:coverage",
+    "test:int": "vitest run --passWithNoTests --configLoader runner --project='*:INT'",
+    "typecheck": "pnpm run typecheck:tooling && pnpm --filter '!@antica/monorepo' -r run typecheck",
+    "typecheck:tooling": "tsc6 --project tsconfig.json --noEmit",
+    "test:tooling": "node --test tooling/check-mobile-coverage.spec.ts tooling/check-mobile-coverage.cli.spec.ts"
+  },
+  "devDependencies": {
+    "@presetter/preset-esm": "9.1.0",
+    "@presetter/preset-essentials": "9.1.0",
+    "@presetter/preset-monorepo": "9.1.0",
+    "@presetter/preset-node": "9.1.0",
+    "@presetter/preset-strict": "9.1.0",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-istanbul": "4.1.11",
+    "@vitest/coverage-v8": "4.1.11",
+    "eslint": "9.39.5",
+    "presetter": "9.1.0",
+    "prettier": "3.9.10",
+    "typescript": "npm:@typescript/typescript6@^6.0.0",
+    "vitest": "4.1.11"
+  }
+}

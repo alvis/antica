@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791849037092,
+      "tag": "0000_normal_tusk",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791849994625,
+      "tag": "0001_talented_khan",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791851551804,
+      "tag": "0002_easy_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791852554008,
+      "tag": "0003_sleepy_white_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791853047151,
+      "tag": "0004_solid_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791854436471,
+      "tag": "0005_common_marauders",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791868440434,
+      "tag": "0006_analysis_failure_audits",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791878313204,
+      "tag": "0007_owner_identity_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791883166203,
+      "tag": "0008_backfill_latest_run",
+      "breakpoints": true
+    }
+  ]
+}

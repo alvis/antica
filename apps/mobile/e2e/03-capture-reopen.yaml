@@ -1,0 +1,23 @@
+appId: ${APP_ID}
+---
+- tapOn: Add item
+- tapOn: Single item
+- tapOn: Import file
+- tapOn:
+    id: ${MEDIA_PICKER_ITEM_ID}
+- tapOn: Continue
+- tapOn: Continue
+- tapOn: Original words
+- inputText: ${ORIGINAL_WORDS}
+- tapOn: Confirm original words
+- assertVisible: Original words confirmed
+- tapOn: Continue
+- tapOn: Name
+- inputText: ${RECORD_NAME}
+- tapOn: Continue
+- tapOn: Save
+- assertVisible: ${RECORD_NAME}
+- stopApp
+- launchApp
+- tapOn: '.*, ${RECORD_NAME}'
+- assertVisible: ${RECORD_NAME}

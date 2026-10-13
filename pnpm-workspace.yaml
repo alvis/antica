@@ -1,0 +1,62 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@4.0.111'
+  - '@ai-sdk/openai@4.0.92'
+  - '@ai-sdk/provider-utils@5.0.59'
+  - '@ai-sdk/provider@4.0.27'
+  - '@aws-sdk/checksums@3.1001.3'
+  - '@aws-sdk/client-s3@3.1150.0'
+  - '@aws-sdk/core@3.978.3'
+  - '@aws-sdk/credential-provider-env@3.972.74'
+  - '@aws-sdk/credential-provider-http@3.972.76'
+  - '@aws-sdk/credential-provider-ini@3.973.19'
+  - '@aws-sdk/credential-provider-login@3.972.81'
+  - '@aws-sdk/credential-provider-node@3.972.86'
+  - '@aws-sdk/credential-provider-process@3.972.74'
+  - '@aws-sdk/credential-provider-sso@3.973.18'
+  - '@aws-sdk/credential-provider-web-identity@3.972.80'
+  - '@aws-sdk/middleware-sdk-s3@3.972.79'
+  - '@aws-sdk/nested-clients@3.997.48'
+  - '@aws-sdk/s3-request-presigner@3.1150.0'
+  - '@aws-sdk/token-providers@3.1150.0'
+  - '@expo/cli@57.0.29'
+  - '@expo/fingerprint@0.20.14'
+  - '@expo/inline-modules@0.1.8'
+  - '@expo/local-build-cache-provider@57.0.9'
+  - '@expo/prebuild-config@57.0.18'
+  - '@expo/ui@57.0.23'
+  - '@vitest/coverage-v8@5.0.4'
+  - '@vitest/mocker@5.0.4'
+  - '@vitest/spy@5.0.4'
+  - ai@7.0.138
+  - babel-preset-expo@57.0.15
+  - expo-modules-autolinking@57.0.15
+  - expo-modules-core@57.0.22
+  - expo-modules-jsi@57.1.2
+  - expo-router@57.0.26
+  - expo@57.0.28
+  - vitest@5.0.4
+  - zod@4.6.7
+  - jest-expo@57.0.6
+  - expo-crypto@57.0.4
+  - '@storybook/builder-vite@10.6.2'
+  - '@storybook/react-dom-shim@10.6.2'
+  - '@storybook/react-native-web-vite@10.6.2'
+  - '@storybook/react-vite@10.6.2'
+  - '@storybook/react@10.6.2'
+  - storybook@10.6.2
+
+overrides:
+  react-dom: 19.2.3
+  test-renderer: 1.2.0

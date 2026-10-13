@@ -1,0 +1,261 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  actionResolutionRequestSchema,
+  applyAnalysisChangesSchema,
+  analysisRunDetailSchema,
+  validateAnalysisOutput,
+  validateAnalysisReferences,
+} from './analysis.js';
+
+import type { AnalysisOutput, AnalysisReferenceSet } from './analysis.js';
+
+const id = '00000000-0000-4000-8000-000000000001';
+const output: AnalysisOutput = {
+  summary: '尚未確定',
+  findings: [
+    {
+      id,
+      kind: 'hypothesis',
+      text: '待查',
+      evidenceIds: [id],
+      observationIds: [id],
+      citationIds: [id],
+      relation: 'context',
+      certainty: 'tentative',
+    },
+  ],
+  uncertainties: [],
+  suggestedMethodIds: [id],
+  nextActions: [
+    {
+      id,
+      checkId: id,
+      kind: 'confirmFeature',
+      instruction: 'Inspect',
+      reason: 'Unknown',
+    },
+  ],
+  proposedChanges: [
+    {
+      id,
+      field: 'description',
+      before: '',
+      proposed: 'Tentative',
+      findingIds: [id],
+    },
+  ],
+};
+const allowed: AnalysisReferenceSet = {
+  evidenceIds: new Set([id]),
+  observationIds: new Set([id]),
+  citationIds: new Set([id]),
+  checkIds: new Set([id]),
+  methodIds: new Set([id]),
+};
+
+describe('fn:validateAnalysisReferences', () => {
+  it('should accept references that belong to the frozen evidence and method sets', () => {
+    expect(validateAnalysisReferences(output, allowed)).toEqual([]);
+  });
+
+  it.each([
+    'evidenceIds',
+    'observationIds',
+    'citationIds',
+    'checkIds',
+    'methodIds',
+  ] as const)('should reject an unavailable %s reference', (key) => {
+    expect(
+      validateAnalysisReferences(output, {
+        ...allowed,
+        [key]: new Set<string>(),
+      }),
+    ).toContain(id);
+  });
+
+  it('should reject a proposal supported by a finding absent from the output', () => {
+    expect(
+      validateAnalysisReferences({ ...output, findings: [] }, allowed),
+    ).toEqual([id]);
+  });
+
+  it.each([
+    { kind: 'sourceStatement', citationIds: [] },
+    { kind: 'visualObservation', evidenceIds: [] },
+    { kind: 'collectorObservation', observationIds: [] },
+  ] satisfies ReadonlyArray<Partial<AnalysisOutput['findings'][number]>>)(
+    'should reject an unsupported %s finding',
+    (change) => {
+      const finding = { ...output.findings[0]!, ...change };
+
+      expect(
+        validateAnalysisReferences({ ...output, findings: [finding] }, allowed),
+      ).toContain(id);
+    },
+  );
+
+  it('should accept an action without a check reference', () => {
+    const action = { ...output.nextActions[0]!, checkId: undefined };
+
+    expect(
+      validateAnalysisReferences({ ...output, nextActions: [action] }, allowed),
+    ).toEqual([]);
+  });
+});
+
+describe('fn:validateAnalysisOutput', () => {
+  it('should return the parsed output when its references are available', () => {
+    expect(validateAnalysisOutput(output, allowed)).toEqual({
+      valid: true,
+      output,
+    });
+  });
+
+  it('should reject malformed output and unavailable frozen references', () => {
+    expect(validateAnalysisOutput({}, allowed)).toMatchObject({ valid: false });
+    expect(
+      validateAnalysisOutput(output, {
+        ...allowed,
+        evidenceIds: new Set<string>(),
+      }),
+    ).toMatchObject({ valid: false });
+  });
+});
+
+describe('analysis change adoption validation', () => {
+  it('should reject a proposal selected and skipped in the same adoption', () => {
+    const request = { expectedRecordRevision: 1, selectedProposalIds: [id] };
+
+    expect(applyAnalysisChangesSchema.safeParse(request).success).toBe(true);
+    expect(
+      applyAnalysisChangesSchema.safeParse({
+        ...request,
+        skippedProposalIds: [id],
+      }).success,
+    ).toBe(false);
+    expect(
+      applyAnalysisChangesSchema.safeParse({
+        ...request,
+        skippedProposalIds: [],
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe('analysis run detail validation', () => {
+  const run = {
+    runId: id,
+    recordId: id,
+    jobId: id,
+    status: 'completed',
+    snapshot: {
+      id,
+      recordRevision: 1,
+      analysisInputVersion: 1,
+      evidenceVersion: 1,
+      assetIds: [],
+      evidenceIds: [],
+      observationIds: [],
+      checkIds: [],
+      retrievalSnapshotId: null,
+    },
+    citations: [],
+    suggestedMethods: [],
+    invocation: {
+      requestedModelId: 'research-model',
+      effectiveModelId: 'research-model',
+      provider: 'development',
+      providerModelVersion: null,
+      adapterKind: 'development',
+      capabilities: {
+        textInput: true,
+        imageInput: false,
+        audioInput: false,
+        structuredOutput: true,
+        toolCalling: false,
+      },
+      role: 'analysis',
+      profileVersion: 'v1',
+      promptVersion: 'v1',
+      schemaVersion: 'v1',
+      effectiveOptions: {},
+      latencyMs: 0,
+      usage: { inputTokens: null, outputTokens: null },
+      finishReason: null,
+      citationCheck: { valid: true, rejectedReferenceIds: [] },
+    },
+    failureAudits: [],
+    result: { output: null, actionStates: [], proposalStates: [] },
+  };
+
+  it('should accept an analysis run with a recorded model invocation', () => {
+    expect(analysisRunDetailSchema.safeParse(run).success).toBe(true);
+  });
+
+  it('should retain failed generated output in audit history without treating it as a valid result', () => {
+    const rawOutput = { summary: 7, findings: [{ text: 'Unverified glaze' }] };
+    const failed = {
+      ...run,
+      status: 'failed',
+      invocation: null,
+      failureAudits: [
+        { invocation: run.invocation, rawOutput },
+        { invocation: null, rawOutput: { summary: 'Incomplete draft' } },
+      ],
+    };
+    const parsed = analysisRunDetailSchema.parse(
+      JSON.parse(JSON.stringify(failed)),
+    );
+
+    expect(parsed.result.output).toBeNull();
+    expect(parsed.failureAudits).toEqual(failed.failureAudits);
+    expect(
+      analysisRunDetailSchema.safeParse({
+        ...failed,
+        result: {
+          ...failed.result,
+          output: rawOutput,
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('analysis action resolution validation', () => {
+  it.each([
+    undefined,
+    {},
+    { observationIds: [] },
+    { onSiteDescription: '   ' },
+  ])(
+    'should reject supplied action resolution without actual supporting content: %j',
+    (support) => {
+      expect(
+        actionResolutionRequestSchema.safeParse({
+          expectedActionRevision: 1,
+          expectedRecordRevision: 1,
+          status: 'supplied',
+          support,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    { observationIds: [id] },
+    { evidenceAnchorIds: [id] },
+    { referenceLinkIds: [id] },
+    { checkIds: [id] },
+    { onSiteDescription: '摸落去粗糙' },
+  ])('should accept an explicit supporting item: %j', (support) => {
+    expect(
+      actionResolutionRequestSchema.safeParse({
+        expectedActionRevision: 1,
+        expectedRecordRevision: 1,
+        status: 'supplied',
+        support,
+      }).success,
+    ).toBe(true);
+  });
+});

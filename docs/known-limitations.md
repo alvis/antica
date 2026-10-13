@@ -1,0 +1,11 @@
+# Known limitations
+
+This is the first working draft. The [implementation-status matrix](implementation-status.md) records transient gate and acceptance results; the items here describe capability and operating boundaries that affect how the product can be used. See [architecture decisions](architecture-decisions.md) for their source-backed rationale.
+
+- **Text extraction:** The local PDF parser uses selectable text and preserves photographed pages, but does not perform OCR or detect individual PDF figures. Pages without usable text need review. LlamaParse figure/bounds data is kept as raw output until original-page mapping is verified. Exact canonical-region mapping excludes LlamaCloud provider chunks that split or alter a region.
+- **Retrieval:** Text and image indexes have explicit model, dimension, and version identities. Changing an embedding model requires a compatible new index and controlled cutover; source availability can be partial while indexing catches up. The Llama text adapter has no material, object-type, period, or region classification filter in its index.
+- **Media:** Originals remain authoritative. A book-page crop and quarter-turn rotation describe a reading view and do not rewrite original evidence coordinates. Pages do not require either transform. A PDF page without a real raster derivative exposes the signed original document; it does not fabricate a page image.
+- **Services:** Production requires live OTP, private storage, parsing, retrieval, inference, and Inngest workflow configuration. The local development drivers are deliberately unsuitable for production. External provider and Fly behavior depends on credentials and infrastructure.
+- **Provider output:** Development adapters and synthetic evaluation snapshots check contracts. They do not establish historical authenticity, source quality, Traditional Chinese fluency, or live model/provider performance. Human review and real-source evaluation remain necessary before relying on research suggestions.
+
+The [environment guide](environment.md) distinguishes local settings from live credentials. For unresolved upload, video, job-recovery, Android, accessibility, provider, and visual-fidelity checks, see [implementation status](implementation-status.md).

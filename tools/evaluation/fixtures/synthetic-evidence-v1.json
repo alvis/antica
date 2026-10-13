@@ -1,0 +1,76 @@
+{
+  "provenance": "Authored synthetic fixture and 8 by 8 solid-color PNG; no photographed antique and no authenticity ground truth.",
+  "input": {
+    "recordId": "10000000-0000-4000-8000-000000000001",
+    "snapshotId": "10000000-0000-4000-8000-000000000002",
+    "recordRevision": 1,
+    "analysisInputVersion": 1,
+    "evidenceVersion": 1,
+    "assetIds": ["10000000-0000-4000-8000-000000000006"],
+    "evidenceIds": ["10000000-0000-4000-8000-000000000007"],
+    "observationIds": ["10000000-0000-4000-8000-000000000008"],
+    "checkIds": [],
+    "retrievalSnapshotId": "10000000-0000-4000-8000-000000000004",
+    "promptVersion": "development-analysis-v1",
+    "schemaVersion": "analysis-v1"
+  },
+  "text": [
+    {
+      "id": "10000000-0000-4000-8000-000000000008",
+      "kind": "observation",
+      "content": "收藏家要求補拍底部；目前沒有年代判斷。"
+    },
+    {
+      "kind": "source",
+      "citationId": "10000000-0000-4000-8000-000000000009",
+      "contentAsRetrieved": "🔎 請補拍底部與表面近照。本段為合成測試文字，不判斷真偽。",
+      "sourceRegionId": null
+    }
+  ],
+  "images": [
+    {
+      "evidenceId": "10000000-0000-4000-8000-000000000007",
+      "mediaType": "image/png",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
+    }
+  ],
+  "citations": [
+    {
+      "id": "10000000-0000-4000-8000-000000000009",
+      "locator": {
+        "sourceId": "10000000-0000-4000-8000-000000000010",
+        "sourceVersionId": "10000000-0000-4000-8000-000000000011",
+        "kind": "web",
+        "url": "https://example.invalid/synthetic/evidence",
+        "retrievedAt": "2026-01-01T00:00:00.000Z",
+        "snapshotAssetId": null,
+        "blockId": "10000000-0000-4000-8000-000000000012",
+        "excerptAsRetrieved": "🔎 請補拍底部與表面近照。本段為合成測試文字，不判斷真偽。"
+      },
+      "relation": "background",
+      "availability": "link_only",
+      "verification": "needs_review"
+    }
+  ],
+  "recordFields": {
+    "name": null,
+    "unitKind": "single",
+    "components": [],
+    "pieceCount": null,
+    "categoryIds": [],
+    "materialIds": [],
+    "period": null,
+    "dimensions": {},
+    "location": {
+      "locationId": null,
+      "detail": ""
+    },
+    "acquisition": {
+      "receiptAssetIds": []
+    },
+    "tags": [],
+    "description": "Authored synthetic evaluation record",
+    "collectorJudgment": null
+  },
+  "methods": []
+}

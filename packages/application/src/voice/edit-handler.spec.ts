@@ -1,0 +1,392 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { createEditDraftHandler } from './edit-handler.js';
+
+import type {
+  EditDraftResult,
+  JobEnvelope,
+  ModelInvocation,
+  RecordFields,
+} from '@antica/contracts';
+
+import type {
+  EditDraftRunRecord,
+  ModelCatalogPort,
+  OperationResult,
+  RecordEditingPort,
+  TransactionPort,
+  UnitOfWork,
+} from '../ports/index.js';
+
+const ownerId = '00000000-0000-4000-8000-000000000001';
+const recordId = '00000000-0000-4000-8000-000000000002';
+const observationId = '00000000-0000-4000-8000-000000000003';
+const draftId = '00000000-0000-4000-8000-000000000004';
+const jobId = '00000000-0000-4000-8000-000000000005';
+const proposalId = '00000000-0000-4000-8000-000000000006';
+const now = '2026-10-13T12:00:00.000Z';
+const versions = {
+  recordRevision: 1,
+  analysisInputVersion: 1,
+  evidenceVersion: 1,
+};
+const fields: RecordFields = {
+  name: 'Vase',
+  unitKind: 'single',
+  components: [],
+  pieceCount: null,
+  categoryIds: [],
+  materialIds: [],
+  period: null,
+  dimensions: {},
+  location: { locationId: null, detail: '' },
+  acquisition: { receiptAssetIds: [] },
+  tags: [],
+  description: '',
+  collectorJudgment: null,
+};
+const result: EditDraftResult = {
+  editDraftId: draftId,
+  recordId,
+  baseVersions: versions,
+  sourceTranscriptionIds: [],
+  sourceObservationIds: [observationId],
+  suggestedDescriptionZhHant: '青瓷瓶',
+  proposedChanges: [
+    {
+      id: proposalId,
+      field: 'name',
+      before: 'Vase',
+      proposed: 'Celadon vase',
+      findingIds: [],
+    },
+  ],
+};
+const invocation: ModelInvocation = {
+  requestedModelId: 'development',
+  effectiveModelId: 'development',
+  provider: 'development',
+  providerModelVersion: null,
+  adapterKind: 'development',
+  capabilities: {
+    textInput: true,
+    imageInput: false,
+    audioInput: false,
+    structuredOutput: true,
+    toolCalling: false,
+  },
+  role: 'recordEditing',
+  profileVersion: '1',
+  promptVersion: '1',
+  schemaVersion: '1',
+  effectiveOptions: {},
+  latencyMs: 1,
+  usage: { inputTokens: null, outputTokens: null },
+  finishReason: null,
+  citationCheck: { valid: true, rejectedReferenceIds: [] },
+};
+
+function pendingRun(): EditDraftRunRecord {
+  return {
+    detail: {
+      editDraftId: draftId,
+      jobId,
+      revision: 1,
+      status: 'pending',
+      snapshot: {
+        recordId,
+        versions,
+        fields,
+        transcriptionVersions: [],
+        observationIds: [observationId],
+        sourceText: [
+          { kind: 'observation', id: observationId, text: '青瓷瓶' },
+        ],
+        createdAt: now,
+      },
+      result: null,
+      invocation: null,
+      appliedProposalIds: [],
+      createdAt: now,
+      updatedAt: now,
+    },
+    request: {
+      requestKey: draftId,
+      recordId,
+      expectedRecordRevision: 1,
+      transcriptionIds: [],
+      observationIds: [observationId],
+      instructionZhHant: '整理描述',
+    },
+    modelSelection: {
+      role: 'recordEditing',
+      modelId: 'development',
+      profileVersion: '1',
+    },
+  };
+}
+
+function job(): JobEnvelope {
+  return {
+    id: jobId,
+    kind: 'recordEditing',
+    resourceId: draftId,
+    state: { kind: 'queued' },
+    createdAt: now,
+    updatedAt: now,
+    result: null,
+  };
+}
+
+function fixture(
+  options: {
+    readonly run?: EditDraftRunRecord | null;
+    readonly job?: JobEnvelope | null;
+    readonly output?: EditDraftResult;
+    readonly capabilityFailure?: boolean;
+    readonly modelFailure?: boolean;
+    readonly saveResult?: boolean;
+    readonly updateJob?: boolean;
+    readonly afterModel?: 'run_missing' | 'job_missing' | 'already_saved';
+  } = {},
+) {
+  const current = {
+    run: 'run' in options ? (options.run ?? null) : pendingRun(),
+    job: 'job' in options ? (options.job ?? null) : job(),
+  };
+  const saveResult = vi.fn(async () => {
+    if (options.saveResult === false) {
+      return false;
+    }
+    if (current.run) {
+      current.run = {
+        ...current.run,
+        detail: {
+          ...current.run.detail,
+          status: 'ready',
+          revision: 2,
+          result: options.output ?? result,
+        },
+      };
+    }
+
+    return true;
+  });
+  const updateJob = vi.fn(async () => options.updateJob !== false);
+  const repositories = {
+    jobs: { get: vi.fn(async () => current.job), update: updateJob },
+    editDrafts: { get: vi.fn(async () => current.run), saveResult },
+  };
+  const unit = new Proxy({} as UnitOfWork, {
+    get(_target, key) {
+      if (key in repositories) {
+        return Reflect.get(repositories, key);
+      }
+      throw new Error(`Unexpected repository: ${String(key)}`);
+    },
+  });
+  const transaction: TransactionPort = {
+    run: async <T extends OperationResult<unknown>>(
+      _owner: string,
+      operation: (work: UnitOfWork) => Promise<T>,
+    ): Promise<T> => operation(unit),
+  };
+  const catalog: ModelCatalogPort = {
+    resolve: vi.fn(async () =>
+      options.capabilityFailure
+        ? {
+            success: false as const,
+            error: {
+              code: 'PROVIDER_UNAVAILABLE' as const,
+              message: 'Unavailable',
+              retryable: true,
+            },
+          }
+        : {
+            success: true as const,
+            data: {
+              effectiveModelId: 'development',
+              capabilities: invocation.capabilities,
+            },
+          },
+    ),
+  };
+  const draft = vi.fn(async () => {
+    if (options.afterModel === 'run_missing') {
+      current.run = null;
+    }
+    if (options.afterModel === 'job_missing') {
+      current.job = null;
+    }
+    if (options.afterModel === 'already_saved' && current.run) {
+      current.run = {
+        ...current.run,
+        detail: { ...current.run.detail, result },
+      };
+    }
+
+    return options.modelFailure
+      ? {
+          success: false as const,
+          error: {
+            code: 'PROVIDER_UNAVAILABLE' as const,
+            message: 'Unavailable',
+            retryable: true,
+          },
+          audit: { invocation: null, rawOutput: null },
+        }
+      : {
+          success: true as const,
+          data: { value: options.output ?? result, invocation },
+        };
+  });
+  const model: RecordEditingPort = { draft };
+  const handler = createEditDraftHandler(transaction, model, catalog, {
+    now: () => now,
+  });
+
+  return { handler, current, draft, saveResult, updateJob };
+}
+
+describe('fn:createEditDraftHandler', () => {
+  it('should generate from the frozen source text and save suggestions without adoption', async () => {
+    const ports = fixture();
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledWith(
+      ports.current.run?.request,
+      ['青瓷瓶'],
+      { fields, versions },
+      ports.current.run?.modelSelection,
+    );
+    expect(ports.current.run?.detail).toMatchObject({
+      status: 'ready',
+      result,
+      appliedProposalIds: [],
+    });
+    expect(ports.updateJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: { kind: 'succeeded', completedAt: now },
+        result: { editDraftId: draftId },
+      }),
+      now,
+    );
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(1);
+  });
+
+  it('should reject missing jobs or drafts and stop on capability or model failure', async () => {
+    expect(await fixture({ job: null }).handler(ownerId, jobId)).toMatchObject({
+      success: false,
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(
+      await fixture({ job: { ...job(), kind: 'media' } }).handler(
+        ownerId,
+        jobId,
+      ),
+    ).toMatchObject({ success: false, error: { code: 'NOT_FOUND' } });
+    expect(await fixture({ run: null }).handler(ownerId, jobId)).toMatchObject({
+      success: false,
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(
+      await fixture({ capabilityFailure: true }).handler(ownerId, jobId),
+    ).toMatchObject({
+      success: false,
+      error: { code: 'PROVIDER_UNAVAILABLE' },
+    });
+    expect(
+      await fixture({ modelFailure: true }).handler(ownerId, jobId),
+    ).toMatchObject({
+      success: false,
+      error: { code: 'PROVIDER_UNAVAILABLE' },
+    });
+  });
+
+  it('should reject malformed output, changed frozen identities, and duplicate proposals', async () => {
+    expect(
+      await fixture({ output: { ...result, editDraftId: 'bad-id' } }).handler(
+        ownerId,
+        jobId,
+      ),
+    ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+    expect(
+      await fixture({
+        output: { ...result, recordId: '00000000-0000-4000-8000-000000000099' },
+      }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+    expect(
+      await fixture({
+        output: { ...result, sourceObservationIds: [] },
+      }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+    expect(
+      await fixture({
+        output: {
+          ...result,
+          baseVersions: { ...versions, evidenceVersion: 2 },
+        },
+      }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+    expect(
+      await fixture({
+        output: {
+          ...result,
+          proposedChanges: [
+            ...result.proposedChanges,
+            ...result.proposedChanges,
+          ],
+        },
+      }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+    expect(
+      await fixture({
+        output: {
+          ...result,
+          proposedChanges: [
+            {
+              id: proposalId,
+              field: 'name',
+              before: 'Other',
+              proposed: 'Celadon vase',
+              findingIds: [],
+            },
+          ],
+        },
+      }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+  });
+
+  it('should detect disappeared jobs and concurrent saved results after generation', async () => {
+    expect(
+      await fixture({ afterModel: 'run_missing' }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'NOT_FOUND' } });
+    expect(
+      await fixture({ afterModel: 'job_missing' }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'NOT_FOUND' } });
+    const concurrent = fixture({ afterModel: 'already_saved' });
+    expect(await concurrent.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(concurrent.saveResult).not.toHaveBeenCalled();
+  });
+
+  it('should report draft or job compare-and-swap conflicts', async () => {
+    const changedDraft = fixture({ saveResult: false });
+    expect(await changedDraft.handler(ownerId, jobId)).toMatchObject({
+      success: false,
+      error: { code: 'REVISION_CONFLICT' },
+    });
+    expect(changedDraft.updateJob).not.toHaveBeenCalled();
+    expect(
+      await fixture({ updateJob: false }).handler(ownerId, jobId),
+    ).toMatchObject({ success: false, error: { code: 'REVISION_CONFLICT' } });
+  });
+});

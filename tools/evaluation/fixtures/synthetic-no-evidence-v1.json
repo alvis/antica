@@ -1,0 +1,41 @@
+{
+  "provenance": "Authored synthetic fixture; intentionally no evidence. Never authenticity ground truth.",
+  "input": {
+    "recordId": "10000000-0000-4000-8000-000000000001",
+    "snapshotId": "10000000-0000-4000-8000-000000000003",
+    "recordRevision": 1,
+    "analysisInputVersion": 1,
+    "evidenceVersion": 1,
+    "assetIds": [],
+    "evidenceIds": [],
+    "observationIds": [],
+    "checkIds": [],
+    "retrievalSnapshotId": "10000000-0000-4000-8000-000000000005",
+    "promptVersion": "development-analysis-v1",
+    "schemaVersion": "analysis-v1"
+  },
+  "text": [],
+  "images": [],
+  "citations": [],
+  "recordFields": {
+    "name": null,
+    "unitKind": "single",
+    "components": [],
+    "pieceCount": null,
+    "categoryIds": [],
+    "materialIds": [],
+    "period": null,
+    "dimensions": {},
+    "location": {
+      "locationId": null,
+      "detail": ""
+    },
+    "acquisition": {
+      "receiptAssetIds": []
+    },
+    "tags": [],
+    "description": "Authored synthetic evaluation record",
+    "collectorJudgment": null
+  },
+  "methods": []
+}

@@ -1,0 +1,23 @@
+# Architecture decisions
+
+These decisions describe the first working draft's durable boundaries. [Implementation status](implementation-status.md) records which journeys and checks have actually passed; it does not turn a source-level choice into production acceptance. The product contracts are [Requirements](https://app.notion.com/p/3f7b2572f788812db92ae890b424de5a) and [Reference](https://app.notion.com/p/3f7b2572f788812caf6eeb3886e03401).
+
+## Workspace and build ownership
+
+The pnpm workspace keeps portable domain, contracts, application, client, and UI packages separate from `packages/platform`, which owns server-only persistence, media, and provider adapters. `presetter.config.ts` generates TypeScript and tooling settings with explicit import restrictions; portable packages do not depend on platform code. The installed TypeScript 6 package exposes `tsc6`, so package typechecks and builds invoke that binary. Root generated TypeScript configurations use `noEmit` for diagnostics; package build configurations emit to `lib`. Change Presetter source and regenerate when altering generated configuration.
+
+Expo owns the native app's TypeScript baseline. `apps/mobile/presetter.config.ts` extends the root Presetter configuration but substitutes `tooling/expo.ts` for `tsconfig.json` and removes Node-oriented build and Vitest assets. `apps/mobile/metro.config.cjs` resolves relative `.js` imports from workspace TypeScript source to existing `.ts` or `.tsx` files, keeping ESM-style source imports usable in Metro. The resolver is limited to workspace `src` modules and falls through to Expo's default resolver otherwise. Native compilation still needs an Android SDK/device check.
+
+## API runtime and composition
+
+Shared packages expose TypeScript source. The API therefore declares Node.js 24 and `tsx` for its `dev`, `start`, and `jobs:drain` entry points (`apps/api/package.json`). `apps/api/src/main.ts` loads the root `.env` if present, validates configuration, then constructs the Hono app and either serves HTTP or drains queued work. A plain Node launch of a compiled API entry is outside this runtime contract. Migrations are an explicit operation before startup.
+
+The API composes application services from ports and `packages/platform` adapters. Development OTP, storage, inference, parsing, text search, image search, and workflow execution are explicit drivers and are rejected where production requires live services. Model role selections are registered and capability-checked independently of parsing and retrieval configuration. This preserves one use-case contract while allowing model, parser, text index, and image corpus versions to change separately. The selected version and index identity travel with results, and `packages/platform/src/search/index-space.ts` rejects a query whose embedding model, dimensions, or index version differs from its stored index.
+
+`packages/application/src/jobs/drain.ts` processes one persisted outbox snapshot through a leased, idempotent dispatcher. The API exposes it as `pnpm jobs:drain` in local development; the Inngest driver mounts a signed `/api/inngest` route and schedules or explicitly triggers the same drain. This keeps job state in PostgreSQL across app closure and process restarts. Remote scheduling and Fly recovery still require staging verification.
+
+## Source identity and evidence
+
+Source originals, versions, pages, regions, and citations remain distinct. `packages/domain/src/source.ts` records source and parse identities, page order, printed page labels, canonical views, and locators. The LlamaCloud Index v2 writer (`packages/platform/src/search/llama-writer.ts`) imports canonical text and stores durable checkpoints. Its mapping to provider chunks is accepted only when returned text and metadata match a whole canonical region; split or transformed chunks remain unavailable for source review. The retrieval adapter resolves a provider chunk back through persisted mapping and the source version before returning a citation. Provider chunk IDs are never treated as evidence locators on their own.
+
+Book-page images may carry a presentation rotation of zero to three clockwise quarter turns and an optional rectangular crop in normalized EXIF-canonical coordinates (`packages/contracts/src/knowledge.ts`). The original asset and canonical view remain authoritative; presentation changes the reading view and maps selections back to original coordinates. Pages without a crop or rotation remain valid. This choice is restricted to book-page images and requires integrated image/device verification before claiming the whole journey works.
