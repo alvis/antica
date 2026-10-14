@@ -13,16 +13,22 @@ import type {
 import type {
   EvidenceAnchor,
   FrameLocator,
+  InspectionMethodVersion,
   Observation,
   RecordCheck,
 } from '@antica/domain';
 
 import type {
+  AnalysisRunRecord,
+  ClockPort,
   CommandReceipt,
+  IdPort,
   OperationResult,
   TransactionPort,
   UnitOfWork,
 } from '../ports/index.js';
+
+type SuggestedMethod = AnalysisRunRecord['suggestedMethodVersions'][number];
 
 const ownerId = '00000000-0000-4000-8000-000000000001';
 const recordId = '00000000-0000-4000-8000-000000000002';
@@ -217,26 +223,30 @@ function fixture(
     readonly observation?: Observation | null;
     readonly check?: RecordCheck | null;
     readonly activeCheck?: RecordCheck | null;
-    readonly methodVersion?: { readonly methodId: string } | null;
-    readonly suggestedRun?: {
-      readonly recordId: string;
-      readonly suggestedMethodVersions: ReadonlyArray<{
-        readonly methodId: string;
-        readonly methodVersionId: string;
-      }>;
-    } | null;
+    readonly methodVersion?: Partial<InspectionMethodVersion> | null;
+    readonly suggestedRun?: Partial<AnalysisRunRecord> | null;
     readonly frame?: FrameLocator | null;
     readonly bump?: boolean;
     readonly updateCheck?: boolean;
   } = {},
 ) {
   const receipts = new Map<string, CommandReceipt>();
-  const addAnchor = vi.fn(async () => undefined);
-  const addObservation = vi.fn(async () => undefined);
-  const supersedeObservation = vi.fn(async () => undefined);
-  const addCheck = vi.fn(async () => undefined);
-  const updateCheck = vi.fn(async () => options.updateCheck !== false);
-  const bumpVersions = vi.fn(async () =>
+  const addAnchor = vi.fn<UnitOfWork['evidence']['addAnchor']>(
+    async () => undefined,
+  );
+  const addObservation = vi.fn<UnitOfWork['evidence']['addObservation']>(
+    async () => undefined,
+  );
+  const supersedeObservation = vi.fn<
+    UnitOfWork['evidence']['supersedeObservation']
+  >(async () => undefined);
+  const addCheck = vi.fn<UnitOfWork['evidence']['addCheck']>(
+    async () => undefined,
+  );
+  const updateCheck = vi.fn<UnitOfWork['evidence']['updateCheck']>(
+    async () => options.updateCheck !== false,
+  );
+  const bumpVersions = vi.fn<UnitOfWork['records']['bumpVersions']>(async () =>
     options.bump === false
       ? null
       : {
@@ -245,65 +255,99 @@ function fixture(
           evidenceVersion: 2,
         },
   );
-  const createJob = vi.fn(async () => undefined);
-  const enqueue = vi.fn(async () => undefined);
+  const createJob = vi.fn<UnitOfWork['jobs']['create']>(async () => undefined);
+  const enqueue = vi.fn<UnitOfWork['outbox']['enqueue']>(async () => undefined);
   const repositories = {
     commands: {
-      get: vi.fn(
+      get: vi.fn<UnitOfWork['commands']['get']>(
         async (_owner: string, operation: string, key: string) =>
           receipts.get(`${operation}:${key}`) ?? null,
       ),
-      insert: vi.fn(async (receipt: CommandReceipt) => {
-        receipts.set(`${receipt.operation}:${receipt.requestKey}`, receipt);
-      }),
-    },
+      insert: vi.fn<UnitOfWork['commands']['insert']>(
+        async (receipt: CommandReceipt) => {
+          receipts.set(`${receipt.operation}:${receipt.requestKey}`, receipt);
+        },
+      ),
+    } satisfies Partial<UnitOfWork['commands']> as Partial<
+      UnitOfWork['commands']
+    > as UnitOfWork['commands'],
     records: {
-      get: vi.fn(async () =>
+      get: vi.fn<UnitOfWork['records']['get']>(async () =>
         'record' in options ? (options.record ?? null) : record(),
       ),
       bumpVersions,
-    },
+    } satisfies Partial<UnitOfWork['records']> as Partial<
+      UnitOfWork['records']
+    > as UnitOfWork['records'],
     media: {
-      get: vi.fn(async () =>
+      get: vi.fn<UnitOfWork['media']['get']>(async () =>
         'media' in options ? (options.media ?? null) : media(),
       ),
-      getFrameByDerivative: vi.fn(async () => options.frame ?? null),
-    },
+      getFrameByDerivative: vi.fn<UnitOfWork['media']['getFrameByDerivative']>(
+        async () => options.frame ?? null,
+      ),
+    } satisfies Partial<UnitOfWork['media']> as Partial<
+      UnitOfWork['media']
+    > as UnitOfWork['media'],
     evidence: {
-      getAnchor: vi.fn(async () =>
+      getAnchor: vi.fn<UnitOfWork['evidence']['getAnchor']>(async () =>
         'anchor' in options ? (options.anchor ?? null) : anchor(),
       ),
       addAnchor,
-      getObservation: vi.fn(async () =>
-        'observation' in options
-          ? (options.observation ?? null)
-          : observation(),
+      getObservation: vi.fn<UnitOfWork['evidence']['getObservation']>(
+        async () =>
+          'observation' in options
+            ? (options.observation ?? null)
+            : observation(),
       ),
       addObservation,
       supersedeObservation,
-      queryObservations: vi.fn(async () => ({
-        items: [observation()],
-        nextCursor: null,
-      })),
-      getCheck: vi.fn(async () =>
+      queryObservations: vi.fn<UnitOfWork['evidence']['queryObservations']>(
+        async () => ({
+          items: [observation()],
+          nextCursor: null,
+        }),
+      ),
+      getCheck: vi.fn<UnitOfWork['evidence']['getCheck']>(async () =>
         'check' in options ? (options.check ?? null) : check(),
       ),
-      findActiveCheck: vi.fn(async () => options.activeCheck ?? null),
+      findActiveCheck: vi.fn<UnitOfWork['evidence']['findActiveCheck']>(
+        async () => options.activeCheck ?? null,
+      ),
       addCheck,
       updateCheck,
-    },
-    jobs: { create: createJob },
-    outbox: { enqueue },
+    } satisfies Partial<UnitOfWork['evidence']> as Partial<
+      UnitOfWork['evidence']
+    > as UnitOfWork['evidence'],
+    jobs: { create: createJob } satisfies Partial<
+      UnitOfWork['jobs']
+    > as Partial<UnitOfWork['jobs']> as UnitOfWork['jobs'],
+    outbox: { enqueue } satisfies Partial<UnitOfWork['outbox']> as Partial<
+      UnitOfWork['outbox']
+    > as UnitOfWork['outbox'],
     knowledge: {
-      getMethodVersion: vi.fn(async () =>
-        'methodVersion' in options
-          ? (options.methodVersion ?? null)
-          : { methodId },
+      getMethodVersion: vi.fn<UnitOfWork['knowledge']['getMethodVersion']>(
+        async () =>
+          ('methodVersion' in options
+            ? (options.methodVersion ?? null)
+            : {
+                methodId,
+              }) satisfies Partial<InspectionMethodVersion> | null as InspectionMethodVersion | null,
       ),
-    },
-    analyses: { get: vi.fn(async () => options.suggestedRun ?? null) },
-  };
-  const unit = new Proxy({} as UnitOfWork, {
+    } satisfies Partial<UnitOfWork['knowledge']> as Partial<
+      UnitOfWork['knowledge']
+    > as UnitOfWork['knowledge'],
+    analyses: {
+      get: vi.fn<UnitOfWork['analyses']['get']>(
+        async () =>
+          (options.suggestedRun ??
+            null) satisfies Partial<AnalysisRunRecord> | null as AnalysisRunRecord | null,
+      ),
+    } satisfies Partial<UnitOfWork['analyses']> as Partial<
+      UnitOfWork['analyses']
+    > as UnitOfWork['analyses'],
+  } satisfies Partial<UnitOfWork>;
+  const unit = new Proxy(repositories as Partial<UnitOfWork> as UnitOfWork, {
     get(_target, key) {
       if (key in repositories) {
         return Reflect.get(repositories, key);
@@ -311,14 +355,20 @@ function fixture(
       throw new Error(`Unexpected repository: ${String(key)}`);
     },
   });
-  const transaction: TransactionPort = {
+  const transaction = {
     run: async <T extends OperationResult<unknown>>(
       _owner: string,
       operation: (work: UnitOfWork) => Promise<T>,
     ): Promise<T> => operation(unit),
-  };
-  const ids = { create: vi.fn(() => anchorId) };
-  const service = createEvidenceService(transaction, { now: () => now }, ids);
+  } satisfies TransactionPort;
+  const ids = {
+    create: vi.fn<IdPort['create']>(() => anchorId),
+  } satisfies IdPort;
+  const service = createEvidenceService(
+    transaction,
+    { now: () => now } satisfies ClockPort,
+    ids,
+  );
 
   return {
     service,
@@ -336,6 +386,72 @@ function fixture(
 }
 
 describe('fn:createEvidenceService', () => {
+  it('should reject a lost check revision without advancing record versions or recording success', async () => {
+    const ports = fixture({ updateCheck: false });
+
+    const result = await ports.service.createAnchor(ownerId, {
+      ...createAnchorRequest,
+      checkId,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { code: 'REVISION_CONFLICT', retryable: true },
+    });
+    expect(ports.updateCheck).toHaveBeenCalledTimes(1);
+    expect(ports.bumpVersions).not.toHaveBeenCalled();
+    expect([...ports.receipts.values()]).toEqual([]);
+    expect(ports.repositories.commands.insert).not.toHaveBeenCalled();
+  });
+
+  it('should attach new evidence to the check without replacing its state or repeating writes on replay', async () => {
+    const previous: RecordCheck = {
+      ...check(),
+      revision: 7,
+      updatedAt: '2026-10-12T00:00:00.000Z',
+      progress: 'recorded',
+      result: { kind: 'undetermined', reason: 'Requires close inspection' },
+      componentIds: [componentId],
+      observationIds: [observationId],
+      evidenceAnchorIds: ['00000000-0000-4000-8000-000000000017'],
+    };
+    const ports = fixture({ check: previous });
+    const request = { ...createAnchorRequest, checkId };
+
+    const first = await ports.service.createAnchor(ownerId, request);
+    const replay = await ports.service.createAnchor(ownerId, request);
+
+    expect(first).toEqual({ success: true, data: anchor() });
+    expect(replay).toEqual(first);
+    expect(ports.updateCheck.mock.calls).toEqual([
+      [
+        {
+          ...previous,
+          revision: 8,
+          updatedAt: now,
+          evidenceAnchorIds: [...previous.evidenceAnchorIds, anchorId],
+        },
+        7,
+      ],
+    ]);
+    expect(ports.addAnchor.mock.calls).toEqual([[anchor()]]);
+    expect(ports.bumpVersions.mock.calls).toEqual([
+      [recordId, 1, { analysisInput: true, evidence: true }],
+    ]);
+    expect(ports.repositories.commands.insert).toHaveBeenCalledTimes(1);
+    expect([...ports.receipts.values()]).toEqual([
+      {
+        ownerId,
+        operation: 'evidence.create',
+        requestKey: request.requestKey,
+        fingerprint: expect.any(String),
+        status: 201,
+        result: anchor(),
+      },
+    ]);
+    expect(ports.enqueue).not.toHaveBeenCalled();
+  });
+
   it('should create a record-owned image anchor once and advance evidence versions', async () => {
     const ports = fixture();
     const first = await ports.service.createAnchor(
@@ -748,7 +864,12 @@ describe('fn:createEvidenceService', () => {
       await fixture({
         suggestedRun: {
           recordId: assetId,
-          suggestedMethodVersions: [{ methodId, methodVersionId }],
+          suggestedMethodVersions: [
+            {
+              methodId,
+              methodVersionId,
+            } satisfies Partial<SuggestedMethod> as Partial<SuggestedMethod> as SuggestedMethod,
+          ],
         },
       }).service.createCheck(ownerId, recordId, 'check-2', suggested),
     ).toMatchObject({ success: false, error: { code: 'EVIDENCE_INVALID' } });
@@ -761,14 +882,24 @@ describe('fn:createEvidenceService', () => {
       await fixture({
         suggestedRun: {
           recordId,
-          suggestedMethodVersions: [{ methodId, methodVersionId: assetId }],
+          suggestedMethodVersions: [
+            {
+              methodId,
+              methodVersionId: assetId,
+            } satisfies Partial<SuggestedMethod> as Partial<SuggestedMethod> as SuggestedMethod,
+          ],
         },
       }).service.createCheck(ownerId, recordId, 'check-2', suggested),
     ).toMatchObject({ success: false, error: { code: 'EVIDENCE_INVALID' } });
     const ports = fixture({
       suggestedRun: {
         recordId,
-        suggestedMethodVersions: [{ methodId, methodVersionId }],
+        suggestedMethodVersions: [
+          {
+            methodId,
+            methodVersionId,
+          } satisfies Partial<SuggestedMethod> as Partial<SuggestedMethod> as SuggestedMethod,
+        ],
       },
     });
     expect(

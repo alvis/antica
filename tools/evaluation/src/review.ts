@@ -1,6 +1,6 @@
-import { z } from 'zod';
-
 import { readFile } from 'node:fs/promises';
+
+import { z } from 'zod';
 
 const verdictSchema = z.enum(['pending', 'pass', 'fail', 'not-applicable']);
 const humanReviewSchema = z.strictObject({

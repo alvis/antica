@@ -1,15 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { inject, describe, expect, vi } from 'vitest';
 
 import {
   createMediaService,
@@ -29,31 +20,40 @@ import {
 import { collectorUserId } from '@antica/platform';
 import { createConfiguredModels } from '@antica/platform/ai';
 
-import { createHttpFixture } from './fixtures/http.js';
+import { createHttpTest } from './fixtures/http/test.js';
 import { createLocalSettings } from './fixtures/runtime.js';
 import { createImageProviders } from './retrieval.js';
 
 import type { ModelConfiguration } from '@antica/platform/ai';
 
-const { transport } = vi.hoisted(() => {
-  const transport = vi.fn<typeof fetch>();
-  vi.stubGlobal('fetch', transport);
+import type { HttpFixture } from './fixtures/http.js';
 
-  return { transport };
-});
-let rejectUpserts = false;
-const upserts: unknown[] = [];
-const requested: string[] = [];
-const queryPoints: Array<{ id: string; version: number; score: number }> = [];
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeEach(() => {
-  vi.stubGlobal('fetch', transport);
-  rejectUpserts = false;
-  upserts.length = 0;
-  requested.length = 0;
-  queryPoints.length = 0;
-  transport.mockImplementation(async (...args) => {
-    const request = new Request(...args);
+const resources = inject('httpResources');
+const it = createHttpTest(resources['cloud-jobs']!, {
+  ...createLocalSettings(),
+  image: {
+    ANTICA_IMAGE_SEARCH_DRIVER: 'voyage-qdrant',
+    VOYAGE_API_KEY: 'synthetic-test-key',
+    QDRANT_URL: 'http://qdrant.test',
+    QDRANT_COLLECTION: 'images',
+    IMAGE_EMBEDDING_MODEL_ID: 'voyage-multimodal-3.5',
+    IMAGE_EMBEDDING_DIMENSIONS: 1024,
+    IMAGE_INDEX_VERSION: 'image-test-v1',
+    IMAGE_CORPUS_ID: 'private-corpus',
+  },
+}).extend('transportState', async ({ task: _task }) => {
+  const respondToUpsert = vi.fn(async (): Promise<Response> =>
+    Response.json({
+      result: { status: 'completed' },
+      status: 'ok',
+      time: 0,
+    }),
+  );
+  const upserts: unknown[] = [];
+  const requested: string[] = [];
+  const queryPoints: Array<{ id: string; version: number; score: number }> = [];
+  const transport = vi.fn<typeof fetch>(async (...args) => {
+    const request = new Request(args[0], args[1]);
     const url = new URL(request.url);
     requested.push(request.url);
     if (url.hostname === 'api.voyageai.com') {
@@ -67,15 +67,8 @@ beforeEach(() => {
       request.method === 'PUT'
     ) {
       upserts.push(await request.json());
-      if (rejectUpserts) {
-        return Response.json({ error: 'Unavailable' }, { status: 503 });
-      }
 
-      return Response.json({
-        result: { status: 'completed' },
-        status: 'ok',
-        time: 0,
-      });
+      return respondToUpsert();
     }
     if (
       url.hostname === 'qdrant.test' &&
@@ -100,33 +93,21 @@ beforeEach(() => {
       `Unexpected test transport ${request.method} ${url.origin}${url.pathname}`,
     );
   });
-});
-beforeAll(async () => {
-  fixture = await createHttpFixture({
-    ...createLocalSettings(),
-    image: {
-      ANTICA_IMAGE_SEARCH_DRIVER: 'voyage-qdrant',
-      VOYAGE_API_KEY: 'synthetic-test-key',
-      QDRANT_URL: 'http://qdrant.test',
-      QDRANT_COLLECTION: 'images',
-      IMAGE_EMBEDDING_MODEL_ID: 'voyage-multimodal-3.5',
-      IMAGE_EMBEDDING_DIMENSIONS: 1024,
-      IMAGE_INDEX_VERSION: 'image-test-v1',
-      IMAGE_CORPUS_ID: 'private-corpus',
-    },
-  });
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-  vi.unstubAllGlobals();
-});
+  vi.stubGlobal('fetch', transport);
 
-afterEach(() => vi.useRealTimers());
+  return { respondToUpsert, upserts, requested, queryPoints };
+});
 
 describe('Configured cloud image indexing', () => {
-  it.each([false, true])(
+  it.for([false, true])(
     'should index canonical collector pixels before completing the durable media job, transient failure: %s',
-    async (failOnce) => {
+    async (
+      failOnce,
+      {
+        fixture,
+        transportState: { respondToUpsert, upserts, requested, queryPoints },
+      },
+    ) => {
       const record = recordDetailSchema.parse(
         await (
           await fixture.request(
@@ -175,7 +156,9 @@ describe('Configured cloud image indexing', () => {
         processingJobId: expect.any(String),
       });
       if (failOnce) {
-        rejectUpserts = true;
+        respondToUpsert.mockResolvedValueOnce(
+          Response.json({ error: 'Unavailable' }, { status: 503 }),
+        );
         expect(await fixture.runtime.drain()).toMatchObject({
           settled: 0,
           failures: [expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' })],
@@ -184,7 +167,6 @@ describe('Configured cloud image indexing', () => {
           await (await fixture.request(`/v1/media/${upload.assetId}`)).json(),
         );
         expect(pending.asset.state).not.toBe('ready');
-        rejectUpserts = false;
         upserts.length = 0;
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.advanceTimersByTime(60_000);
@@ -370,9 +352,15 @@ describe('Configured cloud image indexing', () => {
     },
   );
 
-  it.each([false, true])(
+  it.for([false, true])(
     'should index the retained source reference, transient failure: %s',
-    async (failOnce) => {
+    async (
+      failOnce,
+      {
+        fixture,
+        transportState: { respondToUpsert, upserts, requested, queryPoints },
+      },
+    ) => {
       const intakeKey = randomUUID();
       const bytes = Buffer.concat([
         Buffer.from(
@@ -453,7 +441,9 @@ describe('Configured cloud image indexing', () => {
       expect(registered.status).toBe(202);
       const accepted = sourceAcceptedSchema.parse(await registered.json());
       if (failOnce) {
-        rejectUpserts = true;
+        respondToUpsert.mockResolvedValueOnce(
+          Response.json({ error: 'Unavailable' }, { status: 503 }),
+        );
         expect(await fixture.runtime.drain()).toMatchObject({
           settled: 0,
           failures: [expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' })],
@@ -464,7 +454,6 @@ describe('Configured cloud image indexing', () => {
           ).json(),
         );
         expect(pending.version.imageIndexStatus).not.toBe('ready');
-        rejectUpserts = false;
         upserts.length = 0;
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.advanceTimersByTime(60_000);
@@ -511,7 +500,7 @@ describe('Configured cloud image indexing', () => {
           ],
         },
       ]);
-      const queryImage = await uploadCollectionImage(collectorUserId);
+      const queryImage = await uploadCollectionImage(fixture, collectorUserId);
       expect(await fixture.runtime.drain()).toMatchObject({
         settled: 1,
         failures: [],
@@ -577,9 +566,12 @@ describe('Configured cloud image indexing', () => {
       });
     },
   );
-  it('should refuse a foreign-owner public-service outbox producer before cloud indexing', async () => {
+  it('should refuse a foreign-owner public-service outbox producer before cloud indexing', async ({
+    fixture,
+    transportState: { respondToUpsert, upserts, requested, queryPoints },
+  }) => {
     const ownerId = randomUUID();
-    const upload = await uploadCollectionImage(ownerId);
+    const upload = await uploadCollectionImage(fixture, ownerId);
     expect(await fixture.runtime.drain()).toMatchObject({
       settled: 1,
       failures: [expect.objectContaining({ code: 'FORBIDDEN' })],
@@ -669,10 +661,12 @@ function createComparisonSettings() {
 
 /**
  * creates real record media and an outbox message through owner-scoped application services
+ * @param fixture file-owned application runtime
  * @param ownerId authenticated service consumer identity
  * @returns persisted original and record identifiers awaiting the composed drain
  */
 async function uploadCollectionImage(
+  fixture: HttpFixture,
   ownerId: string,
 ): Promise<{ assetId: string; recordId: string }> {
   const { transaction, clock, ids, storage } = fixture.runtime;

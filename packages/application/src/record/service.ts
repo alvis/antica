@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-
+import { requestFingerprint } from '../knowledge/receipt.js';
 import { ComponentInUseError } from '../ports/index.js';
 
 import type { MediaStoragePort } from '../evidence/media.js';
@@ -58,7 +57,7 @@ export function createRecordService(
   return {
     create: async (ownerId, requestKey, input) =>
       transaction.run(ownerId, async (unit) => {
-        const fingerprint = fingerprintOf(input);
+        const fingerprint = requestFingerprint(input);
         const prior = await unit.commands.get(
           ownerId,
           'records.create',
@@ -168,7 +167,7 @@ export function createRecordService(
     patch: async (ownerId, recordId, requestKey, input) => {
       try {
         return await transaction.run(ownerId, async (unit) => {
-          const fingerprint = fingerprintOf({ recordId, input });
+          const fingerprint = requestFingerprint({ recordId, input });
           const prior = await unit.commands.get(
             ownerId,
             'records.patch',
@@ -263,27 +262,4 @@ export function createRecordService(
       }
     },
   };
-}
-
-/** @param value */
-function fingerprintOf(value: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(sortJson(value)))
-    .digest('hex');
-}
-
-/** @param value */
-function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(sortJson);
-  }
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => [key, sortJson(item)]),
-    );
-  }
-
-  return value;
 }

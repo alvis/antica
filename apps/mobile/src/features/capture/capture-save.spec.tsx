@@ -51,10 +51,10 @@ const assetId = '00000000-0000-4000-8000-000000000022';
 const checkId = '00000000-0000-4000-8000-000000000033';
 
 /**
- * Opens a capture at its description step, ready for field entry.
- * @param kind Record unit kind selected in the opening step.
- * @param componentLabel Optional label for the selected object's component.
- * @returns Isolated mobile API and navigation boundaries.
+ * opens a capture at its description step, ready for field entry
+ * @param kind record unit kind selected in the opening step.
+ * @param componentLabel optional label for the selected object's component.
+ * @returns isolated mobile API and navigation boundaries
  */
 async function openFields(
   kind: 'Single item' | 'Set' = 'Single item',

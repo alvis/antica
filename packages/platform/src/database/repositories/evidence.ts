@@ -27,7 +27,9 @@ function iso(instant: string): string {
   return new Date(instant).toISOString();
 }
 
-/** binds evidence, collector observations and pinned checks to one owner */
+/**
+ * binds evidence, collector observations and pinned checks to one owner
+ */
 export function createEvidenceRepository(
   tx: Transaction,
   ownerId: string,

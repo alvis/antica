@@ -3,7 +3,7 @@ import { mkdir, open, readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 import { assertStorageKey } from './media-store.js';
-import { verifyBytes } from './verify.js';
+import { sniffMime, verifyBytes } from './verify.js';
 
 import type {
   MediaStore,
@@ -19,6 +19,8 @@ interface LocalToken {
   readonly byteLength?: number;
   readonly sha256?: string;
 }
+
+/** development file storage location and transfer signing settings */
 export interface LocalMediaConfig {
   readonly root: string;
   readonly publicBaseUrl: string;
@@ -27,7 +29,9 @@ export interface LocalMediaConfig {
 
 /**
  * creates a development-only private file store with signed API transfers
- * @param config
+ * @param config private root, public API base URL, and signing secret
+ * @returns configured local store after environment and secret validation
+ * @throws {Error} when used in production or the signing secret is shorter than 32 characters
  */
 export function createLocalMediaStore(
   config: LocalMediaConfig,
@@ -44,27 +48,27 @@ export function createLocalMediaStore(
   return new LocalMediaStore(config);
 }
 
-/** */
+/** local signed media storage backed by private files */
 export class LocalMediaStore implements MediaStore {
   readonly #root: string;
   readonly #publicBaseUrl: string;
   readonly #secret: string;
 
-  /** @param config */
+  /**
+   * initializes private file storage with signed transfer configuration
+   */
   constructor(config: LocalMediaConfig) {
     this.#root = resolve(config.root);
     this.#publicBaseUrl = config.publicBaseUrl;
     this.#secret = config.signingSecret;
   }
 
-  /** @param key */
   #path(key: string): string {
     assertStorageKey(key);
 
     return join(this.#root, key);
   }
 
-  /** @param input */
   #token(input: LocalToken): string {
     const body = Buffer.from(JSON.stringify(input)).toString('base64url');
     const signature = createHmac('sha256', this.#secret)
@@ -75,8 +79,10 @@ export class LocalMediaStore implements MediaStore {
   }
 
   /**
-   * @param token
-   * @param mode
+   * validates a signed token for the requested transfer mode
+   * @param token signed transfer token supplied by the caller
+   * @param mode upload or read mode expected by this operation
+   * @returns decoded token after signature, mode, expiry, and key validation
    */
   #parse(token: string, mode: LocalToken['mode']): LocalToken {
     const [body, signature] = token.split('.');
@@ -102,7 +108,10 @@ export class LocalMediaStore implements MediaStore {
     return value;
   }
 
-  /** @param input */
+  /**
+   * creates a signed upload transfer for an immutable original
+   * @returns expiring upload URL and required content-type header
+   */
   public async signUpload(input: OriginalObject): Promise<SignedTransfer> {
     const expiresAt = Date.now() + 15 * 60_000;
     const token = this.#token({
@@ -124,7 +133,10 @@ export class LocalMediaStore implements MediaStore {
     };
   }
 
-  /** @param token */
+  /**
+   * verifies an upload token and returns its declared media metadata
+   * @returns byte length and media type bound into the signed token
+   */
   public validateUploadToken(token: string): {
     readonly byteLength: number;
     readonly mimeType: string;
@@ -138,9 +150,10 @@ export class LocalMediaStore implements MediaStore {
   }
 
   /**
-   * @param token
-   * @param bytes
-   * @param mimeType
+   * accepts bytes only when they match the signed upload declaration
+   * @param token signed upload token carrying the original declaration
+   * @param bytes original bytes to verify and store once
+   * @param mimeType media type declared by the upload request
    */
   public async acceptUploadToken(
     token: string,
@@ -166,7 +179,9 @@ export class LocalMediaStore implements MediaStore {
     }
   }
 
-  /** @param input */
+  /**
+   * verifies persisted original bytes against their immutable declaration
+   */
   public async verifyOriginal(input: OriginalObject): Promise<void> {
     const path = this.#path(input.key);
     const metadata = await stat(path);
@@ -176,7 +191,10 @@ export class LocalMediaStore implements MediaStore {
     verifyBytes(await readFile(path), input);
   }
 
-  /** @param key */
+  /**
+   * creates a signed read transfer for a private object
+   * @returns expiring read URL for the requested private key
+   */
   public async signRead(key: string): Promise<SignedTransfer> {
     const expiresAt = Date.now() + 5 * 60_000;
     const token = this.#token({ mode: 'read', key, expiresAt });
@@ -191,28 +209,33 @@ export class LocalMediaStore implements MediaStore {
     };
   }
 
-  /** @param token */
+  /**
+   * reads the private object selected by a signed read token
+   * @returns stored bytes and detected media type
+   */
   public async openReadToken(
     token: string,
   ): Promise<{ readonly bytes: Uint8Array; readonly mimeType: string }> {
     return this.read(this.#parse(token, 'read').key);
   }
 
-  /** @param key */
+  /**
+   * reads private object bytes and detects their media type
+   * @returns stored bytes and detected or fallback media type
+   */
   public async read(
     key: string,
   ): Promise<{ readonly bytes: Uint8Array; readonly mimeType: string }> {
     const bytes = await readFile(this.#path(key));
-    const { sniffMime } = await import('./verify.js');
-
     return { bytes, mimeType: sniffMime(bytes) ?? 'application/octet-stream' };
   }
 
   /**
-   * @param input
-   * @param input.key
-   * @param input.bytes
-   * @param input.mimeType
+   * writes derivative bytes under their assigned private key
+   * @param input private object key, bytes, and declared media type
+   * @param input.key assigned private object key
+   * @param input.bytes immutable derivative contents
+   * @param input.mimeType declared media type of the derivative
    */
   public async writeDerivative(input: {
     readonly key: string;
@@ -230,10 +253,11 @@ export class LocalMediaStore implements MediaStore {
   }
 
   /**
-   * @param input
-   * @param input.key
-   * @param input.bytes
-   * @param input.mimeType
+   * writes an artifact only under the artifact key prefix
+   * @param input artifact key, bytes, and declared media type
+   * @param input.key assigned key under the artifacts prefix
+   * @param input.bytes immutable artifact contents
+   * @param input.mimeType declared media type of the artifact
    */
   public async writeArtifact(input: {
     readonly key: string;

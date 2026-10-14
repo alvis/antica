@@ -1,6 +1,4 @@
-import { QdrantClient } from '@qdrant/js-client-rest';
-
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createQdrantImageRetrieval,
@@ -8,6 +6,7 @@ import {
 } from './qdrant.js';
 
 import type { ImageSearchRequest } from '@antica/contracts';
+import type { QdrantClient } from '@qdrant/js-client-rest';
 
 import type { ImageSearchEntry } from './image.js';
 import type { QdrantImageRetrievalParams } from './qdrant.js';
@@ -27,18 +26,49 @@ const query: ImageSearchRequest = {
   limit: 10,
 };
 
-afterEach(() => {
-  vi.restoreAllMocks();
+const sdk = vi.hoisted(
+  () =>
+    ({
+      getCollection: vi.fn<QdrantClient['getCollection']>(async () =>
+        collection(),
+      ),
+      query: vi.fn<QdrantClient['query']>(async () => ({
+        points: [{ id: 'reference-point', version: 1, score: 1 }],
+      })),
+      upsert: vi.fn<QdrantClient['upsert']>(async () => ({
+        status: 'completed',
+      })),
+    }) satisfies Partial<QdrantClient>,
+);
+
+vi.mock('@qdrant/js-client-rest', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@qdrant/js-client-rest')>();
+  class FixtureQdrantClient extends actual.QdrantClient {
+    public override getCollection(
+      ...args: Parameters<QdrantClient['getCollection']>
+    ): ReturnType<QdrantClient['getCollection']> {
+      return sdk.getCollection(...args);
+    }
+    public override query(
+      ...args: Parameters<QdrantClient['query']>
+    ): ReturnType<QdrantClient['query']> {
+      return sdk.query(...args);
+    }
+    public override upsert(
+      ...args: Parameters<QdrantClient['upsert']>
+    ): ReturnType<QdrantClient['upsert']> {
+      return sdk.upsert(...args);
+    }
+  }
+  return {
+    ...actual,
+    QdrantClient: FixtureQdrantClient,
+  } satisfies typeof import('@qdrant/js-client-rest');
 });
 
 describe('Qdrant image retrieval boundary', () => {
   it('should resolve a reference-library match through the default SDK transport', async () => {
-    vi.spyOn(QdrantClient.prototype, 'getCollection').mockResolvedValue(
-      collection(),
-    );
-    vi.spyOn(QdrantClient.prototype, 'query').mockResolvedValue({
-      points: [{ id: 'reference-point', version: 1, score: 1 }],
-    });
     const canonical = entry('reference');
     const reference = {
       ...canonical,
@@ -170,9 +200,9 @@ describe('Qdrant image retrieval boundary', () => {
   });
 
   it('should combine selected-region and whole-image queries without duplicate matches', async () => {
-    const embed = vi
-      .fn<QdrantImageRetrievalParams['embedding']['embed']>()
-      .mockResolvedValue({ success: true, data: vector });
+    const embed = vi.fn<QdrantImageRetrievalParams['embedding']['embed']>(
+      async () => ({ success: true, data: vector }),
+    );
     const selectedRegion = {
       kind: 'rect' as const,
       x: 0,
@@ -214,22 +244,22 @@ describe('Qdrant image retrieval boundary', () => {
   });
 
   it('should send tenant and corpus filters and return only authorized canonical metadata', async () => {
-    const queryPoints = vi
-      .fn<NonNullable<QdrantImageRetrievalParams['queryPoints']>>()
-      .mockResolvedValue({
-        points: [
-          {
-            id: 'allowed',
-            version: 1,
-            score: 0.9,
-            payload: {
-              sourceTitle: 'Untrusted provider title',
-              ownerId: 'other-owner',
-            },
+    const queryPoints = vi.fn<
+      NonNullable<QdrantImageRetrievalParams['queryPoints']>
+    >(async () => ({
+      points: [
+        {
+          id: 'allowed',
+          version: 1,
+          score: 0.9,
+          payload: {
+            sourceTitle: 'Untrusted provider title',
+            ownerId: 'other-owner',
           },
-          { id: 'forbidden', version: 1, score: 1 },
-        ],
-      });
+        },
+        { id: 'forbidden', version: 1, score: 1 },
+      ],
+    }));
     const canonical = entry('allowed');
     const resolveEntry = vi
       .fn<QdrantImageRetrievalParams['resolveEntry']>()
@@ -343,15 +373,15 @@ describe('Qdrant image retrieval boundary', () => {
   );
 
   it('should bind pagination to its query and filter resolved canonical entries', async () => {
-    const queryPoints = vi
-      .fn<NonNullable<QdrantImageRetrievalParams['queryPoints']>>()
-      .mockResolvedValue({
-        points: [
-          { id: 'one', version: 1, score: 0.9 },
-          { id: 'two', version: 1, score: 0.8 },
-          { id: 'unknown-material', version: 1, score: 0.7 },
-        ],
-      });
+    const queryPoints = vi.fn<
+      NonNullable<QdrantImageRetrievalParams['queryPoints']>
+    >(async () => ({
+      points: [
+        { id: 'one', version: 1, score: 0.9 },
+        { id: 'two', version: 1, score: 0.8 },
+        { id: 'unknown-material', version: 1, score: 0.7 },
+      ],
+    }));
     const service = createQdrantImageRetrieval(
       params({
         queryPoints,
@@ -470,9 +500,6 @@ describe('Qdrant document ingestion boundary', () => {
   });
 
   it('should preserve an embedding failure without sending an upsert', async () => {
-    const upsert = vi
-      .spyOn(QdrantClient.prototype, 'upsert')
-      .mockResolvedValue({ status: 'completed' });
     expect(
       await createQdrantImageWriter(
         params({
@@ -493,32 +520,24 @@ describe('Qdrant document ingestion boundary', () => {
       success: false,
       error: { code: 'PROVIDER_UNAVAILABLE' },
     });
-    expect(upsert).not.toHaveBeenCalled();
+    expect(sdk.upsert).not.toHaveBeenCalled();
   });
 
   it('should refuse writing a vector into a physically incompatible collection', async () => {
-    vi.spyOn(QdrantClient.prototype, 'getCollection').mockResolvedValue(
+    sdk.getCollection.mockResolvedValueOnce(
       collection({ size: 512, distance: 'Cosine' }),
     );
-    const upsert = vi
-      .spyOn(QdrantClient.prototype, 'upsert')
-      .mockResolvedValue({ status: 'completed' });
     expect(
       await createQdrantImageWriter(params()).upsert({
         pointId: 'point',
         entry: entry('source'),
       }),
     ).toMatchObject({ success: false, error: { code: 'INDEX_NOT_READY' } });
-    expect(upsert).not.toHaveBeenCalled();
+    expect(sdk.upsert).not.toHaveBeenCalled();
   });
 
   it('should report a failed write instead of acknowledging persistence', async () => {
-    vi.spyOn(QdrantClient.prototype, 'getCollection').mockResolvedValue(
-      collection(),
-    );
-    vi.spyOn(QdrantClient.prototype, 'upsert').mockRejectedValue(
-      new Error('Write unavailable'),
-    );
+    sdk.upsert.mockRejectedValueOnce(new Error('Write unavailable'));
     expect(
       await createQdrantImageWriter(params()).upsert({
         pointId: 'point',
@@ -536,15 +555,9 @@ describe('Qdrant document ingestion boundary', () => {
   ])(
     'should persist $kind vectors with collector, corpus, index identity, and original asset',
     async ({ kind, scope }) => {
-      vi.spyOn(QdrantClient.prototype, 'getCollection').mockResolvedValue(
-        collection(),
+      const embed = vi.fn<QdrantImageRetrievalParams['embedding']['embed']>(
+        async () => ({ success: true, data: vector }),
       );
-      const upsert = vi
-        .spyOn(QdrantClient.prototype, 'upsert')
-        .mockResolvedValue({ status: 'completed' });
-      const embed = vi
-        .fn<QdrantImageRetrievalParams['embedding']['embed']>()
-        .mockResolvedValue({ success: true, data: vector });
       const canonical = entry('source');
       const document = {
         pointId: 'document-point',
@@ -569,7 +582,7 @@ describe('Qdrant document ingestion boundary', () => {
         ).upsert(document),
       ).toEqual({ success: true, data: null });
       expect(embed).toHaveBeenCalledWith(document.entry.image, 'document');
-      expect(upsert).toHaveBeenCalledWith('images', {
+      expect(sdk.upsert).toHaveBeenCalledWith('images', {
         wait: true,
         points: [
           {

@@ -29,6 +29,7 @@ import {
   sourceVersionAssets,
   sourceVersions,
 } from '../schema/index.js';
+import { projectedParseRunId } from '../source-projection.js';
 
 import type {
   IndexIdentity,
@@ -51,12 +52,10 @@ import type { Transaction } from '../transaction.js';
 
 type PageCursor = { readonly pageIndex: number; readonly id: string };
 
-/** @param cursor */
 function encodeCursor(cursor: PageCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
-/** @param value */
 function decodeCursor(value: string): PageCursor {
   const cursor = JSON.parse(
     Buffer.from(value, 'base64url').toString('utf8'),
@@ -72,7 +71,6 @@ function decodeCursor(value: string): PageCursor {
   return cursor;
 }
 
-/** @param value */
 function stableUuid(value: string): string {
   const digest = createHash('sha256').update(value).digest('hex');
 
@@ -83,11 +81,6 @@ function iso(value: string): string {
   return new Date(value).toISOString();
 }
 
-/**
- * @param row
- * @param contributors
- * @param languages
- */
 function toSource(
   row: typeof sources.$inferSelect,
   contributors: Source['metadata']['contributors'],
@@ -117,11 +110,6 @@ function toSource(
   };
 }
 
-/**
- * @param tx
- * @param ownerId
- * @param id
- */
 async function readVersion(
   tx: Transaction,
   ownerId: string,
@@ -156,9 +144,11 @@ async function readVersion(
 }
 
 /**
- * @param tx
- * @param ownerId
- * @param id
+ * reads a canonical locator only when its source belongs to the owner
+ * @param tx transaction used for the locator and source ownership lookup
+ * @param ownerId owner required to access the locator's source
+ * @param id stable locator identifier
+ * @returns the locator, or null when it is missing or inaccessible
  */
 export async function readSourceLocator(
   tx: Transaction,
@@ -220,9 +210,10 @@ export async function readSourceLocator(
 }
 
 /**
- * @param tx
- * @param locatorId
- * @param locator
+ * writes a source locator once under its stable identity
+ * @param tx transaction used to persist the locator
+ * @param locatorId stable identifier retained by citations and reference images
+ * @param locator canonical page or web location to persist
  */
 export async function writeSourceLocator(
   tx: Transaction,
@@ -264,9 +255,11 @@ export async function writeSourceLocator(
 }
 
 /**
- * @param tx
- * @param ownerId
- * @param id
+ * reads a citation only when its locator belongs to the owner
+ * @param tx transaction used for the citation and locator lookup
+ * @param ownerId owner required to access the citation's source
+ * @param id citation identifier
+ * @returns the citation, or null when it is missing or its locator is inaccessible
  */
 export async function readCitation(
   tx: Transaction,
@@ -291,9 +284,12 @@ export async function readCitation(
 }
 
 /**
- * @param tx
- * @param ownerId
- * @param id
+ * reads a reference image only when its version and required locator are accessible
+ * @param tx transaction used for the image and locator lookups
+ * @param ownerId owner required to access the image's source version
+ * @param id reference image identifier
+ * @returns the image with a caption only if its locator resolves, or null when
+ * the image or required locator is inaccessible
  */
 export async function readReferenceImage(
   tx: Transaction,
@@ -351,11 +347,6 @@ export async function readReferenceImage(
   };
 }
 
-/**
- * @param tx
- * @param ownerId
- * @param id
- */
 async function readPage(
   tx: Transaction,
   ownerId: string,
@@ -387,26 +378,34 @@ async function readPage(
     return null;
   }
   const page = row.source_pages;
-  const activeRunId = row.source_versions.activeParseRunId;
-  const [parsed] = activeRunId
+  const [selection] = await tx
+    .select({ parseRunId: projectedParseRunId() })
+    .from(sourcePages)
+    .innerJoin(
+      sourceVersions,
+      eq(sourcePages.sourceVersionId, sourceVersions.id),
+    )
+    .where(and(eq(sourcePages.id, id), eq(sourceVersions.ownerId, ownerId)));
+  const parseRunId = selection?.parseRunId;
+  const [parsed] = parseRunId
     ? await tx
         .select()
         .from(sourcePageParses)
         .where(
           and(
             eq(sourcePageParses.pageId, id),
-            eq(sourcePageParses.parseRunId, activeRunId),
+            eq(sourcePageParses.parseRunId, parseRunId),
           ),
         )
     : [];
-  const regions = activeRunId
+  const regions = parseRunId
     ? await tx
         .select({ id: sourceRegions.id })
         .from(sourceRegions)
         .where(
           and(
             eq(sourceRegions.pageId, id),
-            eq(sourceRegions.parseRunId, activeRunId),
+            eq(sourceRegions.parseRunId, parseRunId),
           ),
         )
     : [];
@@ -441,11 +440,6 @@ async function readPage(
   };
 }
 
-/**
- * @param tx
- * @param ownerId
- * @param id
- */
 async function readRegion(
   tx: Transaction,
   ownerId: string,
@@ -481,12 +475,6 @@ async function readRegion(
   };
 }
 
-/**
- * @param tx
- * @param ownerId
- * @param versionId
- * @param assets
- */
 async function saveAssets(
   tx: Transaction,
   ownerId: string,
@@ -522,10 +510,6 @@ async function saveAssets(
   }
 }
 
-/**
- * @param tx
- * @param source
- */
 async function saveSourceMetadata(
   tx: Transaction,
   source: Source,
@@ -551,8 +535,9 @@ async function saveSourceMetadata(
 
 /**
  * stores immutable source versions, parsed locators and citations for one collector
- * @param tx
- * @param ownerId
+ * @param tx transaction shared by all repository operations
+ * @param ownerId owner whose source records the repository may access
+ * @returns source repository bound to the transaction and owner
  */
 export function createSourceRepository(
   tx: Transaction,
@@ -681,13 +666,6 @@ export function createSourceRepository(
   }
 
   return {
-    /**
-     * @param id
-     * @param versionId
-     * @param pageId
-     * @param cursor
-     * @param requestedLimit
-     */
     async get(
       id,
       versionId,
@@ -760,20 +738,15 @@ export function createSourceRepository(
           selected.map(async (page) => readPage(tx, ownerId, page.id)),
         )
       ).filter((page): page is SourcePage => page !== null);
-      const regionRows = selected.length
+      const selectedRegionIds = pages.flatMap((page) => page.regionIds);
+      const regionRows = selectedRegionIds.length
         ? await tx
             .select({ id: sourceRegions.id })
             .from(sourceRegions)
             .where(
               and(
                 eq(sourceRegions.sourceVersionId, version.id),
-                inArray(
-                  sourceRegions.pageId,
-                  selected.map((page) => page.id),
-                ),
-                version.activeParseRunId
-                  ? eq(sourceRegions.parseRunId, version.activeParseRunId)
-                  : undefined,
+                inArray(sourceRegions.id, selectedRegionIds),
               ),
             )
         : [];
@@ -836,10 +809,6 @@ export function createSourceRepository(
       });
     },
     getVersion,
-    /**
-     * @param sourceVersionId
-     * @param pageIds
-     */
     async getReadTargets(sourceVersionId, pageIds) {
       const selectedPageIds = pageIds ? [...new Set(pageIds)] : undefined;
       const originals = selectedPageIds
@@ -980,7 +949,6 @@ export function createSourceRepository(
 
       return [...targets.values()];
     },
-    /** @param sourceHash */
     async findVersionByHash(sourceHash) {
       const [row] = await tx
         .select({ id: sourceVersions.id })
@@ -994,7 +962,6 @@ export function createSourceRepository(
 
       return row ? getVersion(row.id) : null;
     },
-    /** @param versionId */
     async getIngestionJobId(versionId) {
       const [row] = await tx
         .select({ id: jobs.id })
@@ -1011,15 +978,28 @@ export function createSourceRepository(
 
       return row?.id ?? null;
     },
-    /** @param id */
     async getPage(id) {
       return readPage(tx, ownerId, id);
     },
-    /**
-     * @param source
-     * @param version
-     * @param assets
-     */
+    async getPageRunSelection(versionId) {
+      const rows = await tx
+        .select({
+          pageId: sourcePages.id,
+          parseRunId: projectedParseRunId(),
+        })
+        .from(sourcePages)
+        .innerJoin(
+          sourceVersions,
+          and(
+            eq(sourcePages.sourceVersionId, sourceVersions.id),
+            eq(sourceVersions.ownerId, ownerId),
+          ),
+        )
+        .where(eq(sourcePages.sourceVersionId, versionId))
+        .orderBy(asc(sourcePages.pageIndex), asc(sourcePages.id));
+
+      return rows;
+    },
     async create(source, version, assets) {
       await tx.insert(sources).values({
         id: source.id,
@@ -1056,11 +1036,6 @@ export function createSourceRepository(
       });
       await saveAssets(tx, ownerId, version.id, assets);
     },
-    /**
-     * @param version
-     * @param expectedSourceRevision
-     * @param assets
-     */
     async addVersion(version, expectedSourceRevision, assets) {
       const metadata = version.metadataSnapshot;
       const [changed] = await tx
@@ -1123,11 +1098,6 @@ export function createSourceRepository(
 
       return true;
     },
-    /**
-     * @param version
-     * @param expectedStatus
-     * @param expectedActiveParseRunId
-     */
     async updateVersion(version, expectedStatus, expectedActiveParseRunId) {
       const [changed] = await tx
         .update(sourceVersions)
@@ -1151,7 +1121,6 @@ export function createSourceRepository(
 
       return Boolean(changed);
     },
-    /** @param pack */
     async saveParsed(pack) {
       const version = await getVersion(pack.sourceVersionId);
       if (!version) {
@@ -1261,16 +1230,22 @@ export function createSourceRepository(
             pdfPageIndex: page.pdfPageIndex,
             canonicalViewId: page.view.id,
           })
-          .onConflictDoUpdate({
-            target: sourcePages.id,
-            set: {
-              pageIndex: page.pageIndex,
-              printedPageLabel: page.printedPageLabel,
-              originalAssetId: page.originalAssetId,
-              pdfPageIndex: page.pdfPageIndex,
-              canonicalViewId: page.view.id,
-            },
-          });
+          .onConflictDoNothing();
+        const [storedPage] = await tx
+          .select()
+          .from(sourcePages)
+          .where(eq(sourcePages.id, page.id));
+        if (
+          !storedPage ||
+          storedPage.sourceVersionId !== page.sourceVersionId ||
+          storedPage.pageIndex !== page.pageIndex ||
+          storedPage.printedPageLabel !== page.printedPageLabel ||
+          storedPage.originalAssetId !== page.originalAssetId ||
+          storedPage.pdfPageIndex !== page.pdfPageIndex ||
+          storedPage.canonicalViewId !== page.view.id
+        ) {
+          throw new Error('Parsed page identity conflicts with the original');
+        }
         await tx
           .insert(sourcePageParses)
           .values({
@@ -1301,15 +1276,26 @@ export function createSourceRepository(
             geometry: region.region,
             rawText: region.rawText,
           })
-          .onConflictDoUpdate({
-            target: sourceRegions.id,
-            set: {
-              parseRunId: pack.parseRunId,
-              kind: region.kind,
-              geometry: region.region,
-              rawText: region.rawText,
-            },
-          });
+          .onConflictDoNothing();
+        const [storedRegion] = await tx
+          .select({ id: sourceRegions.id })
+          .from(sourceRegions)
+          .where(
+            and(
+              eq(sourceRegions.id, region.id),
+              eq(sourceRegions.sourceVersionId, region.sourceVersionId),
+              eq(sourceRegions.pageId, region.pageId),
+              eq(sourceRegions.parseRunId, pack.parseRunId),
+              eq(sourceRegions.kind, region.kind),
+              eq(sourceRegions.geometry, region.region),
+              region.rawText === null
+                ? isNull(sourceRegions.rawText)
+                : eq(sourceRegions.rawText, region.rawText),
+            ),
+          );
+        if (!storedRegion) {
+          throw new Error('Parsed region identity conflicts with the original');
+        }
       }
       for (const region of pack.regions) {
         if (region.relatedRegionIds.length) {
@@ -1405,11 +1391,6 @@ export function createSourceRepository(
       }
     },
     addProviderChunkMappings,
-    /**
-     * @param provider
-     * @param indexVersion
-     * @param providerChunkId
-     */
     async resolveProviderChunk(provider, indexVersion, providerChunkId) {
       const [row] = await tx
         .select()
@@ -1446,15 +1427,10 @@ export function createSourceRepository(
         canonicalRegionIds: regions.map((region) => region.id),
       };
     },
-    /** @param id */
     async getCitation(id) {
       return readCitation(tx, ownerId, id);
     },
     addCitation,
-    /**
-     * @param versionId
-     * @param entryId
-     */
     async linkKnowledgeDraft(versionId, entryId) {
       const version = await getVersion(versionId);
       if (!version) {

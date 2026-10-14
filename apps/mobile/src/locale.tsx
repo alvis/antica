@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 import type { FC, PropsWithChildren } from 'react';
 
+import type { KnowledgeSummary } from '@antica/contracts';
+
 export type Locale = 'en' | 'zh-Hant';
 
 const messages = {
@@ -35,6 +37,10 @@ const messages = {
   noItems: [
     'Your collection is empty. Add an item to begin.',
     '藏品庫目前沒有資料。新增藏品即可開始。',
+  ],
+  noMatchingItems: [
+    'No items match these filters. Clear filters to see your collection.',
+    '沒有符合篩選條件的藏品。清除篩選即可查看藏品。',
   ],
   capture: ['Capture', '拍攝'],
   import: ['Import file', '匯入檔案'],
@@ -126,7 +132,15 @@ const messages = {
   knowledgeDraft: ['Knowledge draft', '知識草稿'],
   history: ['History', '歷史背景'],
   scope: ['Scope', '適用範圍'],
+  noScopeInfo: [
+    'No scope information has been recorded for this entry.',
+    '這則知識尚未記錄適用範圍。',
+  ],
   methods: ['Inspection methods', '檢查方法'],
+  noMethodInfo: [
+    'No inspection methods have been recorded for this entry.',
+    '這則知識尚未記錄檢查方法。',
+  ],
   examples: ['Reference examples', '參考例圖'],
   newResearch: ['New research', '新增研究'],
   question: ['Research question', '研究問題'],
@@ -141,6 +155,7 @@ const messages = {
   loading: ['Loading…', '載入中…'],
   retry: ['Retry', '重試'],
   empty: ['Nothing here yet.', '目前沒有資料。'],
+  referencedObservation: ['Referenced observation', '所參照的觀察'],
   all: ['All', '全部'],
   more: ['More', '更多'],
   previousPage: ['Previous page', '上一頁'],
@@ -206,6 +221,10 @@ const messages = {
   startCheck: ['Start check', '開始實查'],
   viewMethod: ['View method', '查看方法'],
   error: ['Something went wrong.', '發生錯誤。'],
+  readFailed: [
+    'This page could not load. Check your connection and try again.',
+    '無法載入此頁。請檢查網路連線後重試。',
+  ],
   offline: ['Connect to the internet and retry.', '請連線後重試。'],
   uploadFailed: [
     'This file did not upload. Retry this file.',
@@ -255,9 +274,49 @@ const messages = {
   preparedFrame: ['Prepared video frame', '已擷取的影片畫格'],
   useFrame: ['Use frame as evidence', '將畫格用作證據'],
   notApplicable: ['Not applicable', '不適用'],
+  kindManufacture: ['Manufacture', '製作工藝'],
+  kindMotif: ['Motif', '紋飾'],
+  kindMark: ['Mark', '款識'],
+  kindSurface: ['Surface', '表面'],
+  kindCondition: ['Condition', '狀況'],
+  kindDamage: ['Damage', '損傷'],
+  kindRepair: ['Repair', '修補'],
+  kindRestoration: ['Restoration', '修復'],
+  kindInspection: ['Inspection', '檢查'],
+  kindOther: ['Other', '其他'],
 } as const;
 
+/** key for a localized mobile message */
 export type MessageKey = keyof typeof messages;
+
+const knowledgeKindKeys = {
+  material: 'material',
+  manufacture: 'kindManufacture',
+  motif: 'kindMotif',
+  mark: 'kindMark',
+  surface: 'kindSurface',
+  condition: 'kindCondition',
+  damage: 'kindDamage',
+  repair: 'kindRepair',
+  restoration: 'kindRestoration',
+  inspection: 'kindInspection',
+  period: 'period',
+  object_type: 'type',
+  other: 'kindOther',
+} as const satisfies Record<KnowledgeSummary['kinds'][number], MessageKey>;
+
+/**
+ * localizes knowledge category metadata without changing authored content
+ * @param kind category stored with the knowledge entry
+ * @param t translation function for message keys
+ * @returns localized category label
+ */
+export function localizeKnowledgeKind(
+  kind: KnowledgeSummary['kinds'][number],
+  t: (key: MessageKey) => string,
+): string {
+  return t(knowledgeKindKeys[kind]);
+}
 
 const proposalFieldKeys = {
   name: 'name',
@@ -268,6 +327,12 @@ const proposalFieldKeys = {
   collectorJudgment: 'collectorJudgment',
 } as const satisfies Record<string, MessageKey>;
 
+/**
+ * localizes a proposal field name
+ * @param field proposal field to display
+ * @param t translation function for message keys
+ * @returns localized field name
+ */
 export function localizeProposalField(
   field: keyof typeof proposalFieldKeys,
   t: (key: MessageKey) => string,
@@ -307,11 +372,18 @@ const statusKeys = {
   not_applicable: 'notApplicable',
 } as const satisfies Record<string, MessageKey>;
 
+/**
+ * localizes a known status or formats its fallback label
+ * @param value status returned by the API
+ * @param t translation function for message keys
+ * @returns localized or fallback status label
+ */
 export function localizeStatus(
   value: string,
   t: (key: MessageKey) => string,
 ): string {
   const key = (statusKeys as Partial<Record<string, MessageKey>>)[value];
+
   return key ? t(key) : value.replaceAll('_', ' ');
 }
 
@@ -356,7 +428,11 @@ export const LocaleProvider: FC<PropsWithChildren> = ({ children }) => {
   );
 };
 
-/** */
+/**
+ * returns the active mobile locale and translation function
+ * @returns locale state and translation function
+ * @throws {Error} when LocaleProvider is missing
+ */
 export function useLocale(): LocaleContextValue {
   const value = useContext(localeContext);
   if (value === null) {

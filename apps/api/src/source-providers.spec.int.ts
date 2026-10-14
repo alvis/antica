@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import {
   sourceAcceptedSchema,
@@ -8,18 +8,15 @@ import {
   uploadSessionSchema,
 } from '@antica/contracts';
 
-import { createHttpFixture } from './fixtures/http.js';
+import { createHttpTest } from './fixtures/http/test.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['source-providers']!);
 
 describe('Local source provider composition', () => {
-  it('should retain an uploaded book page and persist parser limitations through the composed drain', async () => {
+  it('should retain an uploaded book page and persist parser limitations through the composed drain', async ({
+    fixture,
+  }) => {
     const intakeKey = randomUUID();
     const bytes = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGNIn90ORww4OQBl8BJtnUF/dAAAAABJRU5ErkJggg==',

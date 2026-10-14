@@ -1,10 +1,14 @@
+import { Redirect } from 'expo-router';
+
+import { useEffect, useState } from 'react';
+
+import { Text, View } from 'react-native';
+
 import { ActionButton, TextField, styles } from '@antica/ui';
+
 import { authClient, useAuth } from '../auth';
 import { Screen } from '../components/Screen';
 import { useLocale } from '../locale';
-import { Redirect } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
 
 type Stage = 'welcome' | 'phone' | 'code' | 'expired';
 

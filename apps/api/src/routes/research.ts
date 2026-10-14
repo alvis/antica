@@ -45,7 +45,7 @@ export function createResearchRoutes(
 }
 
 /**
- * Mounts visual search and explicit research operations.
+ * mounts visual search and explicit research operations
  * @param router API router receiving the endpoints
  * @param research persistent research operations
  * @param images owner-scoped visual retrieval operations
@@ -87,7 +87,7 @@ function registerResearchRoutes(
 }
 
 /**
- * Mounts saved notes and reference adoption operations.
+ * mounts saved notes and reference adoption operations
  * @param router API router receiving the endpoints
  * @param research persistent research operations
  */

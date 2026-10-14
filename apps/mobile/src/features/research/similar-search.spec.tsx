@@ -90,6 +90,20 @@ const collectionMatch = {
   sourceTitle: null,
   contributorNames: [],
 };
+const nextMatch = {
+  ...match,
+  ref: {
+    ...match.ref,
+    referenceImageId: '00000000-0000-4000-8000-000000000097',
+  },
+  sourceTitle: 'Second catalog plate',
+};
+const nextComparison = {
+  ...comparison,
+  comparisonId: '00000000-0000-4000-8000-000000000098',
+  selected: nextMatch.ref,
+  similaritiesZhHant: ['Matching rim'],
+};
 
 it('should search the selected scope, compare a source match and save its locator as a reference', async () => {
   jest
@@ -143,6 +157,67 @@ it('should search the selected scope, compare a source match and save its locato
   await waitFor(() =>
     expect(screen.queryByLabelText('Description')).toBeNull(),
   );
+});
+
+it('should discard the previous comparison while another match is pending or fails and save only its successful retry', async () => {
+  const pending = Promise.withResolvers<unknown>();
+  const replies = [
+    { ...result, items: [match, nextMatch] },
+    comparison,
+    pending.promise,
+    nextComparison,
+    collectionRecord,
+  ].values();
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ anchorId, recordId: collectionRecord.id });
+  const view = await renderMobile(<SimilarRoute />, {
+    get: async () => collectionRecord,
+    post: async () => replies.next().value,
+  });
+  await fireEvent.press(screen.getByRole('button', { name: 'Search' }));
+  expect(await screen.findByText(nextMatch.sourceTitle)).toBeTruthy();
+  await fireEvent.press(screen.getAllByRole('button', { name: 'Compare' })[0]);
+  await waitFor(() =>
+    expect(screen.getByText('Matching silhouette')).toBeTruthy(),
+  );
+  expect(screen.getByRole('button', { name: 'Add reference' })).toBeEnabled();
+  await fireEvent.press(screen.getAllByRole('button', { name: 'Compare' })[1]);
+  const previousSummaryWhilePending = screen.queryByText('Matching silhouette');
+  const saveWhilePending = screen.queryByRole('button', {
+    name: 'Add reference',
+  });
+  pending.reject(new Error('Comparison unavailable'));
+  await waitFor(() =>
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Comparison unavailable',
+    ),
+  );
+  expect(previousSummaryWhilePending).toBeNull();
+  expect(saveWhilePending).toBeNull();
+  expect(screen.queryByText('Matching silhouette')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Add reference' })).toBeNull();
+  await fireEvent.press(screen.getAllByRole('button', { name: 'Compare' })[1]);
+  await waitFor(() => expect(screen.getByText('Matching rim')).toBeTruthy());
+  await fireEvent.press(screen.getByRole('button', { name: 'Add reference' }));
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: 'Add reference' })).toBeNull(),
+  );
+  expect(
+    view.commands.mock.calls
+      .filter(([path]) => path === '/v1/references')
+      .map(([, , request]) => request.body),
+  ).toEqual([
+    expect.objectContaining({
+      reference: {
+        kind: 'source',
+        locator,
+        referenceImageId: nextMatch.ref.referenceImageId,
+      },
+      comparisonId: nextComparison.comparisonId,
+    }),
+  ]);
+  view.client.clear();
 });
 
 it('should prevent saving an unlocated source match', async () => {

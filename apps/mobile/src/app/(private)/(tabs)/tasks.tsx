@@ -1,12 +1,16 @@
+import { useQuery } from '@tanstack/react-query';
+
+import { useRouter } from 'expo-router';
+
+import { Text, View } from 'react-native';
+
+import { taskPageSchema } from '@antica/contracts';
 import { ActionButton, styles } from '@antica/ui';
+
 import { useAuth } from '../../../auth';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
 import { localizeStatus, useLocale } from '../../../locale';
-import { taskPageSchema } from '@antica/contracts';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { Text, View } from 'react-native';
 
 export default function TasksRoute() {
   const router = useRouter();

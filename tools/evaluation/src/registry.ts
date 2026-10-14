@@ -1,9 +1,9 @@
+import { readFile } from 'node:fs/promises';
+
 import { z } from 'zod';
 
 import { modelCapabilitiesSchema, modelRoleSchema } from '@antica/contracts';
 import { createAiSdkModels } from '@antica/platform/ai';
-
-import { readFile } from 'node:fs/promises';
 
 import type { ModelAdapters } from '@antica/platform/ai';
 

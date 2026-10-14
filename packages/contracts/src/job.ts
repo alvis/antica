@@ -58,7 +58,7 @@ export type JobEnvelope<T = unknown> = {
   readonly updatedAt: string;
   readonly result: T | null;
 };
-/** Polls lifecycle state while a resource-specific GET supplies the authoritative result. */
+/** polls lifecycle state while a resource-specific GET supplies the authoritative result */
 export const jobStatusEnvelopeSchema = jobEnvelopeSchema(z.unknown());
 export const jobEventSchema = z.strictObject({
   eventId: entityIdSchema,

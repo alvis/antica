@@ -1,8 +1,8 @@
-const cancelledSelection = { canceled: true, assets: null } as const;
+const canceledSelection = { canceled: true, assets: null } as const;
 
 /**
- * Reports unavailable native camera permission in the browser fixture.
- * @returns A denied camera permission result.
+ * reports unavailable native camera permission in the browser fixture
+ * @returns a denied camera permission result
  */
 export async function requestCameraPermissionsAsync(): Promise<{
   granted: false;
@@ -11,19 +11,19 @@ export async function requestCameraPermissionsAsync(): Promise<{
 }
 
 /**
- * Leaves camera capture cancelled when Storybook runs in a browser.
- * @returns A cancelled camera selection.
+ * leaves camera capture canceled when Storybook runs in a browser
+ * @returns a canceled camera selection
  */
-export async function launchCameraAsync(): Promise<typeof cancelledSelection> {
-  return cancelledSelection;
+export async function launchCameraAsync(): Promise<typeof canceledSelection> {
+  return canceledSelection;
 }
 
 /**
- * Leaves native-library selection cancelled in the browser fixture.
- * @returns A cancelled image-library selection.
+ * leaves native-library selection canceled in the browser fixture
+ * @returns a canceled image-library selection
  */
 export async function launchImageLibraryAsync(): Promise<
-  typeof cancelledSelection
+  typeof canceledSelection
 > {
-  return cancelledSelection;
+  return canceledSelection;
 }

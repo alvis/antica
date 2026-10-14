@@ -2,8 +2,9 @@ import { expect, it, jest } from '@jest/globals';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
+import { runId } from '../../saved-analysis.spec.fixtures';
 
-import { actionableRun, runId } from './analysis.spec.fixtures';
+import { actionableRun } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));

@@ -1,21 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import { recordDetailSchema } from '@antica/contracts';
 
-import { createHttpFixture } from '../fixtures/http.js';
+import { createHttpTest } from '../fixtures/http/test.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['routes/record']!);
 
 describe('fn:createRecordRoutes', () => {
-  it('should persist an idempotent create and revision-checked patch through the authenticated API', async () => {
+  it('should persist an idempotent create and revision-checked patch through the authenticated API', async ({
+    fixture,
+  }) => {
     const key = randomUUID();
     const input = { unitKind: 'single', name: 'Celadon / 青釉瓶' };
     const created = await fixture.request('/v1/records', 'POST', input, key);
@@ -58,7 +55,7 @@ describe('fn:createRecordRoutes', () => {
     expect((await fixture.request('/v1/records')).status).toBe(200);
   });
 
-  it.each([
+  it.for([
     ['POST', '/v1/records', {}, true],
     ['POST', '/v1/records', { unitKind: 'single' }, false],
     ['PATCH', '/v1/records/missing', {}, true],
@@ -71,7 +68,7 @@ describe('fn:createRecordRoutes', () => {
     ['GET', '/v1/records?limit=0', undefined, false],
   ] as const)(
     'should reject invalid %s %s without changing the collection',
-    async (...[method, path, input, hasKey]) => {
+    async ([method, path, input, hasKey], { fixture }) => {
       const before = await (await fixture.request('/v1/records')).json();
       const response = await fixture.request(
         path,

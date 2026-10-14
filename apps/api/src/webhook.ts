@@ -18,11 +18,20 @@ interface SignedLlamaEvent {
   readonly payload: Record<string, unknown>;
 }
 
+/** counts resolved provider callbacks inspected during one drain */
+export interface LlamaWebhookDrainReport {
+  readonly inspected: number;
+  readonly delivered: number;
+  readonly deferred: number;
+}
+
 /**
- * Verifies LlamaParse's documented LC-Signature over the raw bytes before storage.
- * @param db
- * @param signingSecret
- * @param now
+ * creates a receiver that verifies LlamaParse's documented LC-Signature over raw bytes before storage
+ * @param db webhook persistence database
+ * @param signingSecret secret used to verify provider signatures
+ * @param now current time provider
+ * @returns request handler for signed provider callbacks
+ * @throws when the signing secret is empty
  */
 export function createLlamaWebhookReceiver(
   db: Database,
@@ -157,11 +166,12 @@ async function readBoundedBody(
 }
 
 /**
- * Resumes only trusted mapped source jobs; early callbacks stay in the inbox.
- * @param db
- * @param sourceHandler
- * @param now
- * @param limit
+ * resumes only trusted mapped source jobs; early callbacks stay in the inbox
+ * @param db webhook persistence database
+ * @param sourceHandler operation that resumes an owned source job
+ * @param now current time provider
+ * @param limit maximum number of resolved callbacks to inspect
+ * @returns inspected, delivered, and deferred callback counts
  */
 export async function drainLlamaWebhooks(
   db: Database,
@@ -171,11 +181,7 @@ export async function drainLlamaWebhooks(
   ) => Promise<OperationResult<void>>,
   now: () => string,
   limit = 100,
-): Promise<{
-  readonly inspected: number;
-  readonly delivered: number;
-  readonly deferred: number;
-}> {
+): Promise<LlamaWebhookDrainReport> {
   const events = await listResolvedProviderWebhooks(db, limit);
   const transaction = createTransactionPort(db);
   let delivered = 0;

@@ -186,7 +186,12 @@ function createKnowledgeServices(
   const { transaction, clock, ids } = persistence;
 
   return {
-    sources: createSourceService(transaction, clock, ids, persistence.storage),
+    sources: createSourceService({
+      transaction,
+      clock,
+      ids,
+      signer: persistence.storage,
+    }),
     knowledge: createKnowledgeService(transaction, clock, ids),
     research: createResearchService(transaction, clock, ids),
     images: createImageSearchService({

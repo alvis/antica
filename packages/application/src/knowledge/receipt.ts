@@ -12,7 +12,7 @@ export function requestFingerprint(value: unknown): string {
 }
 
 /**
- * Sorts object keys recursively so equivalent JSON objects hash identically.
+ * sorts object keys recursively so equivalent JSON objects hash identically
  * @param value nested JSON-compatible value to normalize
  * @returns value with deterministic object key order
  */

@@ -1,8 +1,9 @@
 /**
- * Enforces an Expo runtime assumption in the browser story environment.
- * @param condition Value expected to be truthy.
- * @param format Optional message with percent-s placeholders.
- * @param substitutions Values inserted into the message placeholders.
+ * enforces an Expo runtime assumption in the browser story environment
+ * @param condition value expected to be truthy
+ * @param format optional message with percent-s placeholders
+ * @param substitutions values inserted into the message placeholders
+ * @throws {Error} when the condition is falsy
  */
 export default function invariant(
   condition: unknown,

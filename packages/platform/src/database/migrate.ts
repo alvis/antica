@@ -2,11 +2,14 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDatabase } from './connection.js';
 
+/** database connection used for committed PostgreSQL migrations */
 export interface MigrateParams {
   readonly url: string;
 }
 
-/** applies committed SQL migrations to a PostgreSQL database */
+/**
+ * applies committed SQL migrations to a PostgreSQL database
+ */
 export async function migrateDatabase({ url }: MigrateParams): Promise<void> {
   const connection = createDatabase({ url, maxConnections: 1 });
   try {

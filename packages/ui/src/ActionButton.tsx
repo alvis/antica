@@ -4,6 +4,7 @@ import { styles } from './theme.js';
 
 import type { FC } from 'react';
 
+/** properties for an accessible collection action */
 export type ActionButtonProps = {
   label: string;
   onPress: () => void;
@@ -12,13 +13,13 @@ export type ActionButtonProps = {
 };
 
 /**
- * Accessible Antica action with primary and secondary presentation.
- * @param root0 Button properties.
- * @param root0.label Visible and spoken action label.
- * @param root0.onPress Action handler.
- * @param root0.disabled Prevents interaction when true.
- * @param root0.secondary Uses the outlined presentation when true.
- * @returns The native button.
+ * renders an accessible action with primary and secondary presentation
+ * @param root0 button properties
+ * @param root0.label visible and spoken action label
+ * @param root0.onPress action handler
+ * @param root0.disabled prevents interaction when true
+ * @param root0.secondary uses the outlined presentation when true
+ * @returns the native button
  */
 export const ActionButton: FC<ActionButtonProps> = ({
   label,

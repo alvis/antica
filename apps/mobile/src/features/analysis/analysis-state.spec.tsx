@@ -4,19 +4,20 @@ import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { analysisRunDetailSchema } from '@antica/contracts';
 
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
-
-import { media } from '../media/media.spec.fixtures';
-
 import {
+  run,
+  runId,
   evidenceId,
   observationId,
   pageId,
   sourceId,
   versionId,
-  mixed,
-  supported,
-} from './analysis-reference.spec.fixtures';
-import { run, runId } from './analysis.spec.fixtures';
+  createReferencedRun,
+} from '../../saved-analysis.spec.fixtures';
+
+import { media } from '../media/media.spec.fixtures';
+
+import { supported } from './analysis-reference.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
@@ -29,6 +30,8 @@ jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
 }));
+
+const mixed = createReferencedRun(media.asset.id);
 
 it('should expose failed analysis recovery without automatically launching another run', async () => {
   const failed = analysisRunDetailSchema.parse({

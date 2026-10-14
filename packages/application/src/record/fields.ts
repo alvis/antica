@@ -3,8 +3,9 @@ import { recordFieldsSchema } from '@antica/contracts';
 import type { RecordDetail, RecordFields } from '@antica/contracts';
 
 /**
- * Projects the editable fields from a record without leaking lifecycle metadata.
- * @param record
+ * projects the editable fields from a record without leaking lifecycle metadata
+ * @param record supplies the current record and its editable values
+ * @returns schema-validated fields available to an edit draft
  */
 export function recordFieldsOf(record: RecordDetail): RecordFields {
   return recordFieldsSchema.parse({

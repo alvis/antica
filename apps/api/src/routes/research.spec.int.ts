@@ -16,6 +16,7 @@ import { createResearchRoutes } from './research.js';
 
 import type {
   OperationResult,
+  ResearchModelPort,
   TransactionPort,
 } from '@antica/application/ports';
 import type {
@@ -405,7 +406,6 @@ describe('Research HTTP validation', () => {
     const transaction = createTransactionPort(database.db);
     const research = createResearchService(transaction, clock, ids);
     let searches = 0;
-    let drafts = 0;
     const draft = {
       revision: 1,
       titleZhHant: '資料不足',
@@ -419,6 +419,44 @@ describe('Research HTTP validation', () => {
       citations: [],
       unresolvedQuestionsZhHant: ['尚無可靠來源'],
     };
+    const draftModel = vi.fn<ResearchModelPort['draft']>(async () => ({
+      success: true,
+      data: {
+        value: draft,
+        invocation: {
+          requestedModelId: 'test',
+          effectiveModelId: 'test',
+          provider: 'test',
+          providerModelVersion: null,
+          adapterKind: 'development',
+          capabilities: {
+            textInput: true,
+            imageInput: false,
+            audioInput: false,
+            structuredOutput: true,
+            toolCalling: false,
+          },
+          role: 'research',
+          profileVersion: 'v1',
+          promptVersion: 'v1',
+          schemaVersion: 'v1',
+          effectiveOptions: {},
+          latencyMs: 1,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          finishReason: 'stop',
+          citationCheck: { valid: true, rejectedReferenceIds: [] },
+        },
+      },
+    }));
+    draftModel.mockResolvedValueOnce({
+      success: false,
+      error: {
+        code: 'PROVIDER_UNAVAILABLE',
+        message: 'Temporary failure',
+        retryable: true,
+      },
+      audit: { invocation: null, rawOutput: null },
+    });
     try {
       const accepted = value(await research.submit(ownerId, researchInput()));
       const handler = createResearchHandler({
@@ -455,51 +493,7 @@ describe('Research HTTP validation', () => {
             },
           }),
         },
-        model: {
-          draft: async () => {
-            drafts += 1;
-
-            return drafts === 1
-              ? {
-                  success: false,
-                  error: {
-                    code: 'PROVIDER_UNAVAILABLE',
-                    message: 'Temporary failure',
-                    retryable: true,
-                  },
-                  audit: { invocation: null, rawOutput: null },
-                }
-              : {
-                  success: true,
-                  data: {
-                    value: draft,
-                    invocation: {
-                      requestedModelId: 'test',
-                      effectiveModelId: 'test',
-                      provider: 'test',
-                      providerModelVersion: null,
-                      adapterKind: 'development',
-                      capabilities: {
-                        textInput: true,
-                        imageInput: false,
-                        audioInput: false,
-                        structuredOutput: true,
-                        toolCalling: false,
-                      },
-                      role: 'research',
-                      profileVersion: 'v1',
-                      promptVersion: 'v1',
-                      schemaVersion: 'v1',
-                      effectiveOptions: {},
-                      latencyMs: 1,
-                      usage: { inputTokens: 0, outputTokens: 0 },
-                      finishReason: 'stop',
-                      citationCheck: { valid: true, rejectedReferenceIds: [] },
-                    },
-                  },
-                };
-          },
-        },
+        model: { draft: draftModel },
         index: {
           embeddingModelId: 'test',
           dimensions: 3,
@@ -519,7 +513,10 @@ describe('Research HTTP validation', () => {
         value(await research.get(ownerId, accepted.researchId)),
       ).toMatchObject({ state: { kind: 'succeeded' }, draft, notes: [] });
       value(await handler(ownerId, accepted.jobId));
-      expect({ searches, drafts }).toEqual({ searches: 1, drafts: 2 });
+      expect({ searches, drafts: draftModel.mock.calls.length }).toEqual({
+        searches: 1,
+        drafts: 2,
+      });
       await database.close();
       const reopened = createDatabase({ url: databaseUrl });
       try {

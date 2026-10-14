@@ -1,8 +1,13 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useAuth } from '../../auth';
-import { QueryState } from '../../components/QueryState';
-import { Screen } from '../../components/Screen';
-import { localizeStatus, useLocale } from '../../locale';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { randomUUID } from 'expo-crypto';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { Image, Linking, Text, View } from 'react-native';
+
 import {
   analysisAcceptedSchema,
   cursorPageSchema,
@@ -14,15 +19,18 @@ import {
   referencePageSchema,
   requestAnalysisSchema,
 } from '@antica/contracts';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { randomUUID } from 'expo-crypto';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Image, Linking, Text, View } from 'react-native';
+import { ActionButton, TextField, styles } from '@antica/ui';
 
-import type { MediaDetail } from '@antica/contracts';
+import { useAuth } from '../../auth';
+import { QueryState } from '../../components/QueryState';
+import { Screen } from '../../components/Screen';
+import { localizeStatus, useLocale } from '../../locale';
 
 import type { FC } from 'react';
+
+import type { ScrollView } from 'react-native';
+
+import type { MediaDetail } from '@antica/contracts';
 
 export type RecordContainerProps = { recordId: string };
 
@@ -35,6 +43,13 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   const { api } = useAuth();
   const { t } = useLocale();
   const queryClient = useQueryClient();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const observationsSectionLayout = useRef<{
+    recordId: string;
+    y: number;
+  } | null>(null);
+  const observationLayouts = useRef(new Map<string, number>());
+  const scrolledObservation = useRef<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -70,6 +85,33 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
         api.get(`/v1/media/${id}`, mediaDetailSchema, signal),
     })),
   });
+
+  const scrollToReferencedObservation = useCallback((): void => {
+    if (!observationId) {
+      return;
+    }
+    const key = `${recordId}:${observationId}`;
+    const section = observationsSectionLayout.current;
+    const observationY = observationLayouts.current.get(key);
+    if (
+      section?.recordId !== recordId ||
+      observationY === undefined ||
+      scrolledObservation.current === key
+    ) {
+      return;
+    }
+    scrolledObservation.current = key;
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(0, section.y + observationY - styles.content.gap),
+        animated: false,
+      });
+    });
+  }, [observationId, recordId]);
+
+  useEffect(() => {
+    scrollToReferencedObservation();
+  }, [scrollToReferencedObservation]);
 
   const analyze = async (): Promise<void> => {
     if (!record.data || busy) {
@@ -110,6 +152,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
         idempotencyKey: randomUUID(),
       });
       await queryClient.invalidateQueries({ queryKey: ['record', recordId] });
+      await queryClient.invalidateQueries({ queryKey: ['records'] });
       setEditing(false);
     } catch (cause) {
       setError((cause as Error).message);
@@ -173,7 +216,8 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   return (
     <Screen
       title={record.data?.name ?? record.data?.code ?? t('collection')}
-      subtitle={record.data?.code}>
+      subtitle={record.data?.code}
+      scrollRef={scrollViewRef}>
       <QueryState
         loading={record.isPending}
         error={record.error}
@@ -293,22 +337,60 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                 />
               )}
             </View>
-            <View style={styles.card}>
+            <View
+              style={styles.card}
+              onLayout={(event) => {
+                observationsSectionLayout.current = {
+                  recordId,
+                  y: event.nativeEvent.layout.y,
+                };
+                scrollToReferencedObservation();
+              }}>
               <Text style={styles.heading}>{t('collectorObservations')}</Text>
-              {observations.data?.items.map((item) => (
-                <View
-                  key={item.id}
-                  style={
-                    item.id === observationId
-                      ? [
-                          styles.card,
-                          { borderColor: '#173D35', borderWidth: 2 },
-                        ]
-                      : undefined
-                  }>
-                  <Text style={styles.body}>{item.text}</Text>
-                </View>
-              ))}
+              {observations.data?.items.map((item) => {
+                const referenced = item.id === observationId;
+
+                return (
+                  <View
+                    key={item.id}
+                    accessible={referenced}
+                    accessibilityRole={referenced ? 'text' : undefined}
+                    accessibilityLabel={
+                      referenced
+                        ? `${t('referencedObservation')}: ${item.text}`
+                        : undefined
+                    }
+                    accessibilityState={
+                      referenced ? { selected: true } : undefined
+                    }
+                    onLayout={
+                      referenced
+                        ? (event) => {
+                            observationLayouts.current.set(
+                              `${recordId}:${item.id}`,
+                              event.nativeEvent.layout.y,
+                            );
+                            scrollToReferencedObservation();
+                          }
+                        : undefined
+                    }
+                    style={
+                      referenced
+                        ? [
+                            styles.card,
+                            { borderColor: '#173D35', borderWidth: 2 },
+                          ]
+                        : undefined
+                    }>
+                    {referenced && (
+                      <Text style={styles.label}>
+                        {t('referencedObservation')}
+                      </Text>
+                    )}
+                    <Text style={styles.body}>{item.text}</Text>
+                  </View>
+                );
+              })}
               {observations.data?.items.length === 0 && (
                 <Text style={styles.secondary}>{t('empty')}</Text>
               )}

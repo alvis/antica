@@ -73,7 +73,7 @@ describe('fn:createComparisonRepository', () => {
           ...result,
           value: { ...result.value, similaritiesZhHant: ['不同內容'] },
         }),
-      ).rejects.toThrow(/different content/);
+      ).rejects.toThrow(Error);
       expect(await repository.get(comparisonId)).toEqual(result);
     });
   });

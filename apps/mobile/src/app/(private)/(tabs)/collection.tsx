@@ -1,17 +1,49 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useAuth } from '../../../auth';
-import { QueryState } from '../../../components/QueryState';
-import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../locale';
+import { useQuery } from '@tanstack/react-query';
+
+import { useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { FlatList, Image, Pressable, Text, View } from 'react-native';
+
 import {
   knowledgePageSchema,
   locationsSchema,
   recordPageSchema,
 } from '@antica/contracts';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { FlatList, Image, Pressable, Text, View } from 'react-native';
+import { ActionButton, TextField, styles } from '@antica/ui';
+
+import { useAuth } from '../../../auth';
+import { QueryState } from '../../../components/QueryState';
+import { Screen } from '../../../components/Screen';
+import { useLocale } from '../../../locale';
+
+import type { FC } from 'react';
+
+type Freshness = 'all' | 'unanalyzed' | 'outdated';
+
+export type FreshnessOptionProps = {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+};
+
+const FreshnessOption: FC<FreshnessOptionProps> = ({
+  label,
+  selected,
+  onPress,
+}) => (
+  <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={label}
+    accessibilityState={{ selected }}
+    onPress={onPress}
+    style={selected ? styles.button : styles.secondaryButton}>
+    <Text style={selected ? styles.buttonText : styles.secondaryButtonText}>
+      {label}
+    </Text>
+  </Pressable>
+);
 
 export default function CollectionRoute() {
   const router = useRouter();
@@ -20,9 +52,7 @@ export default function CollectionRoute() {
   const [text, setText] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
-  const [freshness, setFreshness] = useState<'all' | 'unanalyzed' | 'outdated'>(
-    'all',
-  );
+  const [freshness, setFreshness] = useState<Freshness>('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterKind, setFilterKind] = useState<
     'object_type' | 'material' | 'period'
@@ -131,6 +161,7 @@ export default function CollectionRoute() {
   };
 
   const clearFilters = (): void => {
+    setText('');
     setCategoryIds([]);
     setMaterialIds([]);
     setPeriodIds([]);
@@ -141,6 +172,16 @@ export default function CollectionRoute() {
     resetPage();
   };
 
+  const hasRecordFilters =
+    Boolean(text.trim()) ||
+    freshness !== 'all' ||
+    categoryIds.length > 0 ||
+    materialIds.length > 0 ||
+    periodIds.length > 0 ||
+    locationId !== null ||
+    Boolean(tag.trim()) ||
+    pending;
+
   return (
     <Screen title={t('collection')} scrollable={false}>
       <FlatList
@@ -150,7 +191,11 @@ export default function CollectionRoute() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          <>
+          <View
+            style={{
+              gap: styles.content.gap,
+              marginBottom: styles.content.gap,
+            }}>
             <View style={styles.row}>
               <ActionButton
                 label={t('addItem')}
@@ -162,146 +207,150 @@ export default function CollectionRoute() {
                 secondary
               />
             </View>
-            <ActionButton
-              label={t('filters')}
-              onPress={() => setFiltersOpen((value) => !value)}
-              secondary
-            />
-            {filtersOpen && (
-              <View style={styles.card}>
-                <Text style={styles.heading}>{t('filters')}</Text>
-                <View style={styles.row}>
-                  <ActionButton
-                    label={t('type')}
-                    onPress={() => setFilterKind('object_type')}
-                    secondary={filterKind !== 'object_type'}
-                  />
-                  <ActionButton
-                    label={t('material')}
-                    onPress={() => setFilterKind('material')}
-                    secondary={filterKind !== 'material'}
-                  />
-                  <ActionButton
-                    label={t('period')}
-                    onPress={() => setFilterKind('period')}
-                    secondary={filterKind !== 'period'}
-                  />
-                </View>
-                <TextField
-                  label={t('search')}
-                  value={filterTerm}
-                  onChangeText={setFilterTerm}
-                />
-                {taxonomy.data?.items.map((entry) => (
-                  <ActionButton
-                    key={entry.id}
-                    label={entry.titleZhHant}
-                    onPress={() => selectFilter(entry.id, entry.titleZhHant)}
-                    secondary
-                  />
-                ))}
-                {[...categoryIds, ...materialIds, ...periodIds].map((id) => (
-                  <Text key={id} style={styles.secondary}>
-                    {selectedLabels[id] ?? id}
-                  </Text>
-                ))}
-                <Text style={styles.label}>{t('location')}</Text>
-                <View style={styles.row}>
-                  {locations.data?.map((location) => (
+            <View style={{ gap: styles.card.gap }}>
+              <ActionButton
+                label={t('filters')}
+                onPress={() => setFiltersOpen((value) => !value)}
+                secondary
+              />
+              {filtersOpen && (
+                <View style={styles.card}>
+                  <Text style={styles.heading}>{t('filters')}</Text>
+                  <View style={styles.row}>
                     <ActionButton
-                      key={location.id}
-                      label={location.label}
-                      onPress={() => {
-                        setLocationId(location.id);
-                        resetPage();
-                      }}
-                      secondary={locationId !== location.id}
+                      label={t('type')}
+                      onPress={() => setFilterKind('object_type')}
+                      secondary={filterKind !== 'object_type'}
+                    />
+                    <ActionButton
+                      label={t('material')}
+                      onPress={() => setFilterKind('material')}
+                      secondary={filterKind !== 'material'}
+                    />
+                    <ActionButton
+                      label={t('period')}
+                      onPress={() => setFilterKind('period')}
+                      secondary={filterKind !== 'period'}
+                    />
+                  </View>
+                  <TextField
+                    label={t('search')}
+                    value={filterTerm}
+                    onChangeText={setFilterTerm}
+                  />
+                  {taxonomy.data?.items.map((entry) => (
+                    <ActionButton
+                      key={entry.id}
+                      label={entry.titleZhHant}
+                      onPress={() => selectFilter(entry.id, entry.titleZhHant)}
+                      secondary
                     />
                   ))}
+                  {[...categoryIds, ...materialIds, ...periodIds].map((id) => (
+                    <Text key={id} style={styles.secondary}>
+                      {selectedLabels[id] ?? id}
+                    </Text>
+                  ))}
+                  <Text style={styles.label}>{t('location')}</Text>
+                  <View style={styles.row}>
+                    {locations.data?.map((location) => (
+                      <ActionButton
+                        key={location.id}
+                        label={location.label}
+                        onPress={() => {
+                          setLocationId(location.id);
+                          resetPage();
+                        }}
+                        secondary={locationId !== location.id}
+                      />
+                    ))}
+                  </View>
+                  <TextField
+                    label={t('tags')}
+                    value={tag}
+                    onChangeText={(value) => {
+                      setTag(value);
+                      resetPage();
+                    }}
+                  />
+                  <ActionButton
+                    label={t('pendingChecks')}
+                    onPress={() => {
+                      setPending((value) => !value);
+                      resetPage();
+                    }}
+                    secondary={!pending}
+                  />
+                  <Text style={styles.label}>{t('sort')}</Text>
+                  <View style={styles.row}>
+                    <ActionButton
+                      label={t('recent')}
+                      onPress={() => {
+                        setSort('updated');
+                        resetPage();
+                      }}
+                      secondary={sort !== 'updated'}
+                    />
+                    <ActionButton
+                      label={t('itemCode')}
+                      onPress={() => {
+                        setSort('code');
+                        resetPage();
+                      }}
+                      secondary={sort !== 'code'}
+                    />
+                    <ActionButton
+                      label={t('name')}
+                      onPress={() => {
+                        setSort('name');
+                        resetPage();
+                      }}
+                      secondary={sort !== 'name'}
+                    />
+                  </View>
+                  <ActionButton
+                    label={t('clearFilters')}
+                    onPress={clearFilters}
+                    secondary
+                  />
                 </View>
-                <TextField
-                  label={t('tags')}
-                  value={tag}
-                  onChangeText={(value) => {
-                    setTag(value);
-                    resetPage();
-                  }}
-                />
-                <ActionButton
-                  label={t('pendingChecks')}
+              )}
+            </View>
+            <View style={{ gap: styles.card.gap }}>
+              <TextField
+                label={t('search')}
+                value={text}
+                onChangeText={(value) => {
+                  setText(value);
+                  resetPage();
+                }}
+              />
+              <View style={styles.row}>
+                <FreshnessOption
+                  label={t('all')}
+                  selected={freshness === 'all'}
                   onPress={() => {
-                    setPending((value) => !value);
+                    setFreshness('all');
                     resetPage();
                   }}
-                  secondary={!pending}
                 />
-                <Text style={styles.label}>{t('sort')}</Text>
-                <View style={styles.row}>
-                  <ActionButton
-                    label={t('recent')}
-                    onPress={() => {
-                      setSort('updated');
-                      resetPage();
-                    }}
-                    secondary={sort !== 'updated'}
-                  />
-                  <ActionButton
-                    label={t('itemCode')}
-                    onPress={() => {
-                      setSort('code');
-                      resetPage();
-                    }}
-                    secondary={sort !== 'code'}
-                  />
-                  <ActionButton
-                    label={t('name')}
-                    onPress={() => {
-                      setSort('name');
-                      resetPage();
-                    }}
-                    secondary={sort !== 'name'}
-                  />
-                </View>
-                <ActionButton
-                  label={t('clearFilters')}
-                  onPress={clearFilters}
-                  secondary
+                <FreshnessOption
+                  label={t('notAnalyzed')}
+                  selected={freshness === 'unanalyzed'}
+                  onPress={() => {
+                    setFreshness('unanalyzed');
+                    resetPage();
+                  }}
+                />
+                <FreshnessOption
+                  label={t('newEvidence')}
+                  selected={freshness === 'outdated'}
+                  onPress={() => {
+                    setFreshness('outdated');
+                    resetPage();
+                  }}
                 />
               </View>
-            )}
-            <TextField
-              label={t('search')}
-              value={text}
-              onChangeText={(value) => {
-                setText(value);
-                resetPage();
-              }}
-            />
-            <View style={styles.row}>
-              <ActionButton
-                label={t('all')}
-                onPress={() => {
-                  setFreshness('all');
-                  resetPage();
-                }}
-                secondary
-              />
-              <ActionButton
-                label={t('notAnalyzed')}
-                onPress={() => {
-                  setFreshness('unanalyzed');
-                  resetPage();
-                }}
-                secondary
-              />
-              <ActionButton
-                label={t('newEvidence')}
-                onPress={() => {
-                  setFreshness('outdated');
-                  resetPage();
-                }}
-                secondary
-              />
             </View>
             <QueryState
               loading={page.isPending}
@@ -310,9 +359,16 @@ export default function CollectionRoute() {
               {page.data?.items.length === 0 && (
                 <View style={styles.card}>
                   <Text style={styles.body}>
-                    {text || freshness !== 'all' ? t('empty') : t('noItems')}
+                    {hasRecordFilters ? t('noMatchingItems') : t('noItems')}
                   </Text>
-                  {!text && (
+                  {hasRecordFilters && !filtersOpen && (
+                    <ActionButton
+                      label={t('clearFilters')}
+                      onPress={clearFilters}
+                      secondary
+                    />
+                  )}
+                  {!hasRecordFilters && (
                     <ActionButton
                       label={t('addItem')}
                       onPress={() => router.push('/capture')}
@@ -321,7 +377,7 @@ export default function CollectionRoute() {
                 </View>
               )}
             </QueryState>
-          </>
+          </View>
         }
         renderItem={({ item }) => (
           <Pressable

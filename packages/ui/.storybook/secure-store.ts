@@ -1,4 +1,3 @@
-/** Storybook browser fixture; values live only in this module's memory. */
 const values = new Map<string, string>();
 
 /**

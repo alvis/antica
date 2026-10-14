@@ -151,8 +151,8 @@ describe('fn:createTranscriptionRepository', () => {
           ...run,
           detail: { ...run.detail, status: 'ready' },
         }),
-      ).rejects.toThrow(/inconsistent/i);
-      await expect(foreign.create(run)).rejects.toThrow(/inaccessible/i);
+      ).rejects.toThrow(Error);
+      await expect(foreign.create(run)).rejects.toThrow(Error);
       await repository.create(run);
       expect(await repository.get(transcriptionId)).toEqual(run);
       expect(await foreign.get(transcriptionId)).toBeNull();

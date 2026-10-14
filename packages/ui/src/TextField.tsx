@@ -5,6 +5,7 @@ import { styles } from './theme.js';
 import type { FC } from 'react';
 import type { KeyboardTypeOptions } from 'react-native';
 
+/** properties for a labeled controlled native text field */
 export type TextFieldProps = {
   label: string;
   value: string;
@@ -16,16 +17,16 @@ export type TextFieldProps = {
 };
 
 /**
- * Labelled native text input with Antica field styling.
- * @param root0 Field properties.
- * @param root0.label Visible and spoken field label.
- * @param root0.value Current controlled value.
- * @param root0.onChangeText Receives edited text.
- * @param root0.keyboardType Native keyboard layout.
- * @param root0.multiline Allows multiple lines when true.
- * @param root0.editable Allows editing when true.
- * @param root0.autoComplete Native autofill hint.
- * @returns The labelled native input.
+ * renders a labeled native text input with collection field styling
+ * @param root0 field properties
+ * @param root0.label visible and spoken field label
+ * @param root0.value current controlled value
+ * @param root0.onChangeText receives edited text
+ * @param root0.keyboardType native keyboard layout
+ * @param root0.multiline allows multiple lines when true
+ * @param root0.editable allows editing when true
+ * @param root0.autoComplete native autofill hint
+ * @returns the labeled native input
  */
 export const TextField: FC<TextFieldProps> = ({
   label,

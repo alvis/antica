@@ -34,11 +34,12 @@ export interface EditDraftService {
 }
 
 /**
- * Freezes the collector's source text and exposes selective draft adoption.
- * @param transaction
- * @param selection
- * @param clock
- * @param ids
+ * creates commands for frozen edit requests and selective proposal adoption
+ * @param transaction provides owner-scoped records, drafts, jobs, and receipts
+ * @param selection identifies the model used for queued drafts
+ * @param clock timestamps draft and adoption changes
+ * @param ids creates job and outbox identifiers
+ * @returns service that submits drafts, reads results, and applies selected proposals with typed outcomes
  */
 export function createEditDraftService(
   transaction: TransactionPort,

@@ -4,20 +4,42 @@ import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { analysisRunDetailSchema } from '@antica/contracts';
 
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
+import { runId } from '../../saved-analysis.spec.fixtures';
 
-import { actionId, actionableRun, runId } from './analysis.spec.fixtures';
+import { actionId, actionableRun } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
-jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
-jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
-jest.mock('expo-crypto', () => ({
-  randomUUID:
-    jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID,
-}));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
-}));
+jest.mock(
+  '../../auth',
+  () =>
+    ({
+      useAuth: jest.fn<typeof import('../../auth').useAuth>(),
+    }) satisfies Partial<typeof import('../../auth')>,
+);
+jest.mock(
+  'expo-router',
+  () =>
+    ({
+      useRouter: jest.fn<typeof import('expo-router').useRouter>(),
+    }) satisfies Partial<typeof import('expo-router')>,
+);
+jest.mock(
+  'expo-crypto',
+  () =>
+    ({
+      randomUUID:
+        jest.requireActual<typeof import('node:crypto')>('node:crypto')
+          .randomUUID,
+    }) satisfies Partial<typeof import('expo-crypto')>,
+);
+jest.mock(
+  'expo-secure-store',
+  () =>
+    ({
+      getItemAsync: jest.fn(async () => null),
+      setItemAsync: jest.fn(async () => undefined),
+    }) satisfies Partial<typeof import('expo-secure-store')>,
+);
 
 it.each([
   { button: 'Evidence supplied', status: 'supplied' },

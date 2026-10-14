@@ -1,12 +1,15 @@
 import { sql } from 'drizzle-orm';
 import type { Database } from './connection.js';
 
+/** collector phone number and database for the OTP send cooldown */
 export interface OtpCooldownParams {
   readonly db: Database;
   readonly phoneNumber: string;
 }
 
-/** claims one OTP send per normalized phone number each sixty seconds */
+/**
+ * claims one OTP send per normalized phone number each sixty seconds
+ */
 export async function claimOtpSend({
   db,
   phoneNumber,

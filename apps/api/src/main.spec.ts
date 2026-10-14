@@ -1,5 +1,5 @@
-import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
+import { Server } from 'node:http';
 
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,18 +9,30 @@ import '@antica/platform';
 import '@antica/platform/ai';
 import 'inngest/hono';
 
+import type { ApplicationRuntime } from './composition.js';
+import type { ApiEnv } from './http.js';
 import type { ApplicationDrainReport } from './jobs.js';
 
 const boundary = vi.hoisted(() => ({
-  compose: vi.fn(),
-  listen: vi.fn(),
+  compose: vi.fn<(typeof import('./composition.js'))['composeApplication']>(),
+  listen: vi.fn<(typeof import('@hono/node-server'))['serve']>(),
 }));
 
-vi.mock('node:fs', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('node:fs')>()),
-  existsSync: vi.fn(() => false),
-}));
-vi.mock('@hono/node-server', () => ({ serve: boundary.listen }));
+vi.mock(
+  'node:fs',
+  async (importOriginal) =>
+    ({
+      ...(await importOriginal<typeof import('node:fs')>()),
+      existsSync: vi.fn(() => false),
+    }) satisfies Partial<typeof import('node:fs')>,
+);
+vi.mock(
+  '@hono/node-server',
+  () =>
+    ({ serve: boundary.listen }) satisfies Partial<
+      typeof import('@hono/node-server')
+    >,
+);
 vi.mock('./composition.js', async () => {
   const { readApplicationConfig, readImageConfiguration } =
     await import('./configuration.js');
@@ -29,7 +41,7 @@ vi.mock('./composition.js', async () => {
     readApplicationConfig,
     readImageConfiguration,
     composeApplication: boundary.compose,
-  };
+  } satisfies Partial<typeof import('./composition.js')>;
 });
 
 const environment = {
@@ -173,9 +185,11 @@ describe('cmd:api startup', { timeout: 30_000 }, () => {
     async (failure) => {
       const harness = prepareStartup();
       if (failure === 'server close') {
-        harness.serverClose.mockImplementationOnce((callback) =>
-          callback(new Error('close failed')),
-        );
+        harness.serverClose.mockImplementationOnce((callback) => {
+          callback?.(new Error('close failed'));
+
+          return harness.server;
+        });
       }
       if (failure === 'database close') {
         harness.close.mockRejectedValueOnce(new Error('pool close failed'));
@@ -210,20 +224,27 @@ function prepareStartup() {
   const stderr = vi
     .spyOn(process.stderr, 'write')
     .mockImplementation(() => true);
-  const app = new Hono();
+  const app = new Hono<ApiEnv>();
   app.get('/healthz', (context) => context.json({ status: 'ready' }));
   const close = vi.fn(async () => undefined);
   const drain = vi.fn(async (): Promise<ApplicationDrainReport> => emptyReport);
-  const server = new EventEmitter();
-  const serverClose = vi.fn((callback: (error?: Error) => void) => callback());
-  boundary.compose.mockResolvedValueOnce({ app, close, drain });
-  boundary.listen.mockImplementationOnce(
-    (_options: unknown, ready: (address: { port: number }) => void) => {
-      ready({ port: 8080 });
+  const server = new Server();
+  const serverClose = vi
+    .spyOn(server, 'close')
+    .mockImplementation((callback) => {
+      callback?.();
 
-      return Object.assign(server, { close: serverClose });
-    },
+      return server;
+    });
+  const runtime = { app, close, drain } satisfies Partial<ApplicationRuntime>;
+  boundary.compose.mockResolvedValueOnce(
+    runtime as Partial<ApplicationRuntime> as ApplicationRuntime,
   );
+  boundary.listen.mockImplementationOnce((_options, ready) => {
+    ready?.({ address: '127.0.0.1', family: 'IPv4', port: 8080 });
+
+    return server;
+  });
 
   return { app, close, drain, server, serverClose, stdout, stderr };
 }

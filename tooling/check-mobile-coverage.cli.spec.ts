@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 
 const covered = {
@@ -24,8 +24,8 @@ const covered = {
 };
 
 /**
- * Creates a disposable project consumed by the real coverage CLI.
- * @returns Isolated source, collector, and receipt paths.
+ * creates a disposable project consumed by the real coverage CLI
+ * @returns isolated source, collector, and receipt paths
  */
 function createFixture() {
   const root = realpathSync(
@@ -42,14 +42,24 @@ function createFixture() {
   writeFileSync(native, 'export const native = 1;');
   writeFileSync(dom, 'export const dom = 1;');
 
-  return { root, script, native, dom };
+  const nativeHelper = join(
+    sourceRoot,
+    'components/components.stories.spec.native.helpers.tsx',
+  );
+  const domHelper = join(sourceRoot, 'mobile.stories.spec.dom.helpers.tsx');
+  for (const source of [nativeHelper, domHelper]) {
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(source, 'export const render = () => 1;');
+  }
+
+  return { root, script, native, dom, nativeHelper, domHelper };
 }
 
 /**
- * Runs the actual gate process and rejects process-launch errors.
- * @param script Executable gate copy.
- * @param args CLI arguments.
- * @returns Captured process result.
+ * runs the actual gate process and rejects process-launch errors
+ * @param script executable gate copy
+ * @param args CLI arguments
+ * @returns captured process result
  */
 function run(script: string, ...args: string[]) {
   const result = spawnSync(process.execPath, [script, ...args], {
@@ -61,9 +71,9 @@ function run(script: string, ...args: string[]) {
 }
 
 /**
- * Produces fresh fixture receipts through the gate's collector boundary.
- * @param fixture Isolated project paths.
- * @returns Both coverage paths and their identity bindings.
+ * produces fresh fixture receipts through the gate's collector boundary
+ * @param fixture isolated project paths
+ * @returns both coverage paths and their identity bindings
  */
 function collect(fixture: ReturnType<typeof createFixture>) {
   const paths = [
@@ -74,12 +84,22 @@ function collect(fixture: ReturnType<typeof createFixture>) {
   ].map((name) => join(fixture.root, name));
   const [native, nativeBinding, dom, domBinding] = paths;
   assert.ok(native && nativeBinding && dom && domBinding);
-  for (const [receipt, binding, source] of [
-    [native, nativeBinding, fixture.native],
-    [dom, domBinding, fixture.dom],
+  for (const { receipt, binding, sources } of [
+    {
+      receipt: native,
+      binding: nativeBinding,
+      sources: [fixture.native, fixture.nativeHelper],
+    },
+    {
+      receipt: dom,
+      binding: domBinding,
+      sources: [fixture.dom, fixture.domHelper],
+    },
   ]) {
-    assert.ok(receipt && binding && source);
-    const producer = `require('node:fs').writeFileSync(${JSON.stringify(receipt)}, ${JSON.stringify(JSON.stringify({ [source]: covered }))})`;
+    const coverage = Object.fromEntries(
+      sources.map((source) => [source, covered]),
+    );
+    const producer = `require('node:fs').writeFileSync(${JSON.stringify(receipt)}, ${JSON.stringify(JSON.stringify(coverage))})`;
     assert.equal(
       run(
         fixture.script,
@@ -192,6 +212,127 @@ void describe('Coverage CLI entrypoint', () => {
 
       assert.equal(result.status, 1);
       assert.match(result.stderr, /Expected coverage command/);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+});
+
+void describe('Required runtime collector binding', () => {
+  const helpers: Array<keyof ReturnType<typeof createFixture>> = [
+    'nativeHelper',
+    'domHelper',
+  ];
+  for (const helper of helpers) {
+    void it(`should reject stale coverage after changing ${helper}`, () => {
+      const fixture = createFixture();
+      try {
+        const { paths } = collect(fixture);
+        assert.equal(run(fixture.script, 'verify', ...paths).status, 0);
+        writeFileSync(
+          fixture[helper],
+          'export const render = (ready: boolean) => ready ? 1 : 2;',
+        );
+
+        assert.equal(run(fixture.script, 'verify', ...paths).status, 1);
+      } finally {
+        rmSync(fixture.root, { recursive: true, force: true });
+      }
+    });
+
+    void it(`should discard stale outputs before rejecting missing ${helper}`, () => {
+      const fixture = createFixture();
+      try {
+        const { native, nativeBinding } = collect(fixture);
+        const started = join(fixture.root, 'collector-started');
+        rmSync(fixture[helper]);
+        const producer = `require('node:fs').writeFileSync(${JSON.stringify(started)}, 'started');`;
+
+        const result = run(
+          fixture.script,
+          'run',
+          native,
+          nativeBinding,
+          process.execPath,
+          '-e',
+          producer,
+        );
+
+        assert.equal(result.status, 1);
+        assert.equal(existsSync(native), false);
+        assert.equal(existsSync(nativeBinding), false);
+        assert.equal(existsSync(started), false);
+      } finally {
+        rmSync(fixture.root, { recursive: true, force: true });
+      }
+    });
+
+    void it(`should refuse a binding when ${helper} changes during collection`, () => {
+      const fixture = createFixture();
+      try {
+        const { native, nativeBinding } = collect(fixture);
+        const producer = `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(fixture[helper])}, 'export const render = () => 2;'); fs.writeFileSync(${JSON.stringify(native)}, '{}');`;
+
+        const result = run(
+          fixture.script,
+          'run',
+          native,
+          nativeBinding,
+          process.execPath,
+          '-e',
+          producer,
+        );
+
+        assert.equal(result.status, 1);
+        assert.equal(existsSync(nativeBinding), false);
+      } finally {
+        rmSync(fixture.root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  void it('should clear prior outputs and reject a nonzero collector', () => {
+    const fixture = createFixture();
+    try {
+      const { native, nativeBinding } = collect(fixture);
+
+      const result = run(
+        fixture.script,
+        'run',
+        native,
+        nativeBinding,
+        process.execPath,
+        '-e',
+        'process.exitCode = 7;',
+      );
+
+      assert.equal(result.status, 1);
+      assert.equal(existsSync(native), false);
+      assert.equal(existsSync(nativeBinding), false);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  void it('should reject a nonzero collector even when it writes coverage', () => {
+    const fixture = createFixture();
+    try {
+      const { paths, native, nativeBinding } = collect(fixture);
+      const producer = `require('node:fs').writeFileSync(${JSON.stringify(native)}, '{}'); process.exitCode = 7;`;
+
+      const result = run(
+        fixture.script,
+        'run',
+        native,
+        nativeBinding,
+        process.execPath,
+        '-e',
+        producer,
+      );
+
+      assert.equal(result.status, 1);
+      assert.equal(existsSync(nativeBinding), false);
+      assert.equal(run(fixture.script, 'verify', ...paths).status, 1);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }

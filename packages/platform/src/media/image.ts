@@ -5,10 +5,13 @@ import type { CanonicalView, Matrix3, Region } from '@antica/domain';
 import type { MediaStore, OriginalObject } from '../storage/media-store.js';
 import { derivativeKey } from '../storage/media-store.js';
 
+/** crop and quarter-turn rotation applied to an immutable original */
 export interface ImagePresentation {
   readonly rotationQuarterTurns: 0 | 1 | 2 | 3;
   readonly crop: Extract<Region, { kind: 'rect' }> | null;
 }
+
+/** media storage and durable identities for an image derivative */
 export interface ProcessImageParams {
   readonly store: MediaStore;
   readonly original: OriginalObject;
@@ -28,7 +31,17 @@ function multiply(left: Matrix3, right: Matrix3): Matrix3 {
       left[row * 3 + 2]! * right[column + 6]!
     );
   });
-  return product as unknown as Matrix3;
+  return [
+    product[0]!,
+    product[1]!,
+    product[2]!,
+    product[3]!,
+    product[4]!,
+    product[5]!,
+    product[6]!,
+    product[7]!,
+    product[8]!,
+  ];
 }
 
 function orientationToOriginal(
@@ -69,7 +82,9 @@ function rotationToCrop(turns: number, width: number, height: number): Matrix3 {
   }
 }
 
-/** produces an orientation-normalized private view while preserving the immutable original */
+/**
+ * produces an orientation-normalized private view while preserving the immutable original
+ */
 export async function processImage({
   store,
   original,

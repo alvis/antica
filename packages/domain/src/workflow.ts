@@ -1,6 +1,6 @@
 import type { EntityId, Instant, RecordVersions } from './shared.js';
 
-/** Immutable provenance retained before a transcription provider is called. */
+/** immutable provenance retained before a transcription provider is called */
 export interface TranscriptionSnapshot {
   readonly recordId: EntityId;
   readonly recordRevision: number;
@@ -9,7 +9,7 @@ export interface TranscriptionSnapshot {
   readonly createdAt: Instant;
 }
 
-/** Collector confirmation never rewrites the original model transcription. */
+/** collector confirmation never rewrites the original model transcription */
 export interface Transcript {
   readonly id: EntityId;
   readonly jobId: EntityId;
@@ -21,7 +21,7 @@ export interface Transcript {
   readonly updatedAt: Instant;
 }
 
-/** References the exact source revisions used to draft record changes. */
+/** references the exact source revisions used to draft record changes */
 export interface EditDraftSnapshot {
   readonly recordId: EntityId;
   readonly versions: RecordVersions;
@@ -33,7 +33,7 @@ export interface EditDraftSnapshot {
   readonly createdAt: Instant;
 }
 
-/** Records explicit proposal adoption separately from generated suggestions. */
+/** records explicit proposal adoption separately from generated suggestions */
 export interface EditDraft {
   readonly id: EntityId;
   readonly jobId: EntityId;

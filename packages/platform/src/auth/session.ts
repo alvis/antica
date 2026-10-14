@@ -33,18 +33,23 @@ export interface SessionConfig {
   readonly trustedOrigins: readonly string[];
 }
 
+/** collector authentication capabilities exposed to the API boundary */
+export interface AuthSession {
+  readonly handle: (request: Request) => Promise<Response>;
+  readonly ownerId: (headers: Headers) => Promise<string | null>;
+}
+
 /**
  * binds the preseeded collector to a Better Auth phone session
- * @param db
- * @param config
+ * @param db platform database containing the collector account and sessions
+ * @param config phone, OTP driver, secret, and trusted-origin settings
+ * @returns request handler and owner lookup bound to the collector session
+ * @throws {Error} when the collector phone is not E.164, the development OTP driver runs in production, or the secret is shorter than 32 characters
  */
 export function createAuthSession(
   db: Database,
   config: SessionConfig,
-): {
-  readonly handle: (request: Request) => Promise<Response>;
-  readonly ownerId: (headers: Headers) => Promise<string | null>;
-} {
+): AuthSession {
   if (!/^\+[1-9]\d{1,14}$/.test(config.collectorPhoneNumber)) {
     throw new Error('ANTICA_COLLECTOR_PHONE must be E.164');
   }
@@ -168,7 +173,7 @@ export function createAuthSession(
         try {
           code = ((await response.clone().json()) as { code?: unknown }).code;
         } catch {
-          /* Keep the generic auth failure. */
+          /* keep the generic auth failure */
         }
         if (code === 'TOO_MANY_ATTEMPTS') {
           return authFailure(
@@ -208,6 +213,7 @@ export function createAuthSession(
 }
 
 /**
+ * reads a request body without accepting more than the configured byte limit
  * @param request
  * @param limit
  */
@@ -253,6 +259,7 @@ async function readBoundedBody(
 }
 
 /**
+ * creates the API error response for a local authentication failure
  * @param code
  * @param message
  * @param retryable
@@ -271,6 +278,7 @@ function authFailure(
 }
 
 /**
+ * sends an OTP through the configured development or WhatsApp driver
  * @param phoneNumber
  * @param code
  * @param config

@@ -4,12 +4,15 @@ import { user } from './schema/auth.js';
 
 export const collectorUserId = 'antica-collector';
 
+/** configured collector identity and database connection */
 export interface CollectorParams {
   readonly db: Database;
   readonly phoneNumber: string;
 }
 
-/** ensures the one configured collector account exists before authentication */
+/**
+ * ensures the one configured collector account exists before authentication
+ */
 export async function ensureCollectorUser({
   db,
   phoneNumber,

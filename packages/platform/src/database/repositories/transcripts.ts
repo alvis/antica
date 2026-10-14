@@ -19,7 +19,9 @@ function iso(value: string): string {
   return new Date(value).toISOString();
 }
 
-/** Persists immutable transcription inputs and first-write provider output. */
+/**
+ * persists immutable transcription inputs and first-write provider output
+ */
 export function createTranscriptionRepository(
   tx: Transaction,
   ownerId: string,
@@ -59,7 +61,6 @@ export function createTranscriptionRepository(
 
   return {
     get,
-    /** @param run */
     async create(run) {
       const { detail, request } = run;
       if (
@@ -135,7 +136,6 @@ export function createTranscriptionRepository(
         updatedAt: detail.updatedAt,
       });
     },
-    /** @param id @param result @param invocation @param expectedRevision @param updatedAt */
     async saveResult(id, result, invocation, expectedRevision, updatedAt) {
       const [run] = await tx
         .select({
@@ -180,7 +180,6 @@ export function createTranscriptionRepository(
 
       return Boolean(changed);
     },
-    /** @param id @param expectedRevision @param observationId @param updatedAt */
     async confirm(id, expectedRevision, observationId, updatedAt) {
       const [changed] = await tx
         .update(transcriptionRuns)

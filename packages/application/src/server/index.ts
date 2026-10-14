@@ -29,6 +29,9 @@ export {
   createSourceIngestionHandler,
 } from '../knowledge/ingestion.js';
 export type {
+  CreateSourceServiceParams,
+  SourceGetParams,
+  SourceIngestionHandlerParams,
   SourceService,
   SourceIndexingParams,
   SourceImageIndexPort,

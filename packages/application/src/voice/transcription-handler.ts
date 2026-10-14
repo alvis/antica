@@ -18,12 +18,13 @@ export interface TranscriptionMediaReader {
 }
 
 /**
- * Executes a frozen transcription job without adopting generated text.
- * @param transaction
- * @param model
- * @param catalog
- * @param media
- * @param clock
+ * creates a worker that stores transcription results without adopting their text
+ * @param transaction provides owner-scoped transcription and job updates
+ * @param model transcribes the verified frozen audio
+ * @param catalog resolves an audio-capable structured-output model
+ * @param media reads the original audio bytes for hash verification
+ * @param clock timestamps saved results and completed jobs
+ * @returns handler for an owner and job ID that reports completion or a typed transcription failure
  */
 export function createTranscriptionHandler(
   transaction: TransactionPort,

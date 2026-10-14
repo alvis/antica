@@ -6,7 +6,9 @@ export type {
 } from './connection.js';
 export { createTransactionPort } from './transaction.js';
 export { createRetrievalReaders } from './retrieval.js';
+export type { RetrievalReaders } from './retrieval.js';
 export { createSourceArtifactAccess } from './source-artifacts.js';
+export type { SourceArtifactAccess } from './source-artifacts.js';
 export { listPendingOutbox } from './repositories/runtime.js';
 export {
   recordVerifiedProviderWebhook,

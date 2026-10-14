@@ -375,7 +375,7 @@ export function createKnowledgeService(
 }
 
 /**
- * Resolves every submitted citation and support marker before saving a revision.
+ * resolves every submitted citation and support marker before saving a revision
  * @param unit owner-scoped source and research repositories
  * @param input requested entry content and method definitions
  * @returns success only when citations still match their stored originals
@@ -448,7 +448,7 @@ async function validateKnowledgeInput(
 }
 
 /**
- * Lists the method statements that require citation validation.
+ * lists the method statements that require citation validation
  * @param definition inspection method content
  * @returns history, applicability limits and interpretation limits
  */
@@ -461,7 +461,7 @@ function citedSections(definition: MethodDefinition): readonly CitedText[] {
 }
 
 /**
- * Creates a public knowledge operation failure with retryability from its code.
+ * creates a public knowledge operation failure with retryability from its code
  * @param code public failure category
  * @param message safe user-facing explanation
  * @returns failed operation result

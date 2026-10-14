@@ -1,11 +1,22 @@
 import { expect, it, jest } from '@jest/globals';
-import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import {
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
+import { useEffect } from 'react';
 import { Linking } from 'react-native';
 
+import { analysisRunDetailSchema } from '@antica/contracts';
+
+import AnalysisRoute from '../../app/(private)/analysis/[runId]';
 import RecordRoute from '../../app/(private)/collection/[recordId]';
+import { useLocale } from '../../locale';
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
+import { createReferencedRun } from '../../saved-analysis.spec.fixtures';
 
 import { media } from '../media/media.spec.fixtures';
 
@@ -17,15 +28,49 @@ import {
   sourceVersionId,
 } from './record.spec.fixtures';
 
+import type { FC, PropsWithChildren, ReactElement } from 'react';
+
+import type { Locale } from '../../locale';
+
+/** requested locale and route content for the real locale provider */
+export type InLocaleProps = PropsWithChildren<{ locale: Locale }>;
+
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
-jest.mock('expo-router', () => ({
-  useRouter: jest.fn(),
-  useLocalSearchParams: jest.fn(),
-}));
+jest.mock(
+  'expo-router',
+  () =>
+    ({
+      useRouter: jest.fn<typeof import('expo-router').useRouter>(),
+      useLocalSearchParams: jest.fn<
+        typeof import('expo-router').useLocalSearchParams
+      >(() => {
+        const { collectionRecord } = jest.requireActual<
+          typeof import('../../mobile.spec.fixtures')
+        >('../../mobile.spec.fixtures');
+        const { runId } = jest.requireActual<
+          typeof import('../../saved-analysis.spec.fixtures')
+        >('../../saved-analysis.spec.fixtures');
+
+        return { recordId: collectionRecord.id, runId };
+      }),
+    }) satisfies Partial<typeof import('expo-router')>,
+);
 jest.mock('expo-crypto', () => ({
   randomUUID:
     jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID,
 }));
+jest.mock(
+  'expo-secure-store',
+  () =>
+    ({
+      getItemAsync: jest.fn<typeof import('expo-secure-store').getItemAsync>(
+        async () => null,
+      ),
+      setItemAsync: jest.fn<typeof import('expo-secure-store').setItemAsync>(
+        async () => undefined,
+      ),
+    }) satisfies Partial<typeof import('expo-secure-store')>,
+);
 
 const photo = {
   ...media,
@@ -36,6 +81,161 @@ const photo = {
     mimeType: 'image/jpeg',
   },
 };
+
+const mixed = createReferencedRun(media.asset.id);
+const savedRun = analysisRunDetailSchema.parse({
+  ...mixed,
+  result: {
+    ...mixed.result,
+    output: {
+      ...mixed.result.output,
+      proposedChanges: mixed.result.output.proposedChanges.map(
+        (change, index) => ({
+          ...change,
+          findingIds: index === 0 ? [mixed.result.output.findings[0].id] : [],
+        }),
+      ),
+    },
+  },
+});
+const record = {
+  ...collectionRecord,
+  latestRunId: savedRun.runId,
+  analysisFreshness: 'current' as const,
+};
+const responses: Parameters<typeof renderMobile>[1] = {
+  get: async (path: string) =>
+    path === `/v1/records/${record.id}`
+      ? record
+      : path === `/v1/analyses/${savedRun.runId}`
+        ? savedRun
+        : path === `/v1/media/${media.asset.id}`
+          ? media
+          : { items: [], nextCursor: null },
+};
+
+/**
+ * waits for the real locale action before mounting the requested route
+ * @param root0 requested locale and route
+ * @param root0.locale requested UI locale
+ * @param root0.children route to mount once the locale is active
+ * @returns route content when the real provider has the requested locale
+ */
+const InLocale: FC<InLocaleProps> = ({
+  locale,
+  children,
+}): ReactElement | null => {
+  const { locale: currentLocale, setLocale } = useLocale();
+  useEffect(() => {
+    if (currentLocale !== locale) {
+      void setLocale(locale);
+    }
+  }, [currentLocale, locale, setLocale]);
+
+  return currentLocale === locale ? <>{children}</> : null;
+};
+
+/**
+ * verifies authored name content remains associated with the selected field
+ * @param proposal name proposal checkbox
+ * @param labels active locale labels
+ * @param labels.previous previous-value label
+ * @param labels.proposed proposed-value label
+ */
+function expectNameContent(
+  proposal: Parameters<typeof within>[0],
+  labels: { previous: string; proposed: string },
+): void {
+  expect(within(proposal).getByText(`${labels.previous}: null`)).toBeTruthy();
+  expect(
+    within(proposal).getByText(`${labels.proposed}: "Blue vase"`),
+  ).toBeTruthy();
+  expect(
+    within(proposal).getByText('Mixed supporting references'),
+  ).toBeTruthy();
+}
+
+it.each([
+  {
+    locale: 'en' as const,
+    results: 'Results',
+    name: 'Name',
+    description: 'Description',
+    previous: 'Previous',
+    proposed: 'Proposed',
+    apply: 'Apply selected changes',
+  },
+  {
+    locale: 'zh-Hant' as const,
+    results: '結果',
+    name: '名稱',
+    description: '描述',
+    previous: '目前內容',
+    proposed: '建議內容',
+    apply: '套用所選變更',
+  },
+])(
+  'should reopen saved proposals in $locale and select without writing',
+  async (labels) => {
+    const recordView = await renderMobile(
+      <InLocale locale={labels.locale}>
+        <RecordRoute />
+      </InLocale>,
+      responses,
+    );
+    await fireEvent.press(
+      await screen.findByRole('button', { name: labels.results }),
+    );
+    expect(recordView.router.push).toHaveBeenCalledWith(
+      `/analysis/${savedRun.runId}`,
+    );
+    expect(recordView.commands).not.toHaveBeenCalled();
+    expect(recordView.patches).not.toHaveBeenCalled();
+    await screen.unmount();
+
+    const analysisView = await renderMobile(
+      <InLocale locale={labels.locale}>
+        <AnalysisRoute />
+      </InLocale>,
+      responses,
+    );
+    const nameProposal = await screen.findByRole('checkbox', {
+      name: new RegExp(labels.name),
+    });
+    const descriptionProposal = screen.getByRole('checkbox', {
+      name: new RegExp(labels.description),
+    });
+    expectNameContent(nameProposal, labels);
+    expect(
+      within(descriptionProposal).getByText(`${labels.previous}: ""`),
+    ).toBeTruthy();
+    expect(
+      within(descriptionProposal).getByText(
+        `${labels.proposed}: "Floral decoration"`,
+      ),
+    ).toBeTruthy();
+    expect(
+      within(descriptionProposal).queryByText('Mixed supporting references'),
+    ).toBeNull();
+    expect(nameProposal).not.toBeChecked();
+    expect(descriptionProposal).not.toBeChecked();
+    const applyButton = screen.getByRole('button', {
+      name: new RegExp(labels.apply),
+    });
+    expect(applyButton).toBeDisabled();
+
+    await fireEvent.press(nameProposal);
+    expect(nameProposal).toBeChecked();
+    expect(descriptionProposal).not.toBeChecked();
+    expect(applyButton).toBeEnabled();
+    await fireEvent.press(nameProposal);
+    expect(nameProposal).not.toBeChecked();
+    expect(applyButton).toBeDisabled();
+    expectNameContent(nameProposal, labels);
+    expect(analysisView.commands).not.toHaveBeenCalled();
+    expect(analysisView.patches).not.toHaveBeenCalled();
+  },
+);
 
 it('should show a record, open capture, and save trimmed edits against its revision', async () => {
   jest
@@ -247,6 +447,16 @@ it('should reopen observations, video, and saved collection, page, and web refer
             : { items: savedReferences, nextCursor: null },
   });
   await waitFor(() => expect(screen.getByText('Blue decoration')).toBeTruthy());
+  expect(
+    screen.getByRole('text', {
+      name: 'Referenced observation: Blue decoration',
+      selected: true,
+    }),
+  ).toBeTruthy();
+  expect(screen.getByText('Referenced observation')).toBeTruthy();
+  expect(
+    screen.queryByLabelText('Referenced observation: Base mark'),
+  ).toBeNull();
   await waitFor(() =>
     expect(screen.getAllByRole('button', { name: 'View source' })).toHaveLength(
       savedReferences.length,

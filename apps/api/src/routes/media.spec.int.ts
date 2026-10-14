@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import {
   mediaDetailSchema,
@@ -8,18 +8,15 @@ import {
   uploadSessionSchema,
 } from '@antica/contracts';
 
-import { createHttpFixture } from '../fixtures/http.js';
+import { createHttpTest } from '../fixtures/http/test.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['routes/media']!);
 
 describe('fn:createMediaRoutes', () => {
-  it('should preserve uploaded image bytes and expose canonical media only after draining the durable job', async () => {
+  it('should preserve uploaded image bytes and expose canonical media only after draining the durable job', async ({
+    fixture,
+  }) => {
     const record = recordDetailSchema.parse(
       await (
         await fixture.request(
@@ -88,9 +85,9 @@ describe('fn:createMediaRoutes', () => {
     });
   });
 
-  it.each(['/v1/media/uploads', '/v1/media/missing/complete'])(
+  it.for(['/v1/media/uploads', '/v1/media/missing/complete'])(
     'should reject invalid upload commands at %s before creating work',
-    async (path) => {
+    async (path, { fixture }) => {
       const response = await fixture.request(path, 'POST', {});
       expect(response.status).toBe(422);
       expect(await response.json()).toMatchObject({

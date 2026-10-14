@@ -1,3 +1,7 @@
+import { CryptoDigestAlgorithm, digest, randomUUID } from 'expo-crypto';
+
+import { File } from 'expo-file-system';
+
 import { ApiError } from '@antica/client';
 
 import {
@@ -6,9 +10,6 @@ import {
   uploadRequestSchema,
   uploadSessionSchema,
 } from '@antica/contracts';
-
-import { CryptoDigestAlgorithm, digest, randomUUID } from 'expo-crypto';
-import { File } from 'expo-file-system';
 
 import type { ApiTransport } from '@antica/client';
 import type { MediaKind, MediaPurpose, UploadSession } from '@antica/contracts';
@@ -23,6 +24,7 @@ interface UploadProgress {
 const pendingUploads = new Map<string, UploadProgress>();
 const uploadRequestKeys = new Map<string, string>();
 
+/** local media selection and upload state */
 export interface LocalMedia {
   id: string;
   uri: string;
@@ -37,17 +39,20 @@ export interface LocalMedia {
   checkRequestKey?: string;
 }
 
+/** record or source intake receiving an uploaded file */
 export interface UploadTarget {
   kind: 'record' | 'source_intake';
   id: string;
 }
 
 /**
- * Persists one local file with its own idempotency key and verified digest.
- * @param api
- * @param media
- * @param target
- * @param componentIds
+ * persists one local file with its own idempotency key and verified digest
+ * @param api mobile API transport
+ * @param media local file and upload state
+ * @param target record or intake receiving the asset
+ * @param componentIds components associated with the uploaded file
+ * @returns uploaded asset identifier
+ * @throws {ApiError} when upload completion reports failed verification
  */
 export async function uploadMedia(
   api: ApiTransport,
@@ -143,11 +148,11 @@ export async function uploadMedia(
   if (result.state === 'failed') {
     pendingUploads.delete(media.id);
     uploadRequestKeys.set(media.id, randomUUID());
-    throw new ApiError(
-      409,
-      'UPLOAD_FAILED',
-      'The uploaded file could not be verified.',
-    );
+    throw new ApiError({
+      status: 409,
+      code: 'UPLOAD_FAILED',
+      message: 'The uploaded file could not be verified.',
+    });
   }
 
   pendingUploads.delete(media.id);

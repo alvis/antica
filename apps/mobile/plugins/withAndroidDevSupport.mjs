@@ -1,5 +1,7 @@
 import { withMainApplication } from 'expo/config-plugins.js';
 
+/** @import { ConfigPlugin } from 'expo/config-plugins' */
+
 const hostCall = 'ExpoReactHostFactory.getDefaultReactHost(';
 const patchedHost =
   /ExpoReactHostFactory\.getDefaultReactHost\(\s*context\s*=\s*applicationContext,\s*packageList\s*=\s*PackageList\(this\)\.packages\.apply\s*\{[^{}]*\},\s*useDevSupport\s*=\s*BuildConfig\.DEBUG\s*\)/;
@@ -7,9 +9,9 @@ const generatedHost =
   /(ExpoReactHostFactory\.getDefaultReactHost\(\s*\n(?<indent>[ \t]*)context\s*=\s*applicationContext,\s*packageList\s*=\s*PackageList\(this\)\.packages\.apply\s*\{[^{}]*\})(?<closing>\s*)\)/;
 
 /**
- * Bind Expo's generated React host to the app build type in SDK 57.
- * @param {string} source Generated Kotlin MainApplication source.
- * @returns {string} Source with explicit app debug support.
+ * binds Expo's generated React host to the app build type in SDK 57
+ * @param {string} source generated Kotlin MainApplication source.
+ * @returns {string} source with explicit app debug support
  */
 export function addAndroidDevSupport(source) {
   if (source.split(hostCall).length !== 2) {
@@ -37,8 +39,8 @@ export function addAndroidDevSupport(source) {
 }
 
 /**
- * Register a generated-MainApplication modification during Expo prebuild.
- * @type {import('expo/config-plugins').ConfigPlugin}
+ * registers a generated-MainApplication modification during Expo prebuild
+ * @type {ConfigPlugin}
  */
 export const withAndroidDevSupport = (config) =>
   withMainApplication(config, (current) => {

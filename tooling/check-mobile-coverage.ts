@@ -10,28 +10,37 @@ import {
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-/** Sources exercised through the browser-compatible story runtime. */
+/** sources exercised through the browser-compatible story runtime */
 export const domCoverageSources = [
   'mobile.stories.helpers.ts',
   'mobile.stories.fixtures.tsx',
   'features/analysis/AnalysisContainer.stories.tsx',
   'features/collection/RecordContainer.stories.tsx',
   'features/capture/CaptureContainer.stories.tsx',
+  'components/QueryState.stories.tsx',
+  'components/Screen.stories.tsx',
+  'mobile.stories.spec.dom.helpers.tsx',
+] as const;
+
+/** runtime helpers required even though generic discovery excludes spec files */
+const runtimeCoverageSources = [
+  'components/components.stories.spec.native.helpers.tsx',
+  'mobile.stories.spec.dom.helpers.tsx',
 ] as const;
 
 /**
- * Narrows decoded coverage JSON to an object whose fields can be inspected.
- * @param value Decoded JSON value.
- * @returns Whether the value is a non-array object.
+ * narrows decoded coverage JSON to an object whose fields can be inspected
+ * @param value decoded JSON value
+ * @returns whether the value is a non-array object
  */
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
- * Enumerates every mobile source file eligible for the combined coverage gate.
- * @param directory Absolute directory to traverse recursively.
- * @returns Absolute source paths, excluding only tests and type declarations.
+ * enumerates every mobile source file eligible for the combined coverage gate
+ * @param directory absolute directory to traverse recursively
+ * @returns absolute source paths, excluding only tests and type declarations
  */
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -53,11 +62,11 @@ interface CoverageRun {
 }
 
 /**
- * Checks exhaustive, disjoint native and DOM coverage against a strict 100% gate.
- * @param sourceRoot Mobile source directory.
- * @param native Native receipt and source identity.
- * @param dom DOM receipt and source identity.
- * @returns All coverage failures; an empty list is the sole passing result.
+ * checks exhaustive, disjoint native and DOM coverage against a strict 100% gate
+ * @param sourceRoot mobile source directory
+ * @param native native receipt and source identity
+ * @param dom DOM receipt and source identity
+ * @returns all coverage failures; an empty list is the sole passing result
  */
 export function checkMobileCoverage(
   sourceRoot: string,
@@ -103,34 +112,39 @@ export function checkMobileCoverage(
 }
 
 /**
- * Captures the exact eligible source bytes for a coverage execution.
- * @param sourceRoot Mobile runtime source directory.
- * @returns Absolute source paths mapped to SHA-256 digests.
+ * captures the exact eligible source bytes for a coverage execution
+ * @param sourceRoot mobile runtime source directory
+ * @returns absolute source paths mapped to SHA-256 digests
  */
 export function snapshotMobileSources(
   sourceRoot: string,
 ): Record<string, string> {
   return Object.fromEntries(
-    sourceFiles(sourceRoot)
+    [
+      ...new Set([
+        ...sourceFiles(sourceRoot),
+        ...runtimeCoverageSources.map((path) => resolve(sourceRoot, path)),
+      ]),
+    ]
       .sort()
       .map((path) => [path, digest(path)]),
   );
 }
 
 /**
- * Hashes a source or receipt without normalizing its bytes.
- * @param path Artifact to bind.
- * @returns SHA-256 artifact digest.
+ * hashes a source or receipt without normalizing its bytes
+ * @param path artifact to bind
+ * @returns SHA-256 artifact digest
  */
 function digest(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 /**
- * Checks both source inventory and content identity.
- * @param current Current source hashes.
- * @param expected Hashes captured by a coverage run.
- * @returns Whether every source matches and neither inventory has extra paths.
+ * checks both source inventory and content identity
+ * @param current current source hashes
+ * @param expected hashes captured by a coverage run
+ * @returns whether every source matches and neither inventory has extra paths
  */
 function sameSources(
   current: Record<string, string>,
@@ -143,11 +157,11 @@ function sameSources(
 }
 
 /**
- * Validates statement or function map membership and positive execution counts.
- * @param map Instrumented source locations.
- * @param counts Execution counters for those locations.
- * @param metric Diagnostic metric label.
- * @returns Violations for the selected metric.
+ * validates statement or function map membership and positive execution counts
+ * @param map instrumented source locations
+ * @param counts execution counters for those locations
+ * @param metric diagnostic metric label
+ * @returns violations for the selected metric
  */
 function checkScalarCounts(
   map: unknown,
@@ -171,10 +185,10 @@ function checkScalarCounts(
 }
 
 /**
- * Validates branch arm cardinality and positive execution counts.
- * @param map Instrumented branch locations.
- * @param counts Counters for every branch arm.
- * @returns Violations for branch coverage.
+ * validates branch arm cardinality and positive execution counts
+ * @param map instrumented branch locations
+ * @param counts counters for every branch arm
+ * @returns violations for branch coverage
  */
 function checkBranchCounts(map: unknown, counts: unknown): string[] {
   if (
@@ -200,18 +214,18 @@ function checkBranchCounts(map: unknown, counts: unknown): string[] {
 }
 
 /**
- * Determines whether an execution counter proves the location was reached.
- * @param count Decoded execution counter.
- * @returns Whether a finite positive execution count was recorded.
+ * determines whether an execution counter proves the location was reached
+ * @param count decoded execution counter
+ * @returns whether a finite positive execution count was recorded
  */
 function isCovered(count: unknown): boolean {
   return typeof count === 'number' && Number.isFinite(count) && count > 0;
 }
 
 /**
- * Reads an Istanbul JSON receipt and rejects an invalid top-level structure.
- * @param path Coverage JSON path.
- * @returns The decoded coverage map.
+ * reads an Istanbul JSON receipt and rejects an invalid top-level structure
+ * @param path coverage JSON path
+ * @returns the decoded coverage map
  */
 function readReceipt(path: string): Record<string, unknown> {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
@@ -223,12 +237,12 @@ function readReceipt(path: string): Record<string, unknown> {
 }
 
 /**
- * Executes one coverage collector and binds its new receipt to unchanged sources.
- * @param sourceRoot Mobile source inventory root.
- * @param paths Output locations for the coverage receipt and its binding.
- * @param paths.receiptPath JSON output owned by the selected collector.
- * @param paths.bindingPath Identity receipt written after collection succeeds.
- * @param command Executable and arguments for the coverage collector.
+ * executes one coverage collector and binds its new receipt to unchanged sources
+ * @param sourceRoot mobile source inventory root
+ * @param paths output locations for the coverage receipt and its binding
+ * @param paths.receiptPath JSON output owned by the selected collector
+ * @param paths.bindingPath identity receipt written after collection succeeds
+ * @param command executable and arguments for the coverage collector
  */
 function collectCoverage(
   sourceRoot: string,
@@ -240,9 +254,9 @@ function collectCoverage(
   if (!executable) {
     throw new Error('A coverage collector command is required.');
   }
-  const sourceHashes = snapshotMobileSources(sourceRoot);
   rmSync(receiptPath, { force: true });
   rmSync(bindingPath, { force: true });
+  const sourceHashes = snapshotMobileSources(sourceRoot);
   const result = spawnSync(executable, args, { stdio: 'inherit' });
   if (result.error) {
     throw result.error;
@@ -262,10 +276,10 @@ function collectCoverage(
 }
 
 /**
- * Verifies a coverage receipt has not changed since its source binding was written.
- * @param receiptPath Instrumentation receipt to verify.
- * @param bindingPath Collector-produced identity binding.
- * @returns Source hashes captured around the successful collector run.
+ * verifies a coverage receipt has not changed since its source binding was written
+ * @param receiptPath instrumentation receipt to verify
+ * @param bindingPath collector-produced identity binding
+ * @returns source hashes captured around the successful collector run
  */
 function readBinding(
   receiptPath: string,

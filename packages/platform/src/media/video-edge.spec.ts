@@ -90,7 +90,6 @@ describe('fn:processVideoFrames', () => {
       error: { code: 'MEDIA_UNSUPPORTED', retryable: false },
     });
     expect(verify).not.toHaveBeenCalled();
-    verify.mockRestore();
   });
 
   it.each([

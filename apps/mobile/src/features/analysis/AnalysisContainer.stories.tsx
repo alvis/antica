@@ -96,9 +96,9 @@ const successResponses = {
 };
 
 /**
- * Renders an analysis story whose fixture persists proposal adoption.
- * @param args Analysis container properties.
- * @returns Stateful completed-analysis story surface.
+ * renders an analysis story whose fixture persists proposal adoption
+ * @param args analysis container properties.
+ * @returns stateful completed-analysis story surface
  */
 function CompletedAnalysisStory(
   args: Readonly<AnalysisContainerProps>,

@@ -1,7 +1,7 @@
-import { beforeEach, expect, it, jest } from '@jest/globals';
+import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
-import { getItemAsync, setItemAsync } from 'expo-secure-store';
+import { setItemAsync } from 'expo-secure-store';
 
 import { renderMobile } from '../../mobile.spec.fixtures';
 
@@ -16,6 +16,8 @@ import {
   readCapture,
   submitCapture,
 } from './transcript.spec.fixtures';
+
+import type { getItemAsync } from 'expo-secure-store';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
 jest.mock('./media-upload', () => ({
@@ -32,16 +34,21 @@ jest.mock('expo-router', () => ({
     recordId: '00000000-0000-4000-8000-000000000001',
   }),
 }));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async (key: string) =>
-    key.includes('transcriptionJob.')
-      ? '00000000-0000-4000-8000-000000000041'
-      : key.includes('transcription.')
-        ? '00000000-0000-4000-8000-000000000040'
-        : null,
-  ),
-  setItemAsync: jest.fn(async () => undefined),
-}));
+jest.mock(
+  'expo-secure-store',
+  () =>
+    ({
+      getItemAsync: async (key) =>
+        key.includes('transcriptionJob.') || key.includes('editJob.')
+          ? '00000000-0000-4000-8000-000000000041'
+          : key.includes('transcription.')
+            ? '00000000-0000-4000-8000-000000000040'
+            : key.includes('editDraft.')
+              ? '00000000-0000-4000-8000-000000000042'
+              : null,
+      setItemAsync: jest.fn(async () => undefined),
+    }) satisfies Partial<typeof import('expo-secure-store')>,
+);
 jest.mock('expo-audio', () => ({
   useAudioRecorder: () => ({}),
   RecordingPresets: { HIGH_QUALITY: {} },
@@ -55,21 +62,11 @@ jest.mock('expo-image-picker', () => ({
   }),
 }));
 
-beforeEach(() => {
-  jest
-    .mocked(getItemAsync)
-    .mockImplementation(async (key) =>
-      key.includes('transcriptionJob.') || key.includes('editJob.')
-        ? jobId
-        : key.includes('transcription.')
-          ? transcriptionId
-          : key.includes('editDraft.')
-            ? editDraftId
-            : null,
-    );
-});
+const secureStore = jest.requireMock<{ getItemAsync: typeof getItemAsync }>(
+  'expo-secure-store',
+);
 
-/** Opens the restored voice-note step. */
+/** opens the restored voice-note step */
 async function openWords(): Promise<void> {
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Import file' })).toBeTruthy(),
@@ -137,7 +134,7 @@ it('should show both restored job failures without silently retrying them', asyn
 it('should poll a restored editing job until the prepared description arrives', async () => {
   const editingJobId = '00000000-0000-4000-8000-000000000047';
   jest
-    .mocked(getItemAsync)
+    .spyOn(secureStore, 'getItemAsync')
     .mockImplementation(async (key) =>
       key.includes('editJob.')
         ? editingJobId
@@ -200,7 +197,7 @@ it('should restore confirmed words and a persisted edit draft without resubmitti
 });
 
 it('should surface a persisted job restoration failure', async () => {
-  jest.mocked(getItemAsync).mockImplementation(async (key) => {
+  jest.spyOn(secureStore, 'getItemAsync').mockImplementation(async (key) => {
     if (key.includes('transcriptionJob.')) {
       throw new Error('Secure storage unavailable');
     }
@@ -217,7 +214,7 @@ it('should surface a persisted job restoration failure', async () => {
 
 it('should report description preparation failures and retain recovered text', async () => {
   jest
-    .mocked(getItemAsync)
+    .spyOn(secureStore, 'getItemAsync')
     .mockImplementation(async (key) =>
       key.includes('transcriptionJob.')
         ? jobId

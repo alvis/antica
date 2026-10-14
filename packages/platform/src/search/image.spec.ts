@@ -1,7 +1,11 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
-import { createLocalImageRetrieval, developmentImageIndex } from './image.js';
+import {
+  createLocalImageRetrieval,
+  developmentImageIndex,
+  getImageMatchIdentity,
+} from './image.js';
 
 import type { ImageSearchEntry, SearchImage } from './image.js';
 
@@ -289,5 +293,58 @@ describe('fn:createLocalImageRetrieval', () => {
         developmentImageIndex,
       ),
     ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+  });
+  it('should keep reference images from different source versions distinct', async () => {
+    const { image, first } = await fixture();
+    const firstSourceVersion = '50000000-0000-4000-8000-000000000001';
+    const secondSourceVersion = '50000000-0000-4000-8000-000000000002';
+    const referenceImageId = '60000000-0000-4000-8000-000000000001';
+    const entries: ImageSearchEntry[] = [
+      secondSourceVersion,
+      firstSourceVersion,
+    ].map((sourceVersionId) => ({
+      ...first,
+      match: {
+        ...first.match,
+        ref: { kind: 'reference', sourceVersionId, referenceImageId },
+      },
+    }));
+    const adapter = createLocalImageRetrieval({
+      index: developmentImageIndex,
+      readQuery: async () => image,
+      readEntries: async () => entries,
+    });
+
+    const result = await adapter.search(
+      { ...query, scope: 'reference_library' },
+      developmentImageIndex,
+    );
+    if (!result.success) {
+      throw new Error('Expected reference search results');
+    }
+
+    expect(
+      result.data.items.map((match) => ({
+        ref: match.ref,
+        identity: getImageMatchIdentity(match),
+      })),
+    ).toEqual([
+      {
+        ref: {
+          kind: 'reference',
+          sourceVersionId: firstSourceVersion,
+          referenceImageId,
+        },
+        identity: `${firstSourceVersion}:${referenceImageId}`,
+      },
+      {
+        ref: {
+          kind: 'reference',
+          sourceVersionId: secondSourceVersion,
+          referenceImageId,
+        },
+        identity: `${secondSourceVersion}:${referenceImageId}`,
+      },
+    ]);
   });
 });

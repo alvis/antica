@@ -2,8 +2,8 @@ import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
+import { run, runId } from '../../saved-analysis.spec.fixtures';
 
-import { run, runId } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
@@ -44,6 +44,8 @@ it('should poll a queued analysis until partial results arrive and offer adding 
 
 it('should retry a failed analysis read', async () => {
   let failed = true;
+  const origin = 'https://internal.example:8080';
+  const failure = new Error(`Analysis connection lost at ${origin}`);
   await renderMobile(<AnalysisContainer runId={runId} />, {
     get: async (path) => {
       if (!path.startsWith('/v1/analyses/')) {
@@ -51,23 +53,28 @@ it('should retry a failed analysis read', async () => {
       }
       if (failed) {
         failed = false;
-        throw new Error('Analysis connection lost');
+        throw failure;
       }
 
       return run;
     },
   });
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Analysis connection lost',
-    ),
-  );
-  await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(/\S/);
+  expect(screen.queryByText(failure.message)).toBeNull();
+  expect(alert).not.toHaveTextContent(origin);
+  expect(
+    screen.queryByText('Two suggestions require collector approval.'),
+  ).toBeNull();
+  const retry = screen.getByRole('button', { name: 'Retry' });
+  expect(retry).toBeEnabled();
+  await fireEvent.press(retry);
   await waitFor(() =>
     expect(
       screen.getByText('Two suggestions require collector approval.'),
     ).toBeTruthy(),
   );
+  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 it('should deselect a proposal and preserve the remaining selection after a non-conflict failure', async () => {

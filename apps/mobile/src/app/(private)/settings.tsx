@@ -1,9 +1,12 @@
+import { useRouter } from 'expo-router';
+
+import { Text, View } from 'react-native';
+
 import { ActionButton, styles } from '@antica/ui';
+
 import { useAuth } from '../../auth';
 import { Screen } from '../../components/Screen';
 import { useLocale } from '../../locale';
-import { useRouter } from 'expo-router';
-import { Text, View } from 'react-native';
 
 export default function SettingsRoute() {
   const router = useRouter();

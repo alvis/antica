@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { inject, describe, expect, vi } from 'vitest';
 
 import {
   sourceAcceptedSchema,
@@ -14,10 +14,11 @@ import {
 } from '@antica/platform';
 
 import { createHttpFixture } from './fixtures/http.js';
+
+import { createHttpTest } from './fixtures/http/test.js';
 import { createLocalSettings } from './fixtures/runtime.js';
 import { createLlamaWebhookReceiver, drainLlamaWebhooks } from './webhook.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
 const secret = 'webhook-http-test-signing-secret';
 const now = (): string => '2026-10-13T00:00:00.000Z';
 const event = {
@@ -27,21 +28,17 @@ const event = {
   data: { job_id: randomUUID() },
 };
 
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources.webhook!);
 
 describe('fn:createLlamaWebhookReceiver', () => {
-  it('should reject configuration without a signing secret', () => {
+  it('should reject configuration without a signing secret', ({ fixture }) => {
     expect(() =>
       createLlamaWebhookReceiver(fixture.runtime.database.db, '', now),
     ).toThrow();
   });
 
-  it.each([
+  it.for([
     'null',
     'true',
     '{}',
@@ -54,17 +51,22 @@ describe('fn:createLlamaWebhookReceiver', () => {
     JSON.stringify({ ...event, data: 'invalid' }),
     JSON.stringify({ ...event, data: { job_id: '' } }),
     JSON.stringify({ ...event, data: { job_id: 12 } }),
-  ])('should reject a signed malformed event: %s', async (body) => {
-    const receiver = createLlamaWebhookReceiver(
-      fixture.runtime.database.db,
-      secret,
-      now,
-    );
-    const response = await receiver(signedRequest(body));
-    expect(response.status).toBe(422);
-  });
+  ])(
+    'should reject a signed malformed event: %s',
+    async (body, { fixture }) => {
+      const receiver = createLlamaWebhookReceiver(
+        fixture.runtime.database.db,
+        secret,
+        now,
+      );
+      const response = await receiver(signedRequest(body));
+      expect(response.status).toBe(422);
+    },
+  );
 
-  it('should reject an empty request and an oversized stream without recording an event', async () => {
+  it('should reject an empty request and an oversized stream without recording an event', async ({
+    fixture,
+  }) => {
     const receiver = createLlamaWebhookReceiver(
       fixture.runtime.database.db,
       secret,
@@ -81,7 +83,9 @@ describe('fn:createLlamaWebhookReceiver', () => {
     expect(response.status).toBe(413);
   });
 
-  it('should refuse events when the verification clock is unavailable', async () => {
+  it('should refuse events when the verification clock is unavailable', async ({
+    fixture,
+  }) => {
     const receiver = createLlamaWebhookReceiver(
       fixture.runtime.database.db,
       secret,
@@ -92,7 +96,9 @@ describe('fn:createLlamaWebhookReceiver', () => {
     );
   });
 
-  it('should defer unrelated and failed callbacks and let only one concurrent drain acknowledge completed work', async () => {
+  it('should defer unrelated and failed callbacks and let only one concurrent drain acknowledge completed work', async ({
+    fixture,
+  }) => {
     const database = fixture.runtime.database.db;
     const jobId = randomUUID();
     const step = `parse:${randomUUID()}`;
@@ -200,7 +206,9 @@ describe('fn:createLlamaWebhookReceiver', () => {
     ).toEqual({ inspected: 2, delivered: 0, deferred: 2 });
   });
 
-  it('should count one durable delivery when two real source callback drains race', async () => {
+  it('should count one durable delivery when two real source callback drains race', async ({
+    fixture,
+  }) => {
     const knowledge = readKnowledgeConfiguration({
       ANTICA_PARSING_DRIVER: 'llama',
       ANTICA_TEXT_SEARCH_DRIVER: 'local',
@@ -212,7 +220,7 @@ describe('fn:createLlamaWebhookReceiver', () => {
     if (!knowledge.success) {
       throw new Error('Invalid parser fixture config');
     }
-    const raceFixture = await createHttpFixture({
+    const raceFixture = await createHttpFixture(resources['webhook-race']!, {
       ...createLocalSettings(),
       knowledge: knowledge.data,
     });
@@ -223,7 +231,7 @@ describe('fn:createLlamaWebhookReceiver', () => {
         if (args[0] === 'data:,') {
           return new Response();
         }
-        const request = new Request(...args);
+        const request = new Request(args[0], args[1]);
         if (request.method === 'POST') {
           const form = await request.formData();
           const file = form.get('file');
@@ -422,21 +430,27 @@ describe('fn:createLlamaWebhookReceiver', () => {
       });
     } finally {
       vi.useRealTimers();
-      vi.unstubAllGlobals();
       await raceFixture.close();
     }
   }, 30_000);
 
-  it('should report temporary receipt failure after persistence becomes unavailable', async () => {
-    const receiver = createLlamaWebhookReceiver(
-      fixture.runtime.database.db,
-      secret,
-      now,
-    );
-    await fixture.runtime.close();
-    expect((await receiver(signedRequest(JSON.stringify(event)))).status).toBe(
-      503,
-    );
+  it('should report temporary receipt failure after persistence becomes unavailable', async ({
+    fixture,
+  }) => {
+    const closedFixture = await createHttpFixture(resources['webhook-closed']!);
+    try {
+      const receiver = createLlamaWebhookReceiver(
+        closedFixture.runtime.database.db,
+        secret,
+        now,
+      );
+      await closedFixture.runtime.close();
+      expect(
+        (await receiver(signedRequest(JSON.stringify(event)))).status,
+      ).toBe(503);
+    } finally {
+      await closedFixture.close();
+    }
   });
 });
 

@@ -32,6 +32,8 @@ jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(async () => undefined),
 }));
 
+const privateOrigin = 'https://internal.example:8080';
+
 beforeEach(() => {
   jest.mocked(getItemAsync).mockReset().mockResolvedValue(null);
   jest.mocked(setItemAsync).mockReset().mockResolvedValue(undefined);
@@ -108,9 +110,10 @@ it.each(['', 'NaN', 'Infinity', '6'])(
 );
 
 it('should recover a failed media read and prepare a frame when duration is unknown', async () => {
+  const readFailure = new Error(`Media unavailable at ${privateOrigin}`);
   const response = jest
     .fn<() => Promise<unknown>>()
-    .mockRejectedValueOnce(new Error('Media unavailable'))
+    .mockRejectedValueOnce(readFailure)
     .mockResolvedValue({
       ...media,
       asset: { ...media.asset, durationMs: null },
@@ -119,13 +122,29 @@ it('should recover a failed media read and prepare a frame when duration is unkn
     get: response,
     post: async () => ({ id: jobId, kind: 'media' }),
   });
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Media unavailable'),
+  await waitFor(() => {
+    for (const alert of screen.getAllByRole('alert')) {
+      expect(alert).toHaveTextContent(/\S/);
+    }
+  });
+  expect(screen.queryAllByText(readFailure.message, { exact: false })).toEqual(
+    [],
   );
+  expect(screen.queryAllByText(privateOrigin, { exact: false })).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
+    `/v1/media/${assetId}`,
+  ]);
+  expect([view.commands.mock.calls, view.patches.mock.calls]).toEqual([[], []]);
   await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() =>
     expect(screen.getByLabelText('Frame time (seconds)')).toBeTruthy(),
   );
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
+    `/v1/media/${assetId}`,
+    `/v1/media/${assetId}`,
+  ]);
+  expect(screen.queryByRole('alert')).toBeNull();
   view.reads.mockResolvedValueOnce(completedJob);
   await fireEvent.changeText(
     screen.getByLabelText('Frame time (seconds)'),

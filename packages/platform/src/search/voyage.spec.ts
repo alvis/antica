@@ -13,26 +13,59 @@ const index = {
   indexVersion: 'catalog-v1',
 };
 const vector = Array<number>(1024).fill(0.25);
+const redImage: SearchImage = {
+  originalAssetId: 'original',
+  canonicalViewId: 'view',
+  bytes: await sharp({
+    create: { width: 20, height: 20, channels: 3, background: '#ff0000' },
+  })
+    .png()
+    .toBuffer(),
+  region: null,
+};
+
+const sdk = vi.hoisted(() => ({
+  fetch: vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({ data: [{ index: 0, embedding: vector }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+  ),
+}));
+
+vi.mock('voyageai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('voyageai')>();
+  class FixtureVoyageAIClient extends actual.VoyageAIClient {
+    constructor(
+      options?: ConstructorParameters<typeof actual.VoyageAIClient>[0],
+    ) {
+      super({ ...options, fetch: sdk.fetch });
+    }
+  }
+
+  return {
+    ...actual,
+    VoyageAIClient: FixtureVoyageAIClient,
+  } satisfies typeof import('voyageai');
+});
 
 describe('Voyage image embedding boundary', () => {
   it('should use the SDK boundary with bounded retries when no transport is injected', async () => {
-    const sdk = vi
-      .spyOn(VoyageAIClient.prototype, 'multimodalEmbed')
-      .mockResolvedValue({ data: [{ index: 0, embedding: vector }] });
-    try {
-      expect(
-        await createVoyageImageEmbedding({ apiKey: 'test-only', index }).embed(
-          await redImage(),
-          'query',
-        ),
-      ).toEqual({ success: true, data: vector });
-      expect(sdk).toHaveBeenCalledWith(
-        expect.objectContaining({ inputType: 'query' }),
-        { timeoutInSeconds: 30, maxRetries: 0 },
-      );
-    } finally {
-      sdk.mockRestore();
-    }
+    const multimodalEmbed = vi.spyOn(
+      VoyageAIClient.prototype,
+      'multimodalEmbed',
+    );
+    expect(
+      await createVoyageImageEmbedding({ apiKey: 'test-only', index }).embed(
+        redImage,
+        'query',
+      ),
+    ).toEqual({ success: true, data: vector });
+    expect(multimodalEmbed).toHaveBeenCalledWith(
+      expect.objectContaining({ inputType: 'query' }),
+      { timeoutInSeconds: 30, maxRetries: 0 },
+    );
   });
 
   it('should reject missing credentials without invoking the image transport', async () => {
@@ -43,7 +76,7 @@ describe('Voyage image embedding boundary', () => {
         apiKey: ' ',
         index,
         embedMultimodal: embed,
-      }).embed(await redImage(), 'query'),
+      }).embed(redImage, 'query'),
     ).toMatchObject({
       success: false,
       error: { code: 'PROVIDER_UNAVAILABLE', retryable: false },
@@ -61,7 +94,7 @@ describe('Voyage image embedding boundary', () => {
         embedMultimodal: embed,
       }).embed(
         {
-          ...(await redImage()),
+          ...redImage,
           region: { kind: 'rect', x: 0.9, y: 0, width: 0.2, height: 1 },
         },
         'query',
@@ -71,9 +104,18 @@ describe('Voyage image embedding boundary', () => {
   });
 
   it('should send the selected canonical pixels and preserve the query embedding role', async () => {
-    const embed = vi
-      .fn<NonNullable<VoyageImageEmbeddingParams['embedMultimodal']>>()
-      .mockResolvedValue({ data: [{ index: 0, embedding: vector }] });
+    const observed: {
+      request?: Parameters<
+        NonNullable<VoyageImageEmbeddingParams['embedMultimodal']>
+      >[0];
+    } = {};
+    const embed = vi.fn<
+      NonNullable<VoyageImageEmbeddingParams['embedMultimodal']>
+    >(async (request) => {
+      observed.request ??= request;
+
+      return { data: [{ index: 0, embedding: vector }] };
+    });
     const bytes = await sharp(
       Buffer.from([255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]),
       { raw: { width: 2, height: 2, channels: 3 } },
@@ -92,7 +134,17 @@ describe('Voyage image embedding boundary', () => {
       embedMultimodal: embed,
     }).embed(image, 'query');
     expect(result).toEqual({ success: true, data: vector });
-    const request = embed.mock.calls[0]![0];
+    expect(embed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: index.embeddingModelId,
+        inputType: 'query',
+        truncation: false,
+      }),
+    );
+    const request = observed.request;
+    if (!request) {
+      throw new Error('Image request was not sent');
+    }
     expect(request).toMatchObject({
       model: index.embeddingModelId,
       inputType: 'query',
@@ -111,10 +163,19 @@ describe('Voyage image embedding boundary', () => {
   });
 
   it('should mask pixels outside a polygon rather than embedding its entire bounding rectangle', async () => {
-    const embed = vi
-      .fn<NonNullable<VoyageImageEmbeddingParams['embedMultimodal']>>()
-      .mockResolvedValue({ data: [{ index: 0, embedding: vector }] });
-    const image = await redImage();
+    const observed: {
+      request?: Parameters<
+        NonNullable<VoyageImageEmbeddingParams['embedMultimodal']>
+      >[0];
+    } = {};
+    const embed = vi.fn<
+      NonNullable<VoyageImageEmbeddingParams['embedMultimodal']>
+    >(async (request) => {
+      observed.request ??= request;
+
+      return { data: [{ index: 0, embedding: vector }] };
+    });
+    const image = redImage;
     const result = await createVoyageImageEmbedding({
       apiKey: 'test-only',
       index,
@@ -134,8 +195,14 @@ describe('Voyage image embedding boundary', () => {
       'document',
     );
     expect(result.success).toBe(true);
-    const request = embed.mock.calls[0]![0];
-    expect(request.inputType).toBe('document');
+    expect(embed).toHaveBeenCalledWith(
+      expect.objectContaining({ inputType: 'document' }),
+    );
+    const request = observed.request;
+    if (!request) {
+      throw new Error('Image request was not sent');
+    }
+    expect(request).toMatchObject({ inputType: 'document' });
     const content = request.inputs[0]!.content![0]!;
     if (content.type !== 'image_base64' || !content.imageBase64) {
       throw new Error('Image bytes were not sent');
@@ -179,7 +246,7 @@ describe('Voyage image embedding boundary', () => {
       apiKey: 'test-only',
       index,
       embedMultimodal: async () => ({ data }),
-    }).embed(await redImage(), 'query');
+    }).embed(redImage, 'query');
     expect(result).toMatchObject({
       success: false,
       error: { code: 'INDEX_NOT_READY', retryable: false },
@@ -193,7 +260,7 @@ describe('Voyage image embedding boundary', () => {
       apiKey: 'test-only',
       index: { ...index, dimensions: 768 },
       embedMultimodal: embed,
-    }).embed(await redImage(), 'query');
+    }).embed(redImage, 'query');
     expect(result).toMatchObject({
       success: false,
       error: { code: 'INDEX_NOT_READY' },
@@ -231,23 +298,10 @@ describe('Voyage image embedding boundary', () => {
       embedMultimodal: async () => {
         throw new Error('Network unavailable');
       },
-    }).embed(await redImage(), 'query');
+    }).embed(redImage, 'query');
     expect(result).toMatchObject({
       success: false,
       error: { code: 'PROVIDER_UNAVAILABLE', retryable: true },
     });
   });
 });
-
-async function redImage(): Promise<SearchImage> {
-  return {
-    originalAssetId: 'original',
-    canonicalViewId: 'view',
-    bytes: await sharp({
-      create: { width: 20, height: 20, channels: 3, background: '#ff0000' },
-    })
-      .png()
-      .toBuffer(),
-    region: null,
-  };
-}

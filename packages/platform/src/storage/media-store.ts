@@ -14,6 +14,7 @@ export interface SignedTransfer {
   readonly headers: Readonly<Record<string, string>>;
 }
 
+/** signed part URLs and offsets for one private multipart upload */
 export interface MultipartTransfer {
   readonly uploadId: string;
   readonly expiresAt: string;
@@ -53,7 +54,12 @@ export interface MediaStore {
   }): Promise<void>;
 }
 
-/** assigns an unpredictable, immutable key for an original asset */
+/**
+ * derives a stable private key from a validated original asset ID
+ * @param assetId original asset identifier used as the key suffix
+ * @returns lowercase key under the originals prefix
+ * @throws {Error} when the asset ID is not 36 hexadecimal or hyphen characters
+ */
 export function originalKey(assetId: string): string {
   if (!/^[0-9a-f-]{36}$/i.test(assetId)) {
     throw new Error('Invalid asset ID');
@@ -61,7 +67,13 @@ export function originalKey(assetId: string): string {
   return `originals/${assetId.toLowerCase()}`;
 }
 
-/** assigns a key that retains the derivative's original-asset provenance */
+/**
+ * assigns a key that retains the derivative's original-asset provenance
+ * @param originalAssetId original asset identifier retained in the path
+ * @param derivativeId derivative identifier used as the final path segment
+ * @returns lowercase key under the derivatives prefix
+ * @throws {Error} when either identifier is not 36 hexadecimal or hyphen characters
+ */
 export function derivativeKey(
   originalAssetId: string,
   derivativeId: string,
@@ -75,7 +87,14 @@ export function derivativeKey(
   return `derivatives/${originalAssetId.toLowerCase()}/${derivativeId.toLowerCase()}`;
 }
 
-/** binds generated parser output to its immutable source and parse attempt */
+/**
+ * binds generated parser output to its immutable source and parse attempt
+ * @param sourceVersionId source version that owns the parse attempt
+ * @param parseRunId parse attempt that produced the artifact
+ * @param assetId generated artifact identifier
+ * @returns lowercase key under the artifacts prefix
+ * @throws {Error} when any identifier is not 36 hexadecimal or hyphen characters
+ */
 export function artifactKey(
   sourceVersionId: string,
   parseRunId: string,
@@ -91,6 +110,11 @@ export function artifactKey(
   return `artifacts/${sourceVersionId.toLowerCase()}/${parseRunId.toLowerCase()}/${assetId.toLowerCase()}`;
 }
 
+/**
+ * rejects object keys outside private media storage prefixes
+ * @param key private object key to validate before storage access
+ * @throws {Error} when the key uses an unsupported prefix, character, or traversal marker
+ */
 export function assertStorageKey(key: string): void {
   if (
     !/^(originals|derivatives|artifacts)\/[a-z0-9/-]+$/.test(key) ||

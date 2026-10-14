@@ -141,10 +141,10 @@ export type AnalysisValidationResult =
   | { readonly valid: false; readonly issues: readonly string[] };
 
 /**
- * Validates a model response and all of its references against the frozen input.
+ * validates a model response and all of its references against the frozen input
  * @param value Model response to validate.
  * @param allowed References available to this analysis run.
- * @returns Parsed output or validation issues.
+ * @returns parsed output or validation issues
  */
 export function validateAnalysisOutput(
   value: unknown,
@@ -169,7 +169,7 @@ export function validateAnalysisOutput(
       };
 }
 /**
- * Appends identifiers that are absent from a frozen allowed-reference set.
+ * appends identifiers that are absent from a frozen allowed-reference set
  * @param ids Referenced identifiers to inspect.
  * @param allowed Allowed identifiers from the input snapshot.
  * @param rejected Mutable list of rejected identifiers.
@@ -187,10 +187,10 @@ function collectUnknownReferences(
 }
 
 /**
- * Finds unsupported references and findings without their required support.
+ * finds unsupported references and findings without their required support
  * @param output Parsed analysis output.
  * @param allowed References available to this analysis run.
- * @returns Rejected reference or finding IDs.
+ * @returns rejected reference or finding IDs
  */
 export function validateAnalysisReferences(
   output: AnalysisOutput,

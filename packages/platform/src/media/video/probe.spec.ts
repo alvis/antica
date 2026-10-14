@@ -6,13 +6,13 @@ import { describe, expect, it } from 'vitest';
 
 import { probeVideo } from './probe.js';
 
-async function probeFixture(payload: unknown) {
+async function probeFixture(data: unknown) {
   const directory = await mkdtemp(join(tmpdir(), 'antica-probe-'));
   const ffprobePath = join(directory, 'ffprobe');
   try {
     await writeFile(
       ffprobePath,
-      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\n`,
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(data)}'\n`,
       { mode: 0o700 },
     );
 

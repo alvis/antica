@@ -52,7 +52,7 @@ export function createKnowledgeRoutes(
 }
 
 /**
- * Mounts source intake and source detail endpoints on the authenticated router.
+ * mounts source intake and source detail endpoints on the authenticated router
  * @param router API router receiving the endpoints
  * @param sources persistent source operations
  */
@@ -80,20 +80,20 @@ function registerSourceRoutes(
 
     return respond(
       context,
-      await sources.get(
-        context.get('ownerId'),
-        context.req.param('id'),
-        query.data.versionId,
-        query.data.pageId,
-        query.data.pageCursor,
-        query.data.limit,
-      ),
+      await sources.get({
+        ownerId: context.get('ownerId'),
+        id: context.req.param('id'),
+        versionId: query.data.versionId,
+        pageId: query.data.pageId,
+        cursor: query.data.pageCursor,
+        limit: query.data.limit,
+      }),
     );
   });
 }
 
 /**
- * Mounts the filtered knowledge catalogue endpoint.
+ * mounts the filtered knowledge catalogue endpoint
  * @param router API router receiving the endpoint
  * @param knowledge persistent knowledge operations
  */
@@ -154,7 +154,7 @@ function registerKnowledgeListRoute(
 }
 
 /**
- * Mounts knowledge creation and revision detail endpoints.
+ * mounts knowledge creation and revision detail endpoints
  * @param router API router receiving the endpoints
  * @param knowledge persistent knowledge operations
  */

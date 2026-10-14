@@ -1,6 +1,7 @@
-import { useAuth } from '../auth';
 import { Redirect } from 'expo-router';
 import { ActivityIndicator } from 'react-native';
+
+import { useAuth } from '../auth';
 
 export default function IndexRoute() {
   const { authenticated, loading } = useAuth();

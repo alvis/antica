@@ -36,6 +36,7 @@ import type {
 
 import type { ApplicationSettings } from './configuration.js';
 import type { Persistence } from './persistence.js';
+import type { LlamaWebhookDrainReport } from './webhook.js';
 
 /** carries the configured destination for a prepared collector image */
 interface CollectionIndexDestination {
@@ -47,7 +48,7 @@ interface CollectionIndexDestination {
 export interface ApplicationDrainReport extends Awaited<
   ReturnType<ReturnType<typeof createOutboxDrain>>
 > {
-  readonly webhooks: Awaited<ReturnType<typeof drainLlamaWebhooks>>;
+  readonly webhooks: LlamaWebhookDrainReport;
 }
 
 /** combines provider choices and owner-scoped persistence for durable workers */
@@ -104,21 +105,27 @@ function createSourceHandler(
   const parser = createSourceParser(knowledge, persistence);
   const textWriter = createTextWriter(knowledge, persistence);
 
-  return createSourceIngestionHandler(transaction, parser, clock, ids, {
-    text:
-      knowledge.textDriver === 'local'
-        ? { kind: 'local' }
-        : {
+  return createSourceIngestionHandler({
+    transaction,
+    parser,
+    clock,
+    ids,
+    indexing: {
+      text:
+        knowledge.textDriver === 'local'
+          ? { kind: 'local' }
+          : {
+              kind: 'external',
+              index: knowledge.textIndex,
+              writer: textWriter,
+            },
+      image: images.writer
+        ? {
             kind: 'external',
-            index: knowledge.textIndex,
-            writer: textWriter,
-          },
-    image: images.writer
-      ? {
-          kind: 'external',
-          writer: createSourceImageWriter(persistence, images.writer),
-        }
-      : { kind: 'local' },
+            writer: createSourceImageWriter(persistence, images.writer),
+          }
+        : { kind: 'local' },
+    },
   });
 }
 

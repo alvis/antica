@@ -1,11 +1,17 @@
 import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
+import { getItemAsync } from 'expo-secure-store';
+
 import CollectionRoute from '../../app/(private)/(tabs)/collection';
 import { renderMobile } from '../../mobile.spec.fixtures';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+}));
 
 const categoryId = '00000000-0000-4000-8000-000000000041';
 const materialId = '00000000-0000-4000-8000-000000000042';
@@ -130,13 +136,26 @@ it('should search trimmed text and select freshness without offering duplicate c
   );
   await fireEvent.changeText(screen.getByLabelText('Search'), '  bowl  ');
   await waitFor(() =>
-    expect(screen.getByText('Nothing here yet.')).toBeTruthy(),
+    expect(
+      screen.getByText(
+        'No items match these filters. Clear filters to see your collection.',
+      ),
+    ).toBeTruthy(),
   );
   expect(screen.getAllByRole('button', { name: 'Add item' })).toHaveLength(1);
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: 'All' }),
+  ]);
   await fireEvent.press(screen.getByRole('button', { name: 'Not analyzed' }));
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: 'Not analyzed' }),
+  ]);
   await fireEvent.press(
     screen.getByRole('button', { name: 'New evidence not analyzed' }),
   );
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: 'New evidence not analyzed' }),
+  ]);
   await waitFor(() =>
     expect(
       view.reads.mock.calls.some(
@@ -147,9 +166,16 @@ it('should search trimmed text and select freshness without offering duplicate c
   );
   await fireEvent.changeText(screen.getByLabelText('Search'), '');
   await waitFor(() =>
-    expect(screen.getByText('Nothing here yet.')).toBeTruthy(),
+    expect(
+      screen.getByText(
+        'No items match these filters. Clear filters to see your collection.',
+      ),
+    ).toBeTruthy(),
   );
   await fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: 'All' }),
+  ]);
   await waitFor(() =>
     expect(
       screen.getByText('Your collection is empty. Add an item to begin.'),
@@ -205,6 +231,16 @@ it('should search filter terms and keep the selected category only once', async 
   await fireEvent.press(screen.getByRole('button', { name: 'Pending checks' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Pending checks' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
+  expect(screen.queryByRole('button', { name: 'Ceramic' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: 'Clear filters' })).toHaveLength(
+    1,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Clear filters' }));
+  await waitFor(() =>
+    expect(
+      screen.getByText('Your collection is empty. Add an item to begin.'),
+    ).toBeTruthy(),
+  );
   expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
 });
 
@@ -228,6 +264,124 @@ it('should retry a collection read error and restore the collection rows', async
     '/v1/records?limit=50&sort=updated',
     '/v1/records?limit=50&sort=updated',
   ]);
+});
+
+it('should expose the selected freshness and recover filtered results in Traditional Chinese', async () => {
+  jest.mocked(getItemAsync).mockResolvedValueOnce('zh-Hant');
+  await renderMobile(<CollectionRoute />, {
+    get: async (path) => ({
+      items: new URL(path, 'https://api.example').searchParams.has('freshness')
+        ? []
+        : [
+            {
+              id: categoryId,
+              code: 'A-041',
+              name: 'Collector-authored bowl',
+              coverThumbnail: null,
+              locationLabel: null,
+              analysisFreshness: 'current',
+              pendingCheckCount: 0,
+            },
+          ],
+      nextCursor: null,
+    }),
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'A-041, Collector-authored bowl' }),
+    ).toBeTruthy(),
+  );
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: '全部' }),
+  ]);
+  await fireEvent.press(screen.getByRole('button', { name: '尚未分析' }));
+  await waitFor(() =>
+    expect(
+      screen.getByText('沒有符合篩選條件的藏品。清除篩選即可查看藏品。'),
+    ).toBeTruthy(),
+  );
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: '尚未分析' }),
+  ]);
+  expect(
+    screen.queryByRole('button', { name: 'A-041, Collector-authored bowl' }),
+  ).toBeNull();
+  expect(screen.getAllByRole('button', { name: '新增藏品' })).toHaveLength(1);
+  await fireEvent.press(screen.getByRole('button', { name: '新證據尚未分析' }));
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: '新證據尚未分析' }),
+  ]);
+  await fireEvent.press(
+    await screen.findByRole('button', { name: '清除篩選' }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'A-041, Collector-authored bowl' }),
+    ).toBeTruthy(),
+  );
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: '全部' }),
+  ]);
+  expect(
+    screen.queryByText('沒有符合篩選條件的藏品。清除篩選即可查看藏品。'),
+  ).toBeNull();
+  expect(screen.queryByRole('button', { name: '清除篩選' })).toBeNull();
+});
+
+it('should clear nonmatching collection search from expanded filters and restore the existing row', async () => {
+  const view = await renderMobile(<CollectionRoute />, {
+    get: async (path) => {
+      if (!path.startsWith('/v1/records?')) {
+        return getCollectionFilterResponse(path);
+      }
+
+      return {
+        items: new URL(path, 'https://api.example').searchParams.has('text')
+          ? []
+          : [
+              {
+                id: categoryId,
+                code: 'A-041',
+                name: 'Collector-authored bowl',
+                coverThumbnail: null,
+                locationLabel: null,
+                analysisFreshness: 'current',
+                pendingCheckCount: 0,
+              },
+            ],
+        nextCursor: null,
+      };
+    },
+  });
+  const rowName = 'A-041, Collector-authored bowl';
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: rowName })).toBeTruthy(),
+  );
+  const search = screen.getByLabelText('Search');
+  await fireEvent.changeText(search, 'no-such-item');
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: rowName })).toBeNull(),
+  );
+  expect(
+    view.reads.mock.calls.some(([path]) => path.includes('text=no-such-item')),
+  ).toBe(true);
+  await fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Ceramic' })).toBeTruthy(),
+  );
+  expect(search).toHaveDisplayValue('no-such-item');
+  expect(screen.getAllByRole('button', { name: 'Clear filters' })).toHaveLength(
+    1,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Clear filters' }));
+  expect(search).toHaveDisplayValue('');
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: rowName })).toBeTruthy(),
+  );
+  expect(screen.getAllByRole('button', { selected: true })).toEqual([
+    screen.getByRole('button', { name: 'All' }),
+  ]);
+  expect(screen.getByRole('button', { name: 'Ceramic' })).toBeTruthy();
 });
 
 it('should distinguish current and outdated items, including an unnamed photo', async () => {

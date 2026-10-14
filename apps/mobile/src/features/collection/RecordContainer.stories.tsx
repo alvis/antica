@@ -33,9 +33,9 @@ const readyResponses = {
 };
 
 /**
- * Renders a record story whose fixture persists submitted edits.
- * @param args Record container properties.
- * @returns Stateful record story surface.
+ * renders a record story whose fixture persists submitted edits
+ * @param args record container properties.
+ * @returns stateful record story surface
  */
 function SavedRecordStory(args: Readonly<RecordContainerProps>): ReactElement {
   const currentRecord = useRef(storyRecord);

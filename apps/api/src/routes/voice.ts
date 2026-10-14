@@ -17,9 +17,10 @@ import type {
 import type { ApiEnv } from '../http.js';
 
 /**
- * Collector-controlled voice transcription and selective record editing.
- * @param transcriptions
- * @param edits
+ * creates collector-controlled voice transcription and selective record editing routes
+ * @param transcriptions owner-scoped transcription operations
+ * @param edits selective record edit operations
+ * @returns authenticated Hono routes for transcription and record edits
  */
 export function createVoiceRoutes(
   transcriptions: TranscriptionService,

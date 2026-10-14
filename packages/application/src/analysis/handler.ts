@@ -34,7 +34,13 @@ export interface AnalysisMediaReader {
   }): Promise<OperationResult<Uint8Array>>;
 }
 
-/** Resolve immutable frozen evidence to owner-scoped persisted image locators. */
+/**
+ * resolves immutable frozen evidence to owner-scoped persisted image locators
+ * @param transaction owner-scoped transaction port
+ * @param ownerId collector who owns the frozen evidence
+ * @param frozen requested analysis snapshot
+ * @returns selected image bytes or a public operation error
+ */
 async function selectEvidenceImages(
   transaction: TransactionPort,
   ownerId: string,
@@ -212,7 +218,13 @@ export function createAnalysisHandler(
   };
 }
 
-/** Execute one frozen analysis; retryable failures retain its running status. */
+/**
+ * executes one frozen analysis; retryable failures retain its running status
+ * @param params analysis dependencies
+ * @param ownerId collector who owns the analysis
+ * @param jobId persisted analysis job identifier
+ * @returns analysis completion or a public operation error
+ */
 async function executeAnalysis(
   params: AnalysisHandlerParams,
   ownerId: string,
@@ -535,7 +547,14 @@ async function executeAnalysis(
   });
 }
 
-/** Persist generated-only failure data before returning a model or output error. */
+/**
+ * persists generated-only failure data before returning a model or output error
+ * @param transaction owner-scoped transaction port
+ * @param ownerId collector who owns the run
+ * @param runId persisted analysis run identifier
+ * @param audit failed model invocation and generated output
+ * @returns audit persistence result
+ */
 async function appendFailureAudit(
   transaction: TransactionPort,
   ownerId: string,
@@ -562,7 +581,13 @@ async function appendFailureAudit(
       };
 }
 
-/** Persist a terminal run status before the outbox marks its job failed. */
+/**
+ * persists a terminal run status before the outbox marks its job failed
+ * @param transaction owner-scoped transaction port
+ * @param ownerId collector who owns the run
+ * @param jobId persisted analysis job identifier
+ * @returns status persistence result
+ */
 async function markAnalysisFailed(
   transaction: TransactionPort,
   ownerId: string,

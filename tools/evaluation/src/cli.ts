@@ -1,6 +1,6 @@
-import { parseArgs } from 'node:util';
-
 import { writeFile } from 'node:fs/promises';
+
+import { parseArgs } from 'node:util';
 
 /** provides parsed command values without accepting unknown flags */
 export interface EvaluationArguments {

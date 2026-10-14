@@ -1,14 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { inject, describe, expect, vi } from 'vitest';
 
 import {
   sourceAcceptedSchema,
@@ -18,45 +10,37 @@ import {
 
 import { readKnowledgeConfiguration } from '@antica/platform';
 
-import { createHttpFixture } from './fixtures/http.js';
+import { createHttpTest } from './fixtures/http/test.js';
 import { createLocalSettings } from './fixtures/runtime.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  const knowledge = readKnowledgeConfiguration({
-    ANTICA_PARSING_DRIVER: 'llama',
-    ANTICA_TEXT_SEARCH_DRIVER: 'local',
-    LLAMA_CLOUD_API_KEY: 'synthetic-test-key',
-    LLAMA_PARSE_VERSION: '2026-09-01',
-    LLAMA_WEBHOOK_URL: 'https://api.example.test/webhooks/llama-parse',
-    LLAMA_WEBHOOK_SIGNING_SECRET: 'synthetic-webhook-signing-secret',
-  });
-  if (!knowledge.success) {
-    throw new Error('Invalid parser fixture config');
-  }
-  fixture = await createHttpFixture({
-    ...createLocalSettings(),
-    knowledge: knowledge.data,
-  });
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
+const resources = inject('httpResources');
+const knowledge = readKnowledgeConfiguration({
+  ANTICA_PARSING_DRIVER: 'llama',
+  ANTICA_TEXT_SEARCH_DRIVER: 'local',
+  LLAMA_CLOUD_API_KEY: 'synthetic-test-key',
+  LLAMA_PARSE_VERSION: '2026-09-01',
+  LLAMA_WEBHOOK_URL: 'https://api.example.test/webhooks/llama-parse',
+  LLAMA_WEBHOOK_SIGNING_SECRET: 'synthetic-webhook-signing-secret',
 });
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.useRealTimers();
+if (!knowledge.success) {
+  throw new Error('Invalid parser fixture config');
+}
+const it = createHttpTest(resources['cloud-source']!, {
+  ...createLocalSettings(),
+  knowledge: knowledge.data,
 });
 
 describe('Configured cloud source parsing', () => {
-  it('should submit one original and resume the durable parse into retained source pages', async () => {
+  it('should submit one original and resume the durable parse into retained source pages', async ({
+    fixture,
+  }) => {
     const providerJobId = randomUUID();
     const uploadedOriginals: Uint8Array[] = [];
     const transport = vi.fn<typeof fetch>(async (...args) => {
       if (args[0] === 'data:,') {
         return new Response();
       }
-      const request = new Request(...args);
+      const request = new Request(args[0], args[1]);
       if (request.method === 'POST') {
         const form = await request.formData();
         const file = form.get('file');

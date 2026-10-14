@@ -23,6 +23,11 @@ jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(async () => undefined),
 }));
 
+const privateOrigin = 'https://internal.example:8080';
+const pdfRetryReadCount = 3;
+const historicalRead =
+  '/v1/sources/00000000-0000-4000-8000-000000000050?limit=20&versionId=00000000-0000-4000-8000-000000000051&pageId=00000000-0000-4000-8000-000000000052';
+
 beforeEach(() => {
   jest.mocked(useLocalSearchParams).mockReturnValue({
     sourceId: '00000000-0000-4000-8000-000000000050',
@@ -32,19 +37,35 @@ beforeEach(() => {
 });
 
 it('should request the cited historical version without falling back to the current source', async () => {
+  const readFailure = new Error(
+    `Historical page unavailable at ${privateOrigin}`,
+  );
   const view = await renderMobile(<SourceDetailRoute />, {
     get: async () => {
-      throw new Error('Historical page unavailable');
+      throw readFailure;
     },
   });
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Historical page unavailable',
-    ),
+  await waitFor(() => {
+    for (const alert of screen.getAllByRole('alert')) {
+      expect(alert).toHaveTextContent(/\S/);
+    }
+  });
+  expect(screen.queryAllByText(readFailure.message, { exact: false })).toEqual(
+    [],
   );
-  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
-    '/v1/sources/00000000-0000-4000-8000-000000000050?limit=20&versionId=00000000-0000-4000-8000-000000000051&pageId=00000000-0000-4000-8000-000000000052',
-  ]);
+  expect(screen.queryAllByText(privateOrigin, { exact: false })).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([historicalRead]);
+  expect([view.commands.mock.calls, view.patches.mock.calls]).toEqual([[], []]);
+  await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() =>
+    expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
+      historicalRead,
+      historicalRead,
+    ]),
+  );
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  expect([view.commands.mock.calls, view.patches.mock.calls]).toEqual([[], []]);
 });
 
 it('should refresh the signed original PDF URL before opening it', async () => {
@@ -86,29 +107,52 @@ it('should show a failed PDF refresh without opening an expired URL and allow a 
       screen.getByRole('button', { name: 'Open original PDF 1' }),
     ).toBeTruthy(),
   );
-  view.reads.mockRejectedValueOnce(new Error('Signed URL refresh failed'));
+  const refreshFailure = new Error(
+    `Signed URL refresh failed at ${privateOrigin}`,
+  );
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([historicalRead]);
+  view.reads.mockRejectedValueOnce(refreshFailure);
 
   await fireEvent.press(
     screen.getByRole('button', { name: 'Open original PDF 1' }),
   );
-  await waitFor(() =>
-    expect(screen.getAllByRole('alert')[0]).toHaveTextContent(
-      'Signed URL refresh failed',
-    ),
-  );
+  await waitFor(() => {
+    for (const alert of screen.getAllByRole('alert')) {
+      expect(alert).toHaveTextContent(/\S/);
+    }
+  });
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
+    historicalRead,
+    historicalRead,
+  ]);
+  expect([view.commands.mock.calls, view.patches.mock.calls]).toEqual([[], []]);
   expect(open).not.toHaveBeenCalled();
+  expect(
+    screen.queryAllByText(refreshFailure.message, { exact: false }),
+  ).toEqual([]);
+  expect(screen.queryAllByText(privateOrigin, { exact: false })).toEqual([]);
   await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() =>
     expect(
       screen.getByRole('button', { name: 'Open original PDF 1' }),
     ).toBeTruthy(),
   );
+  expect(view.reads).toHaveBeenCalledTimes(pdfRetryReadCount);
   await fireEvent.press(
     screen.getByRole('button', { name: 'Open original PDF 1' }),
   );
   await waitFor(() =>
     expect(open).toHaveBeenCalledWith('https://storage.example/expired.pdf'),
   );
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
+    historicalRead,
+    historicalRead,
+    historicalRead,
+    historicalRead,
+  ]);
+  expect([view.commands.mock.calls, view.patches.mock.calls]).toEqual([[], []]);
   expect(screen.queryByRole('alert')).toBeNull();
 });
 

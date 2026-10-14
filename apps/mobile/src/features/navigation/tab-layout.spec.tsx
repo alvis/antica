@@ -1,78 +1,96 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { render, waitFor } from '@testing-library/react-native';
+import { screen, userEvent, waitFor } from '@testing-library/react-native';
 
-import { Tabs } from 'expo-router';
-import { getItemAsync } from 'expo-secure-store';
+import { deleteItemAsync, setItemAsync } from 'expo-secure-store';
+import { Text } from 'react-native';
 
 import TabLayout from '../../app/(private)/(tabs)/_layout';
 import { LocaleProvider } from '../../locale';
 
-jest.mock(
-  'expo-router',
-  () =>
-    ({
-      Tabs: Object.assign(
-        jest.fn(({ children }: { children: React.ReactNode }) => {
-          const { View } =
-            jest.requireActual<typeof import('react-native')>('react-native');
+import { renderRouter } from 'expo-router/testing-library';
 
-          return <View>{children}</View>;
-        }),
-        jest.requireActual<typeof import('expo-router')>('expo-router').Tabs,
-        {
-          Screen: jest.fn<typeof import('expo-router').Tabs.Screen>(() => null),
-        },
-      ),
-    }) satisfies Partial<typeof import('expo-router')>,
-);
-jest.mock(
-  'expo-secure-store',
-  () =>
-    ({
-      getItemAsync: jest.fn(async () => null),
-      setItemAsync: jest.fn(async () => undefined),
-    }) satisfies Partial<typeof import('expo-secure-store')>,
-);
+import type { ReactElement } from 'react';
 
-const tabTitle = (
-  props: Parameters<typeof Tabs.Screen>[0],
-): string | undefined =>
-  typeof props.options === 'function' ? undefined : props.options?.title;
-const englishTitles = ['Collection', 'Tasks', 'Knowledge', 'Research'];
-const chineseTitles = ['藏品', '待辦', '知識庫', '研究'];
+jest.mock('expo-secure-store', () => {
+  const storage = new Map<string, string>();
+
+  return {
+    getItemAsync: jest.fn(
+      async (key: string): Promise<string | null> => storage.get(key) ?? null,
+    ),
+    setItemAsync: jest.fn(async (key: string, value: string): Promise<void> => {
+      storage.set(key, value);
+    }),
+    deleteItemAsync: jest.fn(async (key: string): Promise<void> => {
+      storage.delete(key);
+    }),
+  } satisfies Partial<typeof import('expo-secure-store')>;
+});
+
+const CollectionScene = (): ReactElement => <Text>Collection route</Text>;
+const TasksScene = (): ReactElement => <Text>Tasks route</Text>;
+const KnowledgeScene = (): ReactElement => <Text>Knowledge route</Text>;
+const ResearchScene = (): ReactElement => <Text>Research route</Text>;
+
+const routes = ['collection', 'tasks', 'knowledge', 'research'] as const;
+const sceneLabels = [
+  'Collection route',
+  'Tasks route',
+  'Knowledge route',
+  'Research route',
+];
 
 describe('rc:TabLayout', () => {
-  it('should label the collector journeys in English', async () => {
-    await render(
-      <LocaleProvider>
-        <TabLayout />
-      </LocaleProvider>,
-    );
+  it.each([
+    {
+      language: 'English',
+      storedLocale: null,
+      titles: ['Collection', 'Tasks', 'Knowledge', 'Research'],
+    },
+    {
+      language: 'Traditional Chinese after locale restoration',
+      storedLocale: 'zh-Hant',
+      titles: ['藏品', '待辦', '知識庫', '研究'],
+    },
+  ])(
+    'should label and navigate the collector journeys in $language',
+    async ({ storedLocale, titles }) => {
+      await deleteItemAsync('antica.locale');
+      if (storedLocale !== null) {
+        await setItemAsync('antica.locale', storedLocale);
+      }
+      const pending = renderRouter(
+        {
+          _layout: TabLayout,
+          collection: CollectionScene,
+          tasks: TasksScene,
+          knowledge: KnowledgeScene,
+          research: ResearchScene,
+        },
+        { initialUrl: '/collection', wrapper: LocaleProvider },
+      );
+      await pending;
 
-    expect(
-      jest.mocked(Tabs.Screen).mock.calls.map(([props]) => tabTitle(props)),
-    ).toEqual(englishTitles);
-  });
+      await waitFor(() => {
+        for (const title of titles) {
+          expect(screen.getByText(title)).toBeVisible();
+        }
+      });
+      expect(pending.getPathname()).toBe('/collection');
+      expect(screen.getByText('Collection route')).toBeVisible();
 
-  it('should label the same journeys in Traditional Chinese after locale restoration', async () => {
-    jest.mocked(getItemAsync).mockResolvedValueOnce('zh-Hant');
-    await render(
-      <LocaleProvider>
-        <TabLayout />
-      </LocaleProvider>,
-    );
-
-    await waitFor(() => {
-      const call = jest
-        .mocked(Tabs.Screen)
-        .mock.calls.at(-chineseTitles.length);
-      expect(call && tabTitle(call[0])).toBe('藏品');
-    });
-    expect(
-      jest
-        .mocked(Tabs.Screen)
-        .mock.calls.slice(-chineseTitles.length)
-        .map(([props]) => tabTitle(props)),
-    ).toEqual(chineseTitles);
-  });
+      const user = userEvent.setup({
+        advanceTimers: (milliseconds: number): void => {
+          jest.advanceTimersByTime(milliseconds);
+        },
+      });
+      for (const [index, route] of routes.entries()) {
+        await user.press(screen.getByText(titles[index]));
+        await waitFor(() => {
+          expect(pending.getPathname()).toBe(`/${route}`);
+          expect(screen.getByText(sceneLabels[index])).toBeVisible();
+        });
+      }
+    },
+  );
 });

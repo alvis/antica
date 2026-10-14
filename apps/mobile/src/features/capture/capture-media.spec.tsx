@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, jest } from '@jest/globals';
+import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import {
@@ -30,29 +30,31 @@ jest.mock('expo-audio', () => ({
   useAudioRecorder: () => ({}),
   RecordingPresets: { HIGH_QUALITY: {} },
 }));
-jest.mock('expo-image-picker', () => ({
-  launchCameraAsync: jest.fn(),
-  launchImageLibraryAsync: jest.fn(),
-  requestCameraPermissionsAsync: jest.fn(),
-}));
-
-beforeEach(() => {
-  jest
-    .mocked(requestCameraPermissionsAsync)
-    .mockResolvedValue({ granted: true } as Awaited<
-      ReturnType<typeof requestCameraPermissionsAsync>
-    >);
-  jest
-    .mocked(launchCameraAsync)
-    .mockResolvedValue({ canceled: true, assets: null });
-  jest
-    .mocked(launchImageLibraryAsync)
-    .mockResolvedValue({ canceled: true, assets: null });
-});
+jest.mock(
+  'expo-image-picker',
+  () =>
+    ({
+      launchCameraAsync: jest.fn<typeof launchCameraAsync>(async () => ({
+        canceled: true,
+        assets: null,
+      })),
+      launchImageLibraryAsync: jest.fn<typeof launchImageLibraryAsync>(
+        async () => ({ canceled: true, assets: null }),
+      ),
+      requestCameraPermissionsAsync: jest.fn<
+        typeof requestCameraPermissionsAsync
+      >(
+        async () =>
+          ({ granted: true }) as Awaited<
+            ReturnType<typeof requestCameraPermissionsAsync>
+          >,
+      ),
+    }) satisfies Partial<typeof import('expo-image-picker')>,
+);
 
 /**
- * Opens a new record at its media capture step.
- * @returns The isolated mobile API and navigation boundaries.
+ * opens a new record at its media capture step
+ * @returns the isolated mobile API and navigation boundaries
  */
 async function openCapture(): Promise<
   Awaited<ReturnType<typeof renderMobile>>
@@ -71,7 +73,7 @@ async function openCapture(): Promise<
 it('should explain denied camera access without opening the picker', async () => {
   jest
     .mocked(requestCameraPermissionsAsync)
-    .mockResolvedValue({ granted: false } as Awaited<
+    .mockResolvedValueOnce({ granted: false } as Awaited<
       ReturnType<typeof requestCameraPermissionsAsync>
     >);
   await openCapture();
@@ -121,7 +123,7 @@ it.each([
 ])(
   'should capture $label with a usable fallback filename',
   async ({ label, mediaTypes, extension }) => {
-    jest.mocked(launchCameraAsync).mockResolvedValue({
+    jest.mocked(launchCameraAsync).mockResolvedValueOnce({
       canceled: false,
       assets: [{ uri: 'file:///capture', width: 640, height: 480 }],
     });

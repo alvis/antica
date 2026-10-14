@@ -1,17 +1,23 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useAuth } from '../../../auth';
-import { QueryState } from '../../../components/QueryState';
-import { Screen } from '../../../components/Screen';
-import { localizeStatus, useLocale } from '../../../locale';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { randomUUID } from 'expo-crypto';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { Linking, Text, View } from 'react-native';
+
 import {
   knowledgeDetailSchema,
   knowledgeUpdateSchema,
 } from '@antica/contracts';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { randomUUID } from 'expo-crypto';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Linking, Text, View } from 'react-native';
+import { ActionButton, TextField, styles } from '@antica/ui';
+
+import { useAuth } from '../../../auth';
+import { QueryState } from '../../../components/QueryState';
+import { Screen } from '../../../components/Screen';
+import { localizeStatus, useLocale } from '../../../locale';
 
 export default function KnowledgeDetailRoute() {
   const { entryId } = useLocalSearchParams<{ entryId: string }>();
@@ -123,6 +129,9 @@ export default function KnowledgeDetailRoute() {
                   {item.scope}: {item.limits.textZhHant}
                 </Text>
               ))}
+              {detail.data.entry.content.applicability.length === 0 && (
+                <Text style={styles.secondary}>{t('noScopeInfo')}</Text>
+              )}
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('methods')}</Text>
@@ -134,6 +143,9 @@ export default function KnowledgeDetailRoute() {
                     .join(' · ')}
                 </Text>
               ))}
+              {detail.data.methodVersions.length === 0 && (
+                <Text style={styles.secondary}>{t('noMethodInfo')}</Text>
+              )}
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('examples')}</Text>

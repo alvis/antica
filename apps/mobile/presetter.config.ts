@@ -91,6 +91,9 @@ export default preset('@antica/mobile', {
               'src/mobile.stories.helpers.ts',
               'src/mobile.stories.fixtures.tsx',
               'src/features/{analysis,collection,capture}/*.stories.tsx',
+              'src/components/QueryState.stories.tsx',
+              'src/components/Screen.stories.tsx',
+              'src/mobile.stories.spec.dom.helpers.tsx',
             ],
           },
         },
@@ -101,7 +104,10 @@ export default preset('@antica/mobile', {
     assets: {
       'tsconfig.json': asset<
         NonNullable<ResolvedPresetAssets['tsconfig.json']>
-      >(() => expoTypeScriptConfig),
+      >(() => ({
+        ...expoTypeScriptConfig,
+        files: ['node_modules/vite/client.d.ts'],
+      })),
       'tsconfig.build.json': null,
       'vitest.config.ts': null,
       'vitest.config.int.ts': null,

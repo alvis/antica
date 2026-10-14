@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { z } from 'zod';
 
 import {
@@ -7,8 +9,6 @@ import {
   retrievedMethodSchema,
   sourceCitationSchema,
 } from '@antica/contracts';
-
-import { readFile } from 'node:fs/promises';
 
 import { maximumRelevanceGrade } from './metrics.js';
 

@@ -6,11 +6,10 @@ import { Linking } from 'react-native';
 import { analysisRunDetailSchema } from '@antica/contracts';
 
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
+import { runId, createReferencedRun } from '../../saved-analysis.spec.fixtures';
 
 import { media } from '../media/media.spec.fixtures';
 
-import { mixed } from './analysis-reference.spec.fixtures';
-import { runId } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
@@ -19,6 +18,8 @@ jest.mock('expo-crypto', () => ({
   randomUUID:
     jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID,
 }));
+
+const mixed = createReferencedRun(media.asset.id);
 
 it.each(['Evidence 10000000', 'Citation 30000000'])(
   'should report unavailable %s without inventing a navigation target',

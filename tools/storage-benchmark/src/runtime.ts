@@ -68,7 +68,7 @@ export function validateBenchmarkUrl(value: string | undefined): URL {
 
 /**
  * creates a new isolated database; existing databases are never reset or reused
- * @param url
+ * @param url isolated loopback database destination
  */
 async function createIsolatedDatabase(url: URL): Promise<void> {
   const name = decodeURIComponent(url.pathname.slice(1));
@@ -121,10 +121,16 @@ insert into media_derivatives(id,owner_id,original_asset_id,kind,object_key,mime
 update media_assets set owner_id='antica-benchmark-other-owner' where id='${id(2, 81)}';
 `;
 
-type QueryTrace = { query: string; parameters: unknown[] };
+type QueryParameters = NonNullable<
+  Parameters<ReturnType<typeof postgres>['unsafe']>[1]
+>;
+type QueryTrace = { query: string; parameters: QueryParameters };
 type Scenario = { name: string; query: CollectionQuery; expected: number };
 
-/** captures exact source and configuration identities without reading credentials */
+/**
+ * captures exact source and configuration identities without reading credentials
+ * @returns source paths mapped to SHA-256 digests
+ */
 async function captureSources(): Promise<Record<string, string>> {
   const files = [
     'package.json',
@@ -159,8 +165,9 @@ async function captureSources(): Promise<Record<string, string>> {
 }
 
 /**
- * independent expected membership, including nullable names and deterministic ties
- * @param query
+ * calculates expected membership, including nullable names and deterministic ties
+ * @param query collection filters to evaluate against the synthetic corpus
+ * @returns number of matching synthetic records
  */
 function expectedCount(query: CollectionQuery): number {
   return Array.from({ length: recordsCount }, (_, i) => i + 1).filter((g) => {
@@ -194,11 +201,13 @@ function expectedCount(query: CollectionQuery): number {
 
 /**
  * records quantiles without replacing raw samples
- * @param samples
+ * @param samples measured durations in milliseconds
+ * @returns nearest-rank latency summary
  */
 export function summarize(samples: number[]) {
   const ordered = [...samples].sort((a, b) => a - b);
-  const percentile = (p: number) => ordered[Math.ceil(p * ordered.length) - 1]!;
+  const percentile = (p: number): number =>
+    ordered[Math.ceil(p * ordered.length) - 1]!;
 
   return {
     count: ordered.length,
@@ -213,11 +222,12 @@ export function summarize(samples: number[]) {
 
 /**
  * executes the actual collection service while keeping trace and explain overhead outside timings
- * @param url
- * @param iterations
- * @param warmups
- * @param output
- * @param sources
+ * @param url isolated loopback database destination
+ * @param iterations measured runs for each scenario
+ * @param warmups unmeasured runs before each scenario
+ * @param output directory for generated benchmark artifacts
+ * @param sources source paths mapped to content digests
+ * @returns benchmark results with timing and provenance
  */
 async function measure(
   url: URL,
@@ -255,7 +265,10 @@ async function measure(
       signingSecret: fixtureSecret,
     }),
   );
-  const run = async (query: CollectionQuery, selectedOwner = owner) => {
+  const run = async (
+    query: CollectionQuery,
+    selectedOwner = owner,
+  ): Promise<ReturnType<typeof recordPageSchema.parse>> => {
     const result = await service.list(
       selectedOwner,
       collectionQuerySchema.parse(query),
@@ -403,7 +416,7 @@ async function measure(
       for (const statement of unique.values()) {
         const explained = await client.unsafe(
           `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${statement.query}`,
-          statement.parameters as never[],
+          statement.parameters,
         );
         plans.push({ scenario: scenario.name, ...statement, plan: explained });
       }

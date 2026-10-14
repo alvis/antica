@@ -69,9 +69,9 @@ export type EvidenceAnchor = EvidenceInput & {
 const MIN_POLYGON_POINTS = 3;
 
 /**
- * Checks whether an evidence region stays within its normalized view and has area.
+ * checks whether an evidence region stays within its normalized view and has area
  * @param input Proposed evidence anchor.
- * @returns Whether the anchor has valid geometry.
+ * @returns whether the anchor has valid geometry
  */
 export function validateEvidenceAnchor(input: EvidenceInput): boolean {
   if (input.scope.kind === 'whole') {

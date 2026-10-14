@@ -1,5 +1,6 @@
 import { StyleSheet } from 'react-native';
 
+/** color tokens shared by collection components */
 export const colors = {
   canvas: '#F6F3EB',
   card: '#FFFEFA',
@@ -11,6 +12,7 @@ export const colors = {
   warning: '#8C6125',
 } as const;
 
+/** shared native styles for collection controls and content */
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   content: {

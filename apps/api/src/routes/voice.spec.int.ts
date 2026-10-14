@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import {
   editDraftAcceptedSchema,
@@ -9,18 +9,15 @@ import {
   recordDetailSchema,
 } from '@antica/contracts';
 
-import { createHttpFixture } from '../fixtures/http.js';
+import { createHttpTest } from '../fixtures/http/test.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['routes/voice']!);
 
 describe('fn:createVoiceRoutes', () => {
-  it('should queue an edit from collector observations and adopt only the selected proposal', async () => {
+  it('should queue an edit from collector observations and adopt only the selected proposal', async ({
+    fixture,
+  }) => {
     const record = recordDetailSchema.parse(
       await (
         await fixture.request(
@@ -94,18 +91,25 @@ describe('fn:createVoiceRoutes', () => {
     });
   });
 
-  it.each([
+  it.for([
     '/v1/transcriptions',
     '/v1/transcriptions/missing/confirm',
     '/v1/edit-drafts',
     '/v1/edit-drafts/missing/apply',
-  ])('should reject invalid voice commands at %s', async (path) => {
-    const response = await fixture.request(path, 'POST', {});
-    expect(response.status).toBe(422);
-    expect(await response.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
-  });
+  ])(
+    'should reject invalid voice commands at %s',
+    async (path, { fixture }) => {
+      const response = await fixture.request(path, 'POST', {});
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({
+        code: 'VALIDATION_FAILED',
+      });
+    },
+  );
 
-  it('should reject inaccessible transcription inputs and confirmations without inventing collector observations', async () => {
+  it('should reject inaccessible transcription inputs and confirmations without inventing collector observations', async ({
+    fixture,
+  }) => {
     const missing = randomUUID();
     const requested = await fixture.request('/v1/transcriptions', 'POST', {
       requestKey: randomUUID(),

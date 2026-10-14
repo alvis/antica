@@ -6,6 +6,7 @@ import {
   providerWebhookInbox,
 } from './schema/index.js';
 
+/** provider callback accepted only after signature verification */
 export interface VerifiedProviderWebhook {
   readonly provider: string;
   readonly eventId: string;
@@ -16,7 +17,9 @@ export interface VerifiedProviderWebhook {
   readonly payload: unknown;
 }
 
-/** Stores only an already signature-verified callback, even before its job mapping exists. */
+/**
+ * stores only an already signature-verified callback, even before its job mapping exists
+ */
 export async function recordVerifiedProviderWebhook(
   db: Database,
   event: VerifiedProviderWebhook,
@@ -51,7 +54,9 @@ export async function recordVerifiedProviderWebhook(
   return { inserted: false };
 }
 
-/** Resolves pending verified callbacks through trusted provider-job and job-owner rows. */
+/**
+ * resolves pending verified callbacks through trusted provider-job and job-owner rows
+ */
 export async function listResolvedProviderWebhooks(
   db: Database,
   limit: number,
@@ -94,7 +99,9 @@ export async function listResolvedProviderWebhooks(
   }));
 }
 
-/** Marks a callback delivered only after its owner-scoped handler succeeds. */
+/**
+ * marks a callback delivered only after its owner-scoped handler succeeds
+ */
 export async function markProviderWebhookDelivered(
   db: Database,
   provider: string,

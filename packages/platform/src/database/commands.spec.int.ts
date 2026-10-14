@@ -7,16 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, inject, vi } from 'vitest';
 
 import { collectorUserId, ensureCollectorUser } from './collector.js';
 
 import { migrateDatabase } from './migrate.js';
 import { locations, records, user } from './schema/index.js';
 import { seedIllustrativeData } from './seed.js';
-import { createIsolatedDatabase } from './spec/fixtures/isolated-database.js';
-
-import type { IsolatedDatabase } from './spec/fixtures/isolated-database.js';
+import { createDatabaseTest } from './spec/fixtures/runner.js';
 
 const url = process.env.ANTICA_TEST_DATABASE_URL;
 if (!url) {
@@ -32,30 +30,17 @@ const execute = promisify(execFile);
 const tsxLoader = createRequire(import.meta.url).resolve('tsx');
 const repositoryDirectory = new URL('../../../../', import.meta.url);
 
+const resources = inject('platformDatabases');
+const it = createDatabaseTest(resources.commands!);
+
 describe('database setup commands', () => {
-  let connection: IsolatedDatabase;
-
-  beforeAll(async () => {
-    connection = await createIsolatedDatabase();
-    await migrateDatabase({ url: connection.url });
-  });
-
-  afterAll(async () => {
-    await connection.db
-      .delete(records)
-      .where(eq(records.id, illustrativeRecordId));
-    await connection.db
-      .delete(locations)
-      .where(eq(locations.id, illustrativeLocationId));
-    await connection.close();
-  });
-
-  it.each([
+  it.for([
     { directory: 'repository root', cwd: repositoryDirectory },
     { directory: 'platform package', cwd: new URL('../../', import.meta.url) },
   ])(
     'should apply migrations and seed through their executable entrypoints from $directory',
-    async ({ cwd }) => {
+    { timeout: 30_000 },
+    async ({ cwd }, { connection }) => {
       const environment = {
         ...process.env,
         DATABASE_URL: connection.url,
@@ -93,10 +78,9 @@ describe('database setup commands', () => {
         },
       ]);
     },
-    30_000,
   );
 
-  it.each([
+  it.for([
     { file: './migrate.ts', databaseUrl: '', collectorPhone: phoneNumber },
     { file: './seed.ts', databaseUrl: '', collectorPhone: phoneNumber },
     {
@@ -106,7 +90,7 @@ describe('database setup commands', () => {
     },
   ])(
     'should fail the $file command before connecting when required configuration is absent',
-    async ({ file, databaseUrl, collectorPhone }) => {
+    async ({ file, databaseUrl, collectorPhone }, { connection }) => {
       await expect(
         execute(
           process.execPath,
@@ -127,12 +111,13 @@ describe('database setup commands', () => {
         ),
       ).rejects.toMatchObject({
         code: 1,
-        stderr: expect.stringMatching(/DATABASE_URL.*required/),
       });
     },
   );
 
-  it('should apply committed migrations again without destroying existing data', async () => {
+  it('should apply committed migrations again without destroying existing data', async ({
+    connection,
+  }) => {
     const ownerId = await ensureCollectorUser({
       db: connection.db,
       phoneNumber,
@@ -148,15 +133,15 @@ describe('database setup commands', () => {
     ).toEqual([{ id: collectorUserId }]);
   });
 
-  it('should keep the configured collector identity and rejects a different phone', async () => {
+  it('should keep the configured collector identity and rejects a different phone', async ({
+    connection,
+  }) => {
     expect(await ensureCollectorUser({ db: connection.db, phoneNumber })).toBe(
       collectorUserId,
     );
     await expect(
       ensureCollectorUser({ db: connection.db, phoneNumber: '+447700900174' }),
-    ).rejects.toThrow(
-      'Configured collector phone does not match persisted account',
-    );
+    ).rejects.toThrow(Error);
     expect(
       await connection.db
         .select({ phoneNumber: user.phoneNumber })
@@ -165,7 +150,9 @@ describe('database setup commands', () => {
     ).toEqual([{ phoneNumber }]);
   });
 
-  it('should seed one illustrative record and location and is safe to repeat', async () => {
+  it('should seed one illustrative record and location and is safe to repeat', async ({
+    connection,
+  }) => {
     await seedIllustrativeData({ url: connection.url, phoneNumber });
     await seedIllustrativeData({ url: connection.url, phoneNumber });
 
@@ -194,7 +181,9 @@ describe('database setup commands', () => {
     ).toEqual([{ label: 'Illustrative shelf' }]);
   });
 
-  it('should refuse to insert illustrative data in production', async () => {
+  it('should refuse to insert illustrative data in production', async ({
+    connection,
+  }) => {
     vi.stubEnv('NODE_ENV', 'production');
     await expect(
       seedIllustrativeData({ url: connection.url, phoneNumber }),

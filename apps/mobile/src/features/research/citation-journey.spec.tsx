@@ -29,6 +29,8 @@ jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(async () => undefined),
 }));
 
+const privateOrigin = 'https://internal.example:8080';
+
 it('should open the cited page and preserve its locator when saving edited prose', async () => {
   jest.mocked(useLocalSearchParams).mockReturnValue({ researchId });
   const view = await renderMobile(<ResearchDetailRoute />, {
@@ -71,19 +73,36 @@ it('should open the cited page and preserve its locator when saving edited prose
 
 it('should recover from a loading error and keep edited prose after a rejected save', async () => {
   jest.mocked(useLocalSearchParams).mockReturnValue({ researchId });
+  const readFailure = new Error(`Offline at ${privateOrigin}`);
   const view = await renderMobile(<ResearchDetailRoute />, {
     get: async () => {
-      throw new Error('Offline');
+      throw readFailure;
     },
   });
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Offline'),
+  await waitFor(() => {
+    for (const alert of screen.getAllByRole('alert')) {
+      expect(alert).toHaveTextContent(/\S/);
+    }
+  });
+  expect(screen.queryAllByText(readFailure.message, { exact: false })).toEqual(
+    [],
   );
+  expect(screen.queryAllByText(privateOrigin, { exact: false })).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
+    `/v1/research/${researchId}`,
+  ]);
+  expect([view.commands.mock.calls, view.patches.mock.calls]).toEqual([[], []]);
   view.reads.mockResolvedValueOnce(detail);
   await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() =>
     expect(screen.getByLabelText('Description 1')).toBeTruthy(),
   );
+  expect(view.reads.mock.calls.map(([path]) => path)).toEqual([
+    `/v1/research/${researchId}`,
+    `/v1/research/${researchId}`,
+  ]);
+  expect(screen.queryByRole('alert')).toBeNull();
   await fireEvent.changeText(
     screen.getByLabelText('Description 1'),
     'Unsaved collector correction',

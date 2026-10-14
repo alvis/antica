@@ -52,7 +52,7 @@ import type {
   TranscriptionRepository,
 } from './workflows.js';
 
-/** groups owner-scoped repositories in one database transaction */
+/** owner-scoped repositories participating in one database transaction */
 export interface UnitOfWork {
   readonly records: RecordRepository;
   readonly locations: LocationRepository;
@@ -69,8 +69,14 @@ export interface UnitOfWork {
   readonly editDrafts: EditDraftRepository;
   readonly comparisons: ComparisonRepository;
 }
+/** authenticated owner-scoped transaction boundary */
 export interface TransactionPort {
-  /** scopes all repositories to the authenticated collector and rolls back failed results */
+  /**
+   * scopes all repositories to the authenticated collector and rolls back failed results
+   * @param ownerId authenticated collector identifier
+   * @param operation work to perform in one transaction
+   * @returns operation outcome
+   */
   run<T extends OperationResult<unknown>>(
     ownerId: string,
     operation: (unit: UnitOfWork) => Promise<T>,
@@ -85,6 +91,7 @@ export class ComponentInUseError extends Error {
   }
 }
 
+/** record persistence and version counter operations */
 export interface RecordRepository {
   allocateCode(): Promise<string>;
   get(id: string): Promise<RecordDetail | null>;
@@ -102,12 +109,20 @@ export interface RecordRepository {
     patch: RecordPatch,
     versions: RecordVersions,
   ): Promise<RecordDetail | null>;
+  /**
+   * advances the selected input and evidence versions only at the expected revision
+   * @param id record identifier
+   * @param expectedRevision revision required for the update
+   * @param changes version counters selected for advancement
+   * @returns updated versions or null when the revision changed
+   */
   bumpVersions(
     id: string,
     expectedRevision: number,
     changes: { readonly analysisInput: boolean; readonly evidence: boolean },
   ): Promise<RecordVersions | null>;
 }
+/** collector location label lookup and persistence */
 export interface LocationRepository {
   query(): Promise<
     ReadonlyArray<{ readonly id: string; readonly label: string }>
@@ -120,6 +135,7 @@ export interface LocationRepository {
     readonly label: string;
   }): Promise<Location>;
 }
+/** media upload, derivative, and canonical view persistence */
 export interface MediaRepository {
   get(id: string): Promise<MediaAsset | null>;
   getCanonicalViewSource(viewId: string): Promise<{
@@ -140,14 +156,22 @@ export interface MediaRepository {
   getFrameByDerivative(id: string): Promise<FrameLocator | null>;
   addCanonicalView(view: CanonicalView): Promise<void>;
   getCanonicalView(id: string): Promise<CanonicalView | null>;
+  /**
+   * moves an uploaded or processing asset to ready at most once
+   * @param assetId original asset identifier
+   * @param expectedState state required for the transition
+   * @returns whether the transition occurred
+   */
   markReadyOnce(
     assetId: string,
     expectedState: 'uploaded' | 'processing',
   ): Promise<boolean>;
 }
+/** persisted derivative with provenance and a transform back to its original */
 export interface MediaDerivative {
   readonly id: string;
   readonly originalAssetId: string;
+  /** derivative this was generated from, when processing was chained */
   readonly parentDerivativeId: string | null;
   readonly kind: 'canonical' | 'thumbnail' | 'crop' | 'frame' | 'preview';
   readonly storageKey: string;
@@ -155,9 +179,11 @@ export interface MediaDerivative {
   readonly byteLength: number;
   readonly sha256: string;
   readonly region: Region | null;
+  /** maps this derivative's canonical coordinates to the original asset */
   readonly transformToOriginal: CanonicalView['transformToOriginal'];
   readonly frame?: FrameLocator;
 }
+/** evidence anchor, observation, and inspection check persistence */
 export interface EvidenceRepository {
   getAnchor(id: string): Promise<EvidenceAnchor | null>;
   queryAnchorsByAsset(
@@ -173,6 +199,13 @@ export interface EvidenceRepository {
     limit?: number,
   ): Promise<CursorPage<Observation>>;
   getCheck(id: string): Promise<RecordCheck | null>;
+  /**
+   * resolves a check by method version and duplicate-free component scope
+   * @param recordId record that owns the check
+   * @param methodVersionId inspection method version
+   * @param componentIds selected component scope
+   * @returns matching active check, when present
+   */
   findActiveCheck(
     recordId: string,
     methodVersionId: string,
@@ -181,6 +214,7 @@ export interface EvidenceRepository {
   addCheck(check: RecordCheck): Promise<void>;
   updateCheck(check: RecordCheck, expectedRevision: number): Promise<boolean>;
 }
+/** durable analysis state bound to the requested frozen snapshot */
 export interface AnalysisRunRecord {
   readonly id: string;
   readonly jobId: string;
@@ -191,6 +225,7 @@ export interface AnalysisRunRecord {
   readonly retrievalSnapshot: RetrievalSnapshot | null;
   readonly output: AnalysisOutput | null;
   readonly invocation: ModelInvocation | null;
+  /** failed model invocations retained independently of accepted output */
   readonly failureAudits: ReadonlyArray<ModelFailureAudit>;
   readonly suggestedMethodVersions: ReadonlyArray<{
     readonly methodId: string;
@@ -198,13 +233,17 @@ export interface AnalysisRunRecord {
     readonly owningEntryId: string;
     readonly titleZhHant: string;
   }>;
+  /** current durable lifecycle state of this analysis run */
   readonly status: 'queued' | 'running' | 'completed' | 'partial' | 'failed';
 }
+/** requested evidence and record versions captured before model execution */
 export interface RequestedAnalysisSnapshot {
   readonly id: string;
   readonly recordId: string;
   readonly recordRevision: number;
+  /** record input version used to detect stale analysis */
   readonly analysisInputVersion: number;
+  /** evidence version used to detect stale analysis */
   readonly evidenceVersion: number;
   readonly assetIds: readonly string[];
   readonly evidenceIds: readonly string[];
@@ -220,23 +259,45 @@ export interface RequestedAnalysisSnapshot {
   };
   readonly createdAt: string;
 }
+/** analysis run, failure audit, and collector adoption persistence */
 export interface AnalysisRepository {
   get(id: string): Promise<AnalysisRunRecord | null>;
   getBySnapshotId(snapshotId: string): Promise<AnalysisRunRecord | null>;
   create(run: AnalysisRunRecord): Promise<void>;
+  /**
+   * changes run status only from one of the expected current states
+   * @param id analysis run identifier
+   * @param expectedStatuses allowed current states
+   * @param status replacement state
+   * @returns whether the transition occurred
+   */
   setStatus(
     id: string,
     expectedStatuses: readonly AnalysisRunRecord['status'][],
     status: AnalysisRunRecord['status'],
   ): Promise<boolean>;
   appendFailureAudit(id: string, audit: ModelFailureAudit): Promise<boolean>;
-  /** binds finalized input and retrieval snapshot once */
+  /**
+   * binds finalized input and retrieval snapshot once
+   * @param runId analysis run identifier
+   * @param input finalized model input
+   * @param snapshot retrieval evidence used by the model
+   * @returns whether the snapshot was bound
+   */
   bindRetrievalSnapshot(
     runId: string,
     input: AnalysisInput,
     snapshot: RetrievalSnapshot,
   ): Promise<boolean>;
   queryTasks(query: TaskQuery): Promise<TaskPage>;
+  /**
+   * records generated output, invocation, and final completion state
+   * @param id analysis run identifier
+   * @param output validated generated output
+   * @param suggestedMethodVersions methods suggested by the result
+   * @param invocation model call that produced the output
+   * @param status final completion state
+   */
   saveOutput(
     id: string,
     output: AnalysisOutput,
@@ -258,6 +319,7 @@ export interface AnalysisRepository {
     eventId: string,
   ): Promise<void>;
 }
+/** knowledge revision and versioned inspection method persistence */
 export interface KnowledgeRepository {
   allocateCode(): Promise<string>;
   get(
@@ -267,6 +329,12 @@ export interface KnowledgeRepository {
   ): Promise<KnowledgeDetail | null>;
   query(query: KnowledgeQuery): Promise<CursorPage<KnowledgeSummary>>;
   create(entry: KnowledgeEntry): Promise<void>;
+  /**
+   * adds a revision only when the existing revision matches
+   * @param entry replacement knowledge revision
+   * @param expectedRevision current revision required for the update
+   * @returns whether the revision was added
+   */
   addRevision(
     entry: KnowledgeEntry,
     expectedRevision: number,
@@ -282,6 +350,13 @@ export interface KnowledgeRepository {
     revision: number,
     methodVersionIds: readonly string[],
   ): Promise<void>;
+  /**
+   * adds a method version only from the expected predecessor
+   * @param methodId inspection method identifier
+   * @param expectedVersionId current version required for the update
+   * @param version replacement method version
+   * @returns whether the version was added
+   */
   addMethodVersion(
     methodId: string,
     expectedVersionId: string,

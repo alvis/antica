@@ -10,9 +10,13 @@ import {
 } from './schema/index.js';
 import type { MediaStore } from '../storage/media-store.js';
 import { artifactKey } from '../storage/media-store.js';
-import type { ParsingAsset } from '../parsing/local.js';
+import type {
+  LocalSourceParserParams,
+  ParsingAsset,
+} from '../parsing/local.js';
 import type { CanonicalView } from '@antica/domain';
 
+/** owner and parse-run context for immutable source artifacts */
 export interface SourceArtifactAccessParams {
   readonly db: Database;
   readonly storage: MediaStore;
@@ -21,8 +25,21 @@ export interface SourceArtifactAccessParams {
   readonly parseRunId: string;
 }
 
-/** creates immutable parser artifacts with durable source-version and parse-run provenance */
-export function createSourceArtifactAccess(params: SourceArtifactAccessParams) {
+/** parser inputs and owner-scoped reads of persisted source artifacts */
+export interface SourceArtifactAccess extends LocalSourceParserParams {
+  readonly readArtifact: (
+    assetId: string,
+  ) => Promise<{ readonly bytes: Uint8Array; readonly mimeType: string }>;
+}
+
+/**
+ * creates immutable parser artifacts with durable source-version and parse-run provenance
+ * @param params owner, version, parse run, database, and private storage context
+ * @returns authorized parser readers and durable artifact access
+ */
+export function createSourceArtifactAccess(
+  params: SourceArtifactAccessParams,
+): SourceArtifactAccess {
   const { db, storage, ownerId, sourceVersionId, parseRunId } = params;
   return {
     async resolveSource(

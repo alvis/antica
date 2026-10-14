@@ -7,13 +7,13 @@ import { ApiError } from '@antica/client';
 import { analysisRunDetailSchema } from '@antica/contracts';
 
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
-
 import {
-  conflictStatus,
   runId,
   firstProposalId,
   run,
-} from './analysis.spec.fixtures';
+} from '../../saved-analysis.spec.fixtures';
+
+import { conflictStatus } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
@@ -68,7 +68,11 @@ it('should preserve selection after a stale write and retry against the refreshe
   });
   await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2));
   view.commands.mockRejectedValueOnce(
-    new ApiError(conflictStatus, 'STALE_REVISION', 'Stale'),
+    new ApiError({
+      status: conflictStatus,
+      code: 'STALE_REVISION',
+      message: 'Stale',
+    }),
   );
   view.reads.mockResolvedValueOnce({
     ...collectionRecord,

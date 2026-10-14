@@ -6,6 +6,12 @@ const babelRuntimeRoot = dirname(
 
 module.exports = {
   preset: 'jest-expo',
+  transformIgnorePatterns: [
+    '/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation|storybook|@storybook))',
+    '/node_modules/react-native-reanimated/plugin/',
+    '/node_modules/@react-native/babel-preset/',
+  ],
+  forceCoverageMatch: ['**/components.stories.spec.native.helpers.tsx'],
   clearMocks: true,
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
@@ -16,6 +22,9 @@ module.exports = {
     '!src/features/analysis/AnalysisContainer.stories.tsx',
     '!src/features/collection/RecordContainer.stories.tsx',
     '!src/features/capture/CaptureContainer.stories.tsx',
+    '!src/components/QueryState.stories.tsx',
+    '!src/components/Screen.stories.tsx',
+    '!src/mobile.stories.spec.dom.helpers.tsx',
   ],
   coverageThreshold: {
     'global': { statements: 100, branches: 100, functions: 100, lines: 100 },

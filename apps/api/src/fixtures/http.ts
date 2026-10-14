@@ -1,15 +1,12 @@
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 import { z } from 'zod';
-
-import { createDatabase, migrateDatabase } from '@antica/platform/database';
 
 import { composeApplication } from '../composition.js';
 
 import { createLocalSettings } from './runtime.js';
+
+import type { HttpResource } from './http/resources.js';
 
 import type { ApplicationRuntime } from '../composition.js';
 import type { ApplicationSettings } from '../configuration.js';
@@ -24,47 +21,50 @@ export interface HttpFixture {
 }
 
 /**
- * starts a real API with a database and OTP inbox unique to this invocation
- * @param settings selected provider settings for the isolated runtime
- * @returns authenticated transport and deterministic resource cleanup
+ * binds an in-process application to globally provisioned infrastructure
+ * @param resource serializable database and private directory descriptors
+ * @param settings selected provider settings kept within this worker
+ * @returns authenticated transport and idempotent worker-pool cleanup
+ * @throws {AggregateError} when authentication and worker cleanup both fail
  */
 export async function createHttpFixture(
+  resource: HttpResource,
   settings: ApplicationSettings = createLocalSettings(),
 ): Promise<HttpFixture> {
-  const baseUrl = z.url().parse(process.env.ANTICA_TEST_DATABASE_URL);
-  const databaseName = `antica_api_${randomUUID().replaceAll('-', '')}`;
-  const admin = createDatabase({ url: baseUrl, maxConnections: 1 });
-  await admin.db.execute(`CREATE DATABASE "${databaseName}"`);
-  const url = new URL(baseUrl);
-  url.pathname = `/${databaseName}`;
-  await migrateDatabase({ url: url.toString() });
-  const directory = await mkdtemp(join(tmpdir(), 'antica-api-http-'));
-  const inbox = join(directory, 'otp');
   const runtime = await composeApplication({
     ...settings,
     app: {
       ...settings.app,
-      DATABASE_URL: url.toString(),
-      ANTICA_DEV_OTP_INBOX: inbox,
-      ANTICA_STORAGE_LOCAL_ROOT: join(directory, 'objects'),
+      DATABASE_URL: resource.databaseUrl,
+      ANTICA_DEV_OTP_INBOX: resource.inbox,
+      ANTICA_STORAGE_LOCAL_ROOT: resource.storageRoot,
     },
   });
-  const cookie = await authenticate(
-    runtime,
-    settings.app.ANTICA_COLLECTOR_PHONE,
-    inbox,
-  );
+  let closing: Promise<void> | undefined;
+  const close = (): Promise<void> => (closing ??= runtime.close());
+  try {
+    const cookie = await authenticate(
+      runtime,
+      settings.app.ANTICA_COLLECTOR_PHONE,
+      resource.inbox,
+    );
 
-  return {
-    runtime,
-    request: createAuthenticatedRequest(runtime, cookie),
-    close: async () => {
-      await runtime.close();
-      await admin.db.execute(`DROP DATABASE "${databaseName}"`);
-      await admin.close();
-      await rm(directory, { recursive: true, force: true });
-    },
-  };
+    return {
+      runtime: { ...runtime, close },
+      request: createAuthenticatedRequest(runtime, cookie),
+      close,
+    };
+  } catch (cause) {
+    try {
+      await close();
+    } catch (cleanupCause) {
+      throw new AggregateError(
+        [cause, cleanupCause],
+        'HTTP fixture setup and cleanup failed',
+      );
+    }
+    throw cause;
+  }
 }
 
 /**

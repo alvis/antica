@@ -1,11 +1,12 @@
+import { readFile } from 'node:fs/promises';
+
 import { performance } from 'node:perf_hooks';
 
 import {
   createLocalImageRetrieval,
   developmentImageIndex,
+  getImageMatchIdentity,
 } from '@antica/platform/search';
-
-import { readFile } from 'node:fs/promises';
 
 import { digestSnapshot } from './digest.js';
 import { scoreRetrieval } from './metrics.js';
@@ -71,11 +72,7 @@ export async function evaluateImages(): Promise<ImageRetrievalReport> {
     developmentImageIndex,
   );
   const rankedIds = result.success
-    ? result.data.items.map((item) =>
-        item.ref.kind === 'collection'
-          ? item.ref.originalAssetId
-          : item.ref.referenceImageId,
-      )
+    ? result.data.items.map(getImageMatchIdentity)
     : [];
 
   return {

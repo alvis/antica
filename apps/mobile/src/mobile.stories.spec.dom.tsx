@@ -1,17 +1,21 @@
 import { composeStories } from '@storybook/react-native-web-vite';
-
-import { flushSync } from 'react-dom';
+import { userEvent, waitFor, within } from '@storybook/testing-library';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createRoot } from 'react-dom/client';
+import { expect as expectDom } from 'storybook/test';
 
 import { useAuth } from './auth';
 import * as analysisStories from './features/analysis/AnalysisContainer.stories';
 import * as captureStories from './features/capture/CaptureContainer.stories';
 import * as recordStories from './features/collection/RecordContainer.stories';
-import { MobileStoryShell } from './mobile.stories.fixtures';
+import {
+  MobileStoryShell,
+  storyRecord,
+  storyRunId,
+} from './mobile.stories.fixtures';
 import { findStoryElement, findStoryText } from './mobile.stories.helpers';
+import { withCanvas } from './mobile.stories.spec.dom.helpers';
 
 import type { ReactElement } from 'react';
 
@@ -23,29 +27,8 @@ const missingFixtureStatus = 501;
 const pendingObservationDelay = 25;
 
 /**
- * Runs a story against an attached DOM canvas and disposes its React tree.
- * @param element Actual composed story element.
- * @param exercise User interaction and visible-result assertions.
- */
-async function withCanvas(
-  element: ReactElement,
-  exercise: (canvas: HTMLElement) => Promise<void>,
-): Promise<void> {
-  const canvas = document.createElement('main');
-  document.body.append(canvas);
-  const root = createRoot(canvas);
-  try {
-    flushSync(() => root.render(element));
-    await exercise(canvas);
-  } finally {
-    flushSync(() => root.unmount());
-    canvas.remove();
-  }
-}
-
-/**
- * Exposes session state and sign-out through the real story auth provider.
- * @returns A minimal rendered consumer of the public auth context.
+ * exposes session state and sign-out through the real story auth provider
+ * @returns a minimal rendered consumer of the public auth context
  */
 function StorySessionConsumer(): ReactElement {
   const { authenticated, signOut } = useAuth();
@@ -124,25 +107,55 @@ describe('Mobile story localized errors', () => {
       },
     );
   });
+});
 
+describe('Mobile story persistent service failures', () => {
   it.each([
     {
       name: 'record',
       element: <record.OfflineInTraditionalChinese />,
       text: '請連線後重試。',
+      endpoint: `GET /v1/records/${storyRecord.id}`,
     },
     {
       name: 'analysis',
       element: <analysis.FailedInTraditionalChinese />,
       text: '分析服務暫時無法使用。',
+      endpoint: `GET /v1/analyses/${storyRunId}`,
     },
   ])(
     'should display the $name service failure in Traditional Chinese',
-    async ({ element, text }) => {
+    async ({ element, text, endpoint }) => {
       await withCanvas(element, async (canvas) => {
-        await findStoryText(canvas, text);
+        const scoped = within(canvas);
+        const expectPrivateFailure = async (): Promise<void> => {
+          await waitFor(async () => {
+            await expectDom(scoped.getByRole('alert')).toHaveTextContent(/\S/);
+            await expectDom(scoped.getByRole('alert')).toBeVisible();
+            expect(scoped.queryByRole('progressbar')).toBeNull();
+            await expectDom(
+              scoped.getByRole('button', { name: '重試' }),
+            ).toBeVisible();
+            expect(scoped.queryByRole('button', { name: 'Retry' })).toBeNull();
+            expect(canvas.textContent).not.toContain(text);
+          });
+        };
+        await expectPrivateFailure();
+        const activity = scoped.getByLabelText('Story network activity');
+        const countOwningRequests = (): number =>
+          activity.textContent
+            .replace('Network activity: ', '')
+            .split(' · ')
+            .filter((key) => key === endpoint).length;
+        const requestsBefore = countOwningRequests();
 
-        expect(canvas.textContent).toContain(text);
+        await userEvent.click(scoped.getByRole('button', { name: '重試' }));
+        await waitFor(() => {
+          expect(countOwningRequests(), activity.textContent).toBe(
+            requestsBefore + 1,
+          );
+        });
+        await expectPrivateFailure();
       });
     },
   );

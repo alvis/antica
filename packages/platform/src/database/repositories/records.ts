@@ -55,18 +55,12 @@ type Cursor = {
   readonly id: string;
 };
 
-/** @param query */
 function querySignature(query: CollectionQuery): string {
   const { cursor: _cursor, limit: _limit, ...filters } = query;
 
   return createHash('sha256').update(JSON.stringify(filters)).digest('hex');
 }
 
-/**
- * @param value
- * @param signature
- * @param sort
- */
 function decodeCursor(
   value: string,
   signature: string,
@@ -86,7 +80,6 @@ function decodeCursor(
   return cursor;
 }
 
-/** @param cursor */
 function encodeCursor(cursor: Cursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
@@ -426,7 +419,6 @@ export function createRecordRepository(
   return {
     allocateCode,
     get,
-    /** @param recordIds */
     async getThumbnailTargets(recordIds) {
       if (recordIds.length === 0) {
         return [];
@@ -470,7 +462,6 @@ export function createRecordRepository(
         );
       return rows;
     },
-    /** @param record */
     async create(record): Promise<void> {
       await tx.insert(records).values({
         id: record.id,
@@ -494,11 +485,6 @@ export function createRecordRepository(
       });
       await saveRelations(record.id, record);
     },
-    /**
-     * @param id
-     * @param patch
-     * @param versions
-     */
     async patch(
       id: string,
       patch: RecordPatch,
@@ -551,13 +537,6 @@ export function createRecordRepository(
 
       return get(id);
     },
-    /**
-     * @param id
-     * @param expectedRevision
-     * @param changes
-     * @param changes.analysisInput
-     * @param changes.evidence
-     */
     async bumpVersions(
       id: string,
       expectedRevision: number,
@@ -590,7 +569,6 @@ export function createRecordRepository(
 
       return row ?? null;
     },
-    /** @param query */
     async query(
       query: CollectionQuery,
     ): Promise<{ items: RecordSummary[]; nextCursor: string | null }> {
@@ -806,7 +784,6 @@ export function createLocationRepository(
         .where(eq(locations.ownerId, ownerId))
         .orderBy(asc(locations.label));
     },
-    /** @param label */
     async findByLabel(label) {
       const [row] = await tx
         .select({ id: locations.id, label: locations.label })
@@ -823,7 +800,6 @@ export function createLocationRepository(
 
       return row ?? null;
     },
-    /** @param location */
     async create(location) {
       const normalizedLabel = location.label.trim().toLocaleLowerCase('en-US');
       const [created] = await tx

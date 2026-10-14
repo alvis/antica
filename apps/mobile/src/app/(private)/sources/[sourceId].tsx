@@ -1,13 +1,18 @@
+import { useQuery } from '@tanstack/react-query';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { Image, Linking, Text, View } from 'react-native';
+
+import { sourceDetailSchema } from '@antica/contracts';
 import { ActionButton, styles } from '@antica/ui';
+
 import { useAuth } from '../../../auth';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
 import { localizeStatus, useLocale } from '../../../locale';
-import { sourceDetailSchema } from '@antica/contracts';
-import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Image, Linking, Text, View } from 'react-native';
 
 export default function SourceDetailRoute() {
   const { sourceId, versionId, pageId } = useLocalSearchParams<{
@@ -45,7 +50,7 @@ export default function SourceDetailRoute() {
     try {
       const fresh = await detail.refetch();
       if (fresh.error) {
-        throw fresh.error;
+        return;
       }
       const read = fresh.data?.reads.find(
         (item) => item.assetOrDerivativeId === assetId,

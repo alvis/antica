@@ -1,8 +1,11 @@
+import { useRouter } from 'expo-router';
+
+import { Text, View } from 'react-native';
+
 import { ActionButton, styles } from '@antica/ui';
+
 import { Screen } from '../../../components/Screen';
 import { useLocale } from '../../../locale';
-import { useRouter } from 'expo-router';
-import { Text, View } from 'react-native';
 
 export default function ResearchRoute() {
   const router = useRouter();

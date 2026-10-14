@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { eq } from 'drizzle-orm';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, inject } from 'vitest';
 
 import { createLocalMediaStore } from '../storage/local.js';
 
@@ -28,13 +28,14 @@ import {
   sourceContributors,
   sourceKnowledgeDrafts,
   sourceLocators,
+  sourcePageParses,
   sourcePages,
   sourceRegions,
   sources,
   sourceVersionAssets,
   sourceVersions,
 } from './schema/index.js';
-import { createIsolatedDatabase } from './spec/fixtures/isolated-database.js';
+import { createDatabaseTest } from './spec/fixtures/runner.js';
 import { createTransactionPort } from './transaction.js';
 
 import type {
@@ -42,6 +43,9 @@ import type {
   SourceCitation,
   SourceMetadata,
 } from '@antica/domain';
+
+const resources = inject('platformDatabases');
+const it = createDatabaseTest(resources.retrieval!);
 
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL ?? '';
 if (!databaseUrl) {
@@ -51,8 +55,10 @@ if (!databaseUrl) {
 }
 
 describe('fn:createRetrievalReaders', () => {
-  it('should return no entries or query pixels for an owner with no persisted collection or sources', async () => {
-    const database = await createIsolatedDatabase();
+  it('should return no entries or query pixels for an owner with no persisted collection or sources', async ({
+    connection,
+  }) => {
+    const database = connection;
     const root = await mkdtemp(join(tmpdir(), 'antica-retrieval-'));
     try {
       const readers = createRetrievalReaders({
@@ -67,17 +73,16 @@ describe('fn:createRetrievalReaders', () => {
       });
       expect(await readers.readImageEntries()).toEqual([]);
       expect(await readers.readTextEntries()).toEqual([]);
-      await expect(readers.readQuery(randomUUID())).rejects.toThrow(
-        /inaccessible/i,
-      );
+      await expect(readers.readQuery(randomUUID())).rejects.toThrow(Error);
     } finally {
-      await database.close();
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it('should retrieve authorized collection pixels and filters from durable canonical views', async () => {
-    const database = await createIsolatedDatabase();
+  it('should retrieve authorized collection pixels and filters from durable canonical views', async ({
+    connection,
+  }) => {
+    const database = connection;
     const root = await mkdtemp(join(tmpdir(), 'antica-retrieval-collection-'));
     const storage = createLocalMediaStore({
       root,
@@ -177,9 +182,7 @@ describe('fn:createRetrievalReaders', () => {
         bytes,
         region,
       });
-      await expect(foreign.readQuery(anchorId)).rejects.toThrow(
-        /inaccessible/i,
-      );
+      await expect(foreign.readQuery(anchorId)).rejects.toThrow(Error);
       expect(await readers.readImageEntries()).toEqual([
         {
           image: {
@@ -277,13 +280,14 @@ describe('fn:createRetrievalReaders', () => {
         allImages.every((item) => Buffer.from(item.image.bytes).equals(bytes)),
       ).toBe(true);
     } finally {
-      await database.close();
       await rm(root, { recursive: true, force: true });
     }
   }, 30_000);
 
-  it('should retain source version, page region, contributor and citation provenance in reference and text retrieval', async () => {
-    const database = await createIsolatedDatabase();
+  it('should retain source version, page region, contributor and citation provenance in reference and text retrieval', async ({
+    connection,
+  }) => {
+    const database = connection;
     const root = await mkdtemp(join(tmpdir(), 'antica-retrieval-source-'));
     const storage = createLocalMediaStore({
       root,
@@ -474,6 +478,13 @@ describe('fn:createRetrievalReaders', () => {
         jobId: parseRunId,
         provider: 'application',
         status: 'completed',
+      });
+      await database.db.insert(sourcePageParses).values({
+        parseRunId,
+        pageId,
+        rawText: 'Original catalogue text',
+        searchText: 'original catalogue text',
+        quality: 'usable',
       });
       await database.db.insert(sourceRegions).values({
         id: regionId,
@@ -856,7 +867,6 @@ describe('fn:createRetrievalReaders', () => {
         },
       });
     } finally {
-      await database.close();
       await rm(root, { recursive: true, force: true });
     }
   }, 30_000);

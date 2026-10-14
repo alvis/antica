@@ -23,6 +23,7 @@ import type {
   SignedTransfer,
 } from './media-store.js';
 
+/** private bucket and transfer signing endpoints for S3 media storage */
 export interface S3MediaConfig {
   readonly bucket: string;
   readonly region: string;
@@ -36,19 +37,22 @@ export interface S3MediaConfig {
 
 /**
  * creates a private S3 store; a separate public endpoint signs phone-reachable URLs
- * @param config
+ * @param config bucket, region, optional endpoints, and credentials
+ * @returns store with separate server and transfer signing clients
  */
 export function createS3MediaStore(config: S3MediaConfig): S3MediaStore {
   return new S3MediaStore(config);
 }
 
-/** */
+/** private S3 media storage with separate server and transfer endpoints */
 export class S3MediaStore implements MediaStore {
   readonly #bucket: string;
   readonly #server: S3Client;
   readonly #signer: S3Client;
 
-  /** @param config */
+  /**
+   * initializes private storage and transfer signing clients
+   */
   constructor(config: S3MediaConfig) {
     this.#bucket = config.bucket;
     const shared = {
@@ -63,7 +67,10 @@ export class S3MediaStore implements MediaStore {
     });
   }
 
-  /** */
+  /**
+   * creates a missing bucket only in development
+   * @throws {Error} when bucket creation is requested in production
+   */
   public async ensureDevelopmentBucket(): Promise<void> {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('Bucket creation is development-only');
@@ -82,7 +89,10 @@ export class S3MediaStore implements MediaStore {
     }
   }
 
-  /** @param input */
+  /**
+   * signs an immutable original upload with its declared checksum
+   * @returns expiring upload URL and required checksum headers
+   */
   public async signUpload(input: OriginalObject): Promise<SignedTransfer> {
     assertStorageKey(input.key);
     const command = new PutObjectCommand({
@@ -110,7 +120,10 @@ export class S3MediaStore implements MediaStore {
     };
   }
 
-  /** @param input */
+  /**
+   * creates and signs the parts of a bounded multipart upload
+   * @returns provider upload identity and signed URLs with byte ranges
+   */
   public async startMultipart(input: OriginalObject) {
     assertStorageKey(input.key);
     const minimum = 5 * 1024 * 1024;
@@ -163,9 +176,10 @@ export class S3MediaStore implements MediaStore {
   }
 
   /**
-   * @param input
-   * @param uploadId
-   * @param parts
+   * completes an ordered multipart upload and verifies its original
+   * @param input immutable original identity and expected media checksum
+   * @param uploadId provider upload identity returned by startMultipart
+   * @param parts ordered part numbers and provider ETags for completion
    */
   public async completeMultipart(
     input: OriginalObject,
@@ -216,8 +230,9 @@ export class S3MediaStore implements MediaStore {
   }
 
   /**
-   * @param input
-   * @param uploadId
+   * aborts a multipart upload by its storage identity
+   * @param input original object identifying the private storage key
+   * @param uploadId provider upload identity to abort
    */
   public async abortMultipart(
     input: OriginalObject,
@@ -236,7 +251,9 @@ export class S3MediaStore implements MediaStore {
     );
   }
 
-  /** @param input */
+  /**
+   * verifies stored metadata and bytes against an immutable original
+   */
   public async verifyOriginal(input: OriginalObject): Promise<void> {
     assertStorageKey(input.key);
     const metadata = await this.#server.send(
@@ -263,7 +280,10 @@ export class S3MediaStore implements MediaStore {
     }
   }
 
-  /** @param key */
+  /**
+   * signs a read transfer for a private object
+   * @returns expiring read URL for the requested private key
+   */
   public async signRead(key: string): Promise<SignedTransfer> {
     assertStorageKey(key);
     const url = await getSignedUrl(
@@ -279,7 +299,10 @@ export class S3MediaStore implements MediaStore {
     };
   }
 
-  /** @param key */
+  /**
+   * reads private object bytes and their stored media type
+   * @returns stored bytes and provider or fallback media type
+   */
   public async read(
     key: string,
   ): Promise<{ readonly bytes: Uint8Array; readonly mimeType: string }> {
@@ -299,10 +322,11 @@ export class S3MediaStore implements MediaStore {
   }
 
   /**
-   * @param input
-   * @param input.key
-   * @param input.bytes
-   * @param input.mimeType
+   * writes immutable derivative bytes with their checksum
+   * @param input private object key, bytes, and declared media type
+   * @param input.key assigned private object key
+   * @param input.bytes immutable derivative contents
+   * @param input.mimeType declared media type of the derivative
    */
   public async writeDerivative(input: {
     readonly key: string;
@@ -326,10 +350,11 @@ export class S3MediaStore implements MediaStore {
   }
 
   /**
-   * @param input
-   * @param input.key
-   * @param input.bytes
-   * @param input.mimeType
+   * writes an artifact only under the artifact key prefix
+   * @param input artifact key, bytes, and declared media type
+   * @param input.key assigned key under the artifacts prefix
+   * @param input.bytes immutable artifact contents
+   * @param input.mimeType declared media type of the artifact
    */
   public async writeArtifact(input: {
     readonly key: string;

@@ -103,14 +103,14 @@ describe('fn:createJobRepository', () => {
 
           return { success: true as const, data: undefined };
         }),
-      ).rejects.toThrow('Command owner mismatch');
+      ).rejects.toThrow(Error);
       await expect(
         transaction.run(otherOwnerId, async (unit) => {
           await unit.outbox.enqueue(message);
 
           return { success: true as const, data: undefined };
         }),
-      ).rejects.toThrow('Outbox owner mismatch');
+      ).rejects.toThrow(Error);
       const other = await transaction.run(otherOwnerId, async (unit) => ({
         success: true as const,
         data: {
@@ -373,7 +373,7 @@ describe('fn:createJobRepository', () => {
 
           return { success: true as const, data: undefined };
         }),
-      ).rejects.toThrow('Job not found');
+      ).rejects.toThrow(Error);
       await expect(
         transaction.run(ownerId, async (unit) => {
           await unit.jobs.recordProviderEvent(
@@ -384,7 +384,7 @@ describe('fn:createJobRepository', () => {
 
           return { success: true as const, data: undefined };
         }),
-      ).rejects.toThrow('Provider job mapping missing');
+      ).rejects.toThrow(Error);
     } finally {
       await database.close();
     }

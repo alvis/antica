@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import {
   analysisAcceptedSchema,
@@ -8,18 +8,15 @@ import {
   recordDetailSchema,
 } from '@antica/contracts';
 
-import { createHttpFixture } from '../fixtures/http.js';
+import { createHttpTest } from '../fixtures/http/test.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['routes/analysis']!);
 
 describe('fn:createAnalysisRoutes', () => {
-  it('should freeze explicit analysis, preserve the record until adoption, and retain action dismissal', async () => {
+  it('should freeze explicit analysis, preserve the record until adoption, and retain action dismissal', async ({
+    fixture,
+  }) => {
     const record = recordDetailSchema.parse(
       await (
         await fixture.request(
@@ -129,7 +126,7 @@ describe('fn:createAnalysisRoutes', () => {
     expect((await fixture.request('/v1/tasks')).status).toBe(200);
   });
 
-  it.each([
+  it.for([
     ['POST', '/v1/records/missing/analyses', {}, true],
     [
       'POST',
@@ -159,7 +156,7 @@ describe('fn:createAnalysisRoutes', () => {
     ['GET', '/v1/tasks?limit=0', undefined, false],
   ] as const)(
     'should reject invalid %s %s without scheduling work',
-    async (...[method, path, body, hasKey]) => {
+    async ([method, path, body, hasKey], { fixture }) => {
       const response = await fixture.request(
         path,
         method,

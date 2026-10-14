@@ -48,9 +48,9 @@ export interface CheckPatch {
 }
 
 /**
- * Produces a stable, duplicate-free component scope for check identity.
+ * produces a stable, duplicate-free component scope for check identity
  * @param componentIds Component IDs selected for the check.
- * @returns Sorted unique component IDs.
+ * @returns sorted unique component IDs
  */
 export function normalizeComponentScope(
   componentIds: readonly EntityId[],
@@ -59,9 +59,9 @@ export function normalizeComponentScope(
 }
 
 /**
- * Determines whether a check result has been recorded.
+ * determines whether a check result has been recorded
  * @param result Current check result.
- * @returns Whether the result is more specific than unrecorded.
+ * @returns whether the result is more specific than unrecorded
  */
 export function isResolvedCheckResult(result: CheckResult): boolean {
   return result.kind !== 'unrecorded';

@@ -25,8 +25,9 @@ import type { Transaction } from '../transaction.js';
 
 /**
  * binds upload declarations and derivative metadata to one collector
- * @param tx
- * @param ownerId
+ * @param tx transaction shared with the enclosing owner-scoped operation
+ * @param ownerId collector whose assets and uploads the repository may access
+ * @returns repository for the collector's media assets and transfers
  */
 export function createMediaRepository(
   tx: Transaction,
@@ -100,10 +101,6 @@ export function createMediaRepository(
 
   return {
     get,
-    /**
-     * @param request
-     * @param session
-     */
     async createUpload(request, session) {
       const target = request.target;
       if (target.kind === 'source_intake') {
@@ -172,10 +169,6 @@ export function createMediaRepository(
         );
       }
     },
-    /**
-     * @param requestOwnerId
-     * @param requestKey
-     */
     async getUploadByRequestKey(
       requestOwnerId,
       requestKey,
@@ -195,7 +188,6 @@ export function createMediaRepository(
 
       return row ? (row.signedSession as UploadSession) : null;
     },
-    /** @param assetId */
     async getUploadSession(assetId): Promise<UploadSession | null> {
       const [row] = await tx
         .select({ signedSession: uploadSessions.signedSession })
@@ -209,10 +201,6 @@ export function createMediaRepository(
 
       return row ? (row.signedSession as UploadSession) : null;
     },
-    /**
-     * @param id
-     * @param completion
-     */
     async complete(id, completion) {
       const [row] = await tx
         .update(mediaAssets)
@@ -233,7 +221,6 @@ export function createMediaRepository(
         throw new Error('Media upload is missing or already completed');
       }
     },
-    /** @param derivative */
     async addDerivative(derivative) {
       const [original] = await tx
         .select({ id: mediaAssets.id })
@@ -274,7 +261,6 @@ export function createMediaRepository(
           : null,
       });
     },
-    /** @param id */
     async getDerivative(id): Promise<MediaDerivative | null> {
       const [row] = await tx
         .select()
@@ -319,7 +305,6 @@ export function createMediaRepository(
           }
         : null;
     },
-    /** @param id */
     async getFrameByDerivative(id) {
       const [row] = await tx
         .select({
@@ -360,7 +345,6 @@ export function createMediaRepository(
         displayTimeMs: Number(row.displayTimeMs),
       };
     },
-    /** @param view */
     async addCanonicalView(view) {
       const [original] = await tx
         .select({ id: mediaAssets.id })
@@ -384,7 +368,6 @@ export function createMediaRepository(
         transformToOriginal: view.transformToOriginal,
       });
     },
-    /** @param id */
     async getCanonicalView(id): Promise<CanonicalView | null> {
       const [row] = await tx
         .select()
@@ -412,7 +395,6 @@ export function createMediaRepository(
           }
         : null;
     },
-    /** @param viewId */
     async getCanonicalViewSource(viewId) {
       const [row] = await tx
         .select({
@@ -466,10 +448,6 @@ export function createMediaRepository(
         mimeType: row.originalMimeType,
       };
     },
-    /**
-     * @param assetId
-     * @param expectedState
-     */
     async markReadyOnce(assetId, expectedState) {
       const [row] = await tx
         .update(mediaAssets)

@@ -31,7 +31,11 @@ class FailedTransaction extends Error {
   }
 }
 
-/** runs all owner-scoped repository operations in one ACID transaction */
+/**
+ * creates a transaction port for owner-scoped repository operations
+ * @param db database capability used to open each transaction
+ * @returns port whose run method supplies repositories scoped to the requested owner, rolls back on a failed operation result, and returns that result
+ */
 export function createTransactionPort(db: Database): TransactionPort {
   return {
     async run<T extends OperationResult<unknown>>(

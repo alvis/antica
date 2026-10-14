@@ -11,12 +11,15 @@ const maxJsonBytes = 1_048_576;
 const successStatuses = { ok: 200, created: 201, accepted: 202 } as const;
 type SuccessStatus = (typeof successStatuses)[keyof typeof successStatuses];
 
+/** binds the authenticated owner ID to each protected Hono request */
 export type ApiEnv = Record<'Variables', { ownerId: string }>;
 
 /**
- * Parses a validated JSON request without accepting unbounded bodies.
- * @param context Incoming HTTP request.
- * @returns Parsed JSON value.
+ * parses JSON while enforcing the one MiB request-body limit
+ * @param context Hono context carrying the incoming request stream
+ * @returns parsed JSON value for subsequent schema validation
+ * @throws {RequestBodyError} when declared or streamed bytes exceed one MiB
+ * @throws {SyntaxError} when the request has no body
  */
 export async function jsonBody(context: Context): Promise<unknown> {
   const length = Number(context.req.header('content-length') ?? 0);
@@ -53,11 +56,11 @@ export async function jsonBody(context: Context): Promise<unknown> {
 }
 
 /**
- * Maps an application result to its HTTP contract.
- * @param context Active HTTP response context.
- * @param result Application operation result.
- * @param successStatus Status for a successful operation.
- * @returns JSON response.
+ * maps a result to its success or public-error HTTP status
+ * @param context Hono response context
+ * @param result application result to serialize
+ * @param successStatus status used only when the result succeeds
+ * @returns JSON response with a request ID on public errors
  */
 export function respond<T>(
   context: Context,
@@ -74,10 +77,10 @@ export function respond<T>(
 }
 
 /**
- * Returns a stable validation failure at the JSON boundary.
- * @param context Active HTTP response context.
- * @param field Optional field label.
- * @returns Validation error response.
+ * returns the stable public response for invalid request input
+ * @param context Hono response context
+ * @param field optional input field associated with the failure
+ * @returns HTTP 422 response with a new request ID
  */
 export function invalid(context: Context, field?: string): Response {
   return context.json(
@@ -92,7 +95,7 @@ export function invalid(context: Context, field?: string): Response {
   );
 }
 
-/** rejects malformed requests without exposing parser details */
+/** signals a JSON body that exceeds the request-size limit */
 export class RequestBodyError extends Error {}
 
 const statusByCode = {
@@ -117,9 +120,9 @@ const statusByCode = {
 } satisfies Record<PublicError['code'], ContentfulStatusCode>;
 
 /**
- * Finds the HTTP status for a public operation error.
- * @param code Public operation error code.
- * @returns HTTP response status.
+ * finds the HTTP status for a public operation error
+ * @param code public operation error code
+ * @returns HTTP response status
  */
 function statusFor(code: PublicError['code']): ContentfulStatusCode {
   return statusByCode[code];

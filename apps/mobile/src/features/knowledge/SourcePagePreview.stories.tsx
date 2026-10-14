@@ -16,9 +16,9 @@ const imageUri =
 const completeTurnQuarter = 3;
 
 /**
- * Shows the selected point without persisting or uploading a page.
- * @param props Preview state shown in the canvas.
- * @returns Interactive page preview.
+ * shows the selected point without persisting or uploading a page
+ * @param props preview state shown in the canvas.
+ * @returns interactive page preview
  */
 function PreviewDemo(
   props: Readonly<Omit<SourcePagePreviewProps, 'onCrop'>>,

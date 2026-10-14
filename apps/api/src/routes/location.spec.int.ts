@@ -1,21 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import { locationSchema, locationsSchema } from '@antica/contracts';
 
-import { createHttpFixture } from '../fixtures/http.js';
+import { createHttpTest } from '../fixtures/http/test.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['routes/location']!);
 
 describe('Location HTTP transport', () => {
-  it('should create a collector location and return the list consumed by capture', async () => {
+  it('should create a collector location and return the list consumed by capture', async ({
+    fixture,
+  }) => {
     const response = await fixture.request('/v1/locations', 'POST', {
       label: 'Study cabinet / 書房櫃',
     });
@@ -30,7 +27,9 @@ describe('Location HTTP transport', () => {
     expect(await listed.json()).toContainEqual(location);
   });
 
-  it('should hide another owner location from the authenticated collector list', async () => {
+  it('should hide another owner location from the authenticated collector list', async ({
+    fixture,
+  }) => {
     const foreign = { id: randomUUID(), label: 'Foreign private cabinet' };
     await fixture.runtime.transaction.run(randomUUID(), async (unit) => {
       await unit.locations.create(foreign);
@@ -42,7 +41,9 @@ describe('Location HTTP transport', () => {
     expect(await response.json()).not.toContainEqual(foreign);
   });
 
-  it('should reuse the same owner location for a retry with equivalent label casing and whitespace', async () => {
+  it('should reuse the same owner location for a retry with equivalent label casing and whitespace', async ({
+    fixture,
+  }) => {
     const first = await fixture.request('/v1/locations', 'POST', {
       label: '  Display cabinet  ',
     });
@@ -62,7 +63,9 @@ describe('Location HTTP transport', () => {
     ).toEqual([location]);
   });
 
-  it('should converge simultaneous equivalent location requests on one persisted identity', async () => {
+  it('should converge simultaneous equivalent location requests on one persisted identity', async ({
+    fixture,
+  }) => {
     const labels = [
       'Concurrent cabinet',
       ' concurrent CABINET ',
@@ -121,9 +124,9 @@ describe('Location HTTP transport', () => {
     ).toEqual([locations[0]]);
   });
 
-  it.each(['GET', 'POST'])(
+  it.for(['GET', 'POST'])(
     'should require authentication for %s locations',
-    async (method) => {
+    async (method, { fixture }) => {
       const response = await fixture.runtime.app.request('/v1/locations', {
         method,
       });
@@ -132,9 +135,9 @@ describe('Location HTTP transport', () => {
     },
   );
 
-  it.each([{}, { label: '' }, { label: '   ' }, { label: 1 }])(
+  it.for([{}, { label: '' }, { label: '   ' }, { label: 1 }])(
     'should reject invalid location input %j without persisting it',
-    async (input) => {
+    async (input, { fixture }) => {
       const before = await fixture.request('/v1/locations');
       const response = await fixture.request('/v1/locations', 'POST', input);
       expect(response.status).toBe(422);

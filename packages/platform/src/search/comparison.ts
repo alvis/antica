@@ -51,8 +51,6 @@ interface ComparisonPair {
 
 const comparisonLimits =
   '僅比較所提供影像中的可見特徵；光線、比例、角度及遮擋可能影響判讀，不能據此判定年代、產地或真偽。 / Visible image features only; lighting, scale, viewpoint, and occlusion limit comparison. Images do not establish age, origin, or authenticity.';
-const unsupportedJudgment =
-  /authentic|genuine|fake|forger|counterfeit|真偽|真品|贗品|赝品|仿品|偽造|伪造|鑑真|鉴真|百分之|[%％]/iu;
 
 /**
  * compares actual canonical image pixels through a registered research model
@@ -286,7 +284,7 @@ async function readComparisonPair(
 }
 
 /**
- * rejects altered pair identities, unsupported citations, and explicit authenticity claims
+ * rejects altered pair identities and canonical source references
  * @param value structured provider output
  * @param frozen original canonical pair and source references
  * @returns bounded visible comparison with a server-owned uncertainty statement
@@ -303,20 +301,12 @@ function validateComparison(
     selectedCanonicalViewId: value.selectedCanonicalViewId,
     citations: value.citations,
   };
-  if (
-    !isDeepStrictEqual(observed, frozen) ||
-    [
-      ...value.similaritiesZhHant,
-      ...value.differencesZhHant,
-      ...value.limitsZhHant,
-    ].some((statement) => unsupportedJudgment.test(statement))
-  ) {
+  if (!isDeepStrictEqual(observed, frozen)) {
     return {
       success: false,
       error: {
         code: 'MODEL_OUTPUT_INVALID',
-        message:
-          'The comparison changed its canonical references or made an unsupported judgment.',
+        message: 'The comparison changed its canonical references.',
         retryable: false,
       },
     };

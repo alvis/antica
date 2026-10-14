@@ -292,7 +292,7 @@ it('should clear the name field when an adopted proposal removes the record name
   view.client.clear();
 });
 
-/** Opens imported evidence and restored transcript through the capture controls. */
+/** opens imported evidence and restored transcript through the capture controls */
 async function openRecoveredWords(): Promise<void> {
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Import file' })).toBeTruthy(),
@@ -307,7 +307,7 @@ async function openRecoveredWords(): Promise<void> {
   );
 }
 
-/** Opens the edit draft and selects only its name proposal. */
+/** opens the edit draft and selects only its name proposal */
 async function selectNameProposal(): Promise<void> {
   await fireEvent.press(
     screen.getByRole('button', { name: 'Prepare description' }),
@@ -323,8 +323,8 @@ async function selectNameProposal(): Promise<void> {
 }
 
 /**
- * Checks confirmation and selective adoption at the API boundary.
- * @param view Rendered capture harness.
+ * checks confirmation and selective adoption at the API boundary
+ * @param view rendered capture harness.
  */
 function expectSelectedRequests(
   view: Awaited<ReturnType<typeof renderMobile>>,

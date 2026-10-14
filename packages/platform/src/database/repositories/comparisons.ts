@@ -10,7 +10,9 @@ import type { ComparisonRepository } from '@antica/application/ports';
 import type { ImageComparisonResult } from '@antica/contracts';
 import type { Transaction } from '../transaction.js';
 
-/** Persists comparison successes and rejected provider output for one owner. */
+/**
+ * persists comparison successes and rejected provider output for one owner
+ */
 export function createComparisonRepository(
   tx: Transaction,
   ownerId: string,
@@ -37,7 +39,6 @@ export function createComparisonRepository(
 
   return {
     get,
-    /** @param result */
     async save(result) {
       const parsed = imageComparisonResultSchema.parse(result);
       const id = parsed.value.comparisonId;
@@ -59,7 +60,6 @@ export function createComparisonRepository(
         throw new Error('Comparison ID is already used by different content');
       }
     },
-    /** @param failure */
     async recordFailure(failure) {
       await tx.insert(comparisonFailures).values({
         id: failure.id,

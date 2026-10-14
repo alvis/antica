@@ -1,8 +1,8 @@
 /**
- * Validates the public API origin configured for the mobile app.
- * @param value Configured Expo public URL.
- * @param development Whether the app runs in a development build.
- * @returns The canonical HTTP or HTTPS origin.
+ * validates the public API origin configured for the mobile app
+ * @param value configured Expo public URL.
+ * @param development whether the app runs in a development build.
+ * @returns the canonical HTTP or HTTPS origin
  */
 export function readApiOrigin(
   value: string | undefined,

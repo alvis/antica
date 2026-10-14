@@ -1,10 +1,10 @@
-/** Browser-safe stand-in for the Expo file wrapper used by mobile stories. */
+/** browser-safe stand-in for the Expo file wrapper used by mobile stories */
 export class File extends Blob {
   public readonly name: string;
 
   /**
-   * Creates an empty browser file reference for a native URI.
-   * @param uri Native-style fixture URI.
+   * creates an empty browser file reference for a native URI
+   * @param uri native-style fixture URI
    */
   constructor(uri: string) {
     super([]);
@@ -12,18 +12,18 @@ export class File extends Blob {
   }
 
   /**
-   * Leaves native file selection cancelled in the browser fixture.
-   * @returns A cancelled file selection.
+   * leaves native file selection canceled in the browser fixture
+   * @returns a canceled file selection
    */
   public static async pickFileAsync(): Promise<{ canceled: true }> {
     return { canceled: true };
   }
 
   /**
-   * Returns fixture bytes without reading a native file.
-   * @returns Empty fixture bytes.
+   * returns fixture bytes without reading a native file
+   * @returns empty fixture bytes
    */
-  public async bytes(): Promise<Uint8Array> {
+  public async bytes(): Promise<Uint8Array<ArrayBuffer>> {
     return new Uint8Array();
   }
 }

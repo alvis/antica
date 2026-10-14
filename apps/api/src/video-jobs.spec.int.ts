@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import {
   jobStatusEnvelopeSchema,
@@ -13,18 +13,15 @@ import {
   uploadSessionSchema,
 } from '@antica/contracts';
 
-import { createHttpFixture } from './fixtures/http.js';
+import { createHttpTest } from './fixtures/http/test.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['video-jobs']!);
 
 describe('Composed video frame jobs', () => {
-  it('should retain exact frame provenance after HTTP upload and frame preparation', async () => {
+  it('should retain exact frame provenance after HTTP upload and frame preparation', async ({
+    fixture,
+  }) => {
     const directory = await mkdtemp(join(tmpdir(), 'antica-api-video-'));
     try {
       const path = join(directory, 'original.mp4');

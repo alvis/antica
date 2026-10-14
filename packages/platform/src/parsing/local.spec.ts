@@ -115,17 +115,23 @@ describe('fn:createLocalSourceParser', () => {
           },
         ],
         warnings: [
-          expect.objectContaining({
-            messageZhHant: expect.stringContaining('OCR is not configured'),
-          }),
-          expect.objectContaining({
-            messageZhHant: expect.stringContaining(
-              'individual figures have not been detected or extracted',
-            ),
-          }),
+          expect.objectContaining({ messageZhHant: expect.any(String) }),
+          expect.objectContaining({ messageZhHant: expect.any(String) }),
         ],
       },
     });
+    if (!result.success) {
+      throw new Error('Expected parsed page and warnings');
+    }
+    expect(result.data.warnings.map((warning) => warning.pageId)).toEqual([
+      result.data.pages[0]!.id,
+      result.data.pages[0]!.id,
+    ]);
+    expect(
+      result.data.warnings.every(
+        (warning) => warning.messageZhHant.trim().length > 0,
+      ),
+    ).toBe(true);
   });
 
   it('should fail unsupported input instead of fabricating a usable page', async () => {

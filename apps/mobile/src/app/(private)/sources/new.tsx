@@ -1,17 +1,25 @@
+import { randomUUID } from 'expo-crypto';
+
+import { File } from 'expo-file-system';
+
+import { launchImageLibraryAsync } from 'expo-image-picker';
+
+import { useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { Text, View, useWindowDimensions } from 'react-native';
+
+import { sourceAcceptedSchema, sourceCommandSchema } from '@antica/contracts';
 import { ActionButton, TextField, styles } from '@antica/ui';
+
 import { useAuth } from '../../../auth';
 import { Screen } from '../../../components/Screen';
 import { uploadMedia } from '../../../features/capture/media-upload';
 
 import { SourcePagePreview } from '../../../features/knowledge/SourcePagePreview';
 import { localizeStatus, useLocale } from '../../../locale';
-import { sourceAcceptedSchema, sourceCommandSchema } from '@antica/contracts';
-import { randomUUID } from 'expo-crypto';
-import { File } from 'expo-file-system';
-import { launchImageLibraryAsync } from 'expo-image-picker';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Text, View, useWindowDimensions } from 'react-native';
+
 import type { LocalMedia } from '../../../features/capture/media-upload';
 
 interface SourceFile extends LocalMedia {

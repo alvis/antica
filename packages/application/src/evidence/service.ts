@@ -53,9 +53,10 @@ export interface EvidenceService {
 
 /**
  * creates inspection workflows with independent collector observations
- * @param transaction
- * @param clock
- * @param ids
+ * @param transaction runs owner-scoped writes atomically and rolls back failed results
+ * @param clock timestamps anchors, observations, and check changes
+ * @param ids creates anchor, observation, job, and outbox identifiers
+ * @returns service for creating evidence, recording observations, and managing checks with typed outcomes
  */
 export function createEvidenceService(
   transaction: TransactionPort,
@@ -210,18 +211,18 @@ export function createEvidenceService(
             };
           }
         }
-        if (input.checkId) {
-          const check = await unit.evidence.getCheck(input.checkId);
-          if (!check || check.recordId !== record.id) {
-            return {
-              success: false,
-              error: {
-                code: 'EVIDENCE_INVALID',
-                message: 'Check does not belong to this record',
-                retryable: false,
-              },
-            };
-          }
+        const check = input.checkId
+          ? await unit.evidence.getCheck(input.checkId)
+          : null;
+        if (input.checkId && (!check || check.recordId !== record.id)) {
+          return {
+            success: false,
+            error: {
+              code: 'EVIDENCE_INVALID',
+              message: 'Check does not belong to this record',
+              retryable: false,
+            },
+          };
         }
         const anchor: EvidenceAnchor = {
           ...input.evidence,
@@ -229,6 +230,26 @@ export function createEvidenceService(
           createdAt: clock.now(),
         };
         await unit.evidence.addAnchor(anchor);
+        if (check) {
+          const updated: RecordCheck = {
+            ...check,
+            revision: check.revision + 1,
+            updatedAt: clock.now(),
+            evidenceAnchorIds: [
+              ...new Set([...check.evidenceAnchorIds, anchor.id]),
+            ],
+          };
+          if (!(await unit.evidence.updateCheck(updated, check.revision))) {
+            return {
+              success: false,
+              error: {
+                code: 'REVISION_CONFLICT',
+                message: 'Inspection changed during evidence creation',
+                retryable: true,
+              },
+            };
+          }
+        }
         if (
           !(await unit.records.bumpVersions(record.id, record.recordRevision, {
             analysisInput: true,

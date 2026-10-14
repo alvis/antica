@@ -2,6 +2,7 @@ import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
+import { getItemAsync } from 'expo-secure-store';
 import { Linking } from 'react-native';
 
 import { knowledgeDetailSchema, knowledgePageSchema } from '@antica/contracts';
@@ -138,14 +139,81 @@ it('should retry a failed knowledge list request', async () => {
     },
   });
   await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Offline'),
+    expect(screen.getByRole('alert')).toHaveTextContent(/\S/),
   );
+  expect(screen.queryByText('Offline')).toBeNull();
   view.reads.mockResolvedValueOnce({ items: [], nextCursor: null });
   await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() =>
     expect(screen.getByText('Nothing here yet.')).toBeTruthy(),
   );
 });
+
+it.each([
+  { locale: 'en', metadata: 'K-1 · Draft · Object type, Other' },
+  { locale: 'zh-Hant', metadata: 'K-1 · 草稿 · 器類, 其他' },
+])(
+  'should localize knowledge categories without changing authored content in $locale',
+  async ({ locale, metadata }) => {
+    jest.mocked(getItemAsync).mockResolvedValueOnce(locale);
+    await renderMobile(<KnowledgeRoute />, {
+      get: async () =>
+        knowledgePageSchema.parse({
+          items: [
+            {
+              id: entryId,
+              displayCode: 'K-1',
+              revision: 3,
+              titleZhHant: 'Collector-authored glaze study',
+              kinds: ['object_type', 'other'],
+              status: 'draft',
+              summaryZhHant: 'Original field notes',
+              citationCount: 1,
+            },
+          ],
+          nextCursor: null,
+        }),
+    });
+
+    await waitFor(() => expect(screen.getByText(metadata)).toBeTruthy());
+    expect(screen.getByText('Collector-authored glaze study')).toBeTruthy();
+    expect(screen.getByText('Original field notes')).toBeTruthy();
+    expect(screen.queryByText(/object_type/)).toBeNull();
+  },
+);
+
+it.each([
+  {
+    locale: 'en',
+    scope: 'No scope information has been recorded for this entry.',
+    methods: 'No inspection methods have been recorded for this entry.',
+    name: 'Name',
+  },
+  {
+    locale: 'zh-Hant',
+    scope: '這則知識尚未記錄適用範圍。',
+    methods: '這則知識尚未記錄檢查方法。',
+    name: '名稱',
+  },
+])(
+  'should explain empty saved knowledge sections without implying loading in $locale',
+  async ({ locale, scope, methods, name }) => {
+    jest.mocked(getItemAsync).mockResolvedValueOnce(locale);
+    jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
+    await renderMobile(<KnowledgeDetailRoute />, {
+      get: async () => ({
+        ...entry,
+        entry: { ...entry.entry, status: 'saved' },
+      }),
+    });
+
+    await waitFor(() => expect(screen.getByText(scope)).toBeTruthy());
+    expect(screen.getByText(methods)).toBeTruthy();
+    expect(screen.getByLabelText(name)).toHaveDisplayValue('Glaze study');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  },
+);
 
 it('should save edited knowledge against its current revision and navigate to a cited page', async () => {
   jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
@@ -255,8 +323,9 @@ it('should retry a failed detail load and display supported history, scope, meth
     },
   });
   await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Detail unavailable'),
+    expect(screen.getByRole('alert')).toHaveTextContent(/\S/),
   );
+  expect(screen.queryByText('Detail unavailable')).toBeNull();
   view.reads.mockResolvedValueOnce({
     ...entry,
     entry: {
@@ -305,6 +374,16 @@ it('should retry a failed detail load and display supported history, scope, meth
   ).toBeTruthy();
   expect(screen.getByText('specific: Glazed wares')).toBeTruthy();
   expect(screen.getByText('Inspect glaze: Check surface')).toBeTruthy();
+  expect(
+    screen.queryByText(
+      'No scope information has been recorded for this entry.',
+    ),
+  ).toBeNull();
+  expect(
+    screen.queryByText(
+      'No inspection methods have been recorded for this entry.',
+    ),
+  ).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: 'Plate 3' }));
   expect(view.router.push).toHaveBeenCalledWith(
     `/sources/${sourceId}?versionId=${sourceId}&pageId=${pageId}`,

@@ -108,8 +108,9 @@ export const AuthProvider: FC<AuthProviderProps> = ({
 };
 
 /**
- * Returns the authenticated mobile runtime.
- * @returns Current authentication state and API transport.
+ * returns the authenticated mobile runtime
+ * @returns current authentication state and API transport
+ * @throws {Error} when AuthProvider is missing
  */
 export function useAuth(): AuthContextValue {
   const value = useContext(authContext);

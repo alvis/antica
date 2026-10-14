@@ -1,16 +1,19 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useEffect, useRef, useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
-import { randomUUID } from 'expo-crypto';
-import { getItemAsync, setItemAsync } from 'expo-secure-store';
 import { useQuery } from '@tanstack/react-query';
+
+import { randomUUID } from 'expo-crypto';
+import { useLocalSearchParams } from 'expo-router';
+import { getItemAsync, setItemAsync } from 'expo-secure-store';
+import { useEffect, useRef, useState } from 'react';
+
 import { Image, Text, View } from 'react-native';
+
 import {
   evidenceCreationSchema,
   frameJobResultSchema,
   jobEnvelopeSchema,
   mediaDetailSchema,
 } from '@antica/contracts';
+import { ActionButton, TextField, styles } from '@antica/ui';
 
 import { useAuth } from '../../../auth';
 import { QueryState } from '../../../components/QueryState';
@@ -38,13 +41,13 @@ export default function MediaRoute() {
   const anchorKeys = useRef(new Map<string, string>());
   const media = useQuery({
     queryKey: ['media', assetId],
-    queryFn: ({ signal }) =>
+    queryFn: async ({ signal }) =>
       api.get(`/v1/media/${assetId}`, mediaDetailSchema, signal),
   });
   const frameJob = useQuery({
     queryKey: ['job', jobId],
     enabled: Boolean(jobId),
-    queryFn: ({ signal }) =>
+    queryFn: async ({ signal }) =>
       api.get(`/v1/jobs/${jobId}`, frameJobSchema, signal),
     refetchInterval: (query) =>
       ['queued', 'running', 'waiting'].includes(
@@ -65,6 +68,7 @@ export default function MediaRoute() {
       .catch((cause: unknown) => {
         setError((cause as Error).message);
       });
+
     return () => {
       active = false;
     };
@@ -115,6 +119,7 @@ export default function MediaRoute() {
       (durationMs !== null && requestedTimeMs > durationMs)
     ) {
       setError(t('frameTimeInvalid'));
+
       return;
     }
     setBusy(true);
@@ -197,6 +202,7 @@ export default function MediaRoute() {
   const anchor = media.data?.anchors.find(
     (item) => item.id === (newAnchorId ?? anchorId),
   );
+
   return (
     <Screen
       title={media.data?.asset.originalFileName ?? t('photo')}

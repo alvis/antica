@@ -56,7 +56,9 @@ function toJob(row: typeof jobs.$inferSelect): JobEnvelope {
   };
 }
 
-/** persists idempotent command results with operation-specific keys */
+/**
+ * persists idempotent command results with operation-specific keys
+ */
 export function createCommandRepository(
   tx: Transaction,
   ownerId: string,
@@ -104,7 +106,9 @@ export function createCommandRepository(
   };
 }
 
-/** persists durable job state, steps and provider callback deduplication */
+/**
+ * persists durable job state, steps and provider callback deduplication
+ */
 export function createJobRepository(
   tx: Transaction,
   ownerId: string,
@@ -363,7 +367,9 @@ export function createJobRepository(
   };
 }
 
-/** writes outbox messages in the same transaction as business state */
+/**
+ * writes outbox messages in the same transaction as business state
+ */
 export function createOutboxRepository(
   tx: Transaction,
   ownerId: string,
@@ -422,7 +428,9 @@ export function createOutboxRepository(
   };
 }
 
-/** scans due outbox events so the dispatcher can enter each event's owner transaction */
+/**
+ * scans due outbox events so the dispatcher can enter each event's owner transaction
+ */
 export async function listPendingOutbox(
   db: Database,
   limit: number,

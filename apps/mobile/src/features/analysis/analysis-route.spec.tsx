@@ -5,8 +5,7 @@ import { useLocalSearchParams } from 'expo-router';
 
 import AnalysisRoute from '../../app/(private)/analysis/[runId]';
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
-
-import { run, runId } from './analysis.spec.fixtures';
+import { run, runId } from '../../saved-analysis.spec.fixtures';
 
 jest.mock(
   '../../auth',

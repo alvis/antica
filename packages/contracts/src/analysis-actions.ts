@@ -39,9 +39,9 @@ const actionRequestBase = {
   support: actionSupportSchema.optional(),
 };
 /**
- * Checks whether a collector supplied any concrete support for an action.
+ * checks whether a collector supplied any concrete support for an action
  * @param support Submitted action support, if present.
- * @returns Whether at least one support item is populated.
+ * @returns whether at least one support item is populated
  */
 function hasActionSupport(support: ActionSupport | undefined): boolean {
   if (!support) {

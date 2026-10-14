@@ -14,16 +14,16 @@ const storyRouter = {
 } as const;
 
 /**
- * Returns inert navigation controls for isolated component stories.
- * @returns Story-safe router controls.
+ * returns inert navigation controls for isolated component stories
+ * @returns story-safe router controls
  */
 export function useRouter(): typeof storyRouter {
   return storyRouter;
 }
 
 /**
- * Returns an empty route parameter set for isolated component stories.
- * @returns Empty route parameters.
+ * returns an empty route parameter set for isolated component stories
+ * @returns empty route parameters
  */
 export function useLocalSearchParams<
   Params extends Record<string, string | undefined>,

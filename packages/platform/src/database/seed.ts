@@ -3,12 +3,15 @@ import { createDatabase } from './connection.js';
 import { ensureCollectorUser } from './collector.js';
 import { locations, records } from './schema/index.js';
 
+/** development database and collector identity for illustrative fixtures */
 export interface SeedParams {
   readonly url: string;
   readonly phoneNumber: string;
 }
 
-/** inserts visibly illustrative development fixtures without touching existing rows */
+/**
+ * inserts visibly illustrative development fixtures without touching existing rows
+ */
 export async function seedIllustrativeData({
   url,
   phoneNumber,

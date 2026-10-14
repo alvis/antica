@@ -15,7 +15,7 @@ import type {
   UnitOfWork,
 } from '../ports/index.js';
 
-/** Authenticated visual search over one compatible image index. */
+/** authenticated visual search over one compatible image index */
 export interface ImageSearchService {
   query(
     ownerId: string,
@@ -23,7 +23,7 @@ export interface ImageSearchService {
   ): Promise<OperationResult<ImageSearchResult | ImageComparisonResult>>;
 }
 
-/** Dependencies for owner-checked visual search and comparison auditing. */
+/** dependencies for owner-checked visual search and comparison auditing */
 export interface ImageSearchParams {
   readonly transaction: TransactionPort;
   readonly images: ImageRetrievalPort;
@@ -33,7 +33,7 @@ export interface ImageSearchParams {
 }
 
 /**
- * Creates owner-checked image retrieval with durable comparison receipts.
+ * creates owner-checked image retrieval with durable comparison receipts
  * @param params transaction, retrieval, index, clock and identifier ports
  * @returns image search service bound to those ports
  */
@@ -46,7 +46,7 @@ export function createImageSearchService(
 }
 
 /**
- * Authorizes a query before passing it to the compatible index.
+ * authorizes a query before passing it to the compatible index
  * @param params image retrieval dependencies
  * @param ownerId authenticated collector identifier
  * @param input search or comparison request
@@ -71,7 +71,7 @@ async function queryImages(
 }
 
 /**
- * Checks that the query and selected comparison image belong to the collector.
+ * checks that the query and selected comparison image belong to the collector
  * @param unit owner-scoped repositories
  * @param input search or comparison request
  * @returns success only for available image identities
@@ -94,7 +94,7 @@ async function authorizeQuery(
 }
 
 /**
- * Resolves the exact comparison target before model execution.
+ * resolves the exact comparison target before model execution
  * @param unit owner-scoped repositories
  * @param input requested comparison pair
  * @returns success only when the selected image is saved and visible
@@ -131,7 +131,7 @@ async function authorizeSelectedImage(
 }
 
 /**
- * Saves the actual comparison envelope or rejected-output audit before replying.
+ * saves the actual comparison envelope or rejected-output audit before replying
  * @param params comparison and persistence dependencies
  * @param ownerId authenticated collector identifier
  * @param input authorized comparison request
@@ -181,7 +181,7 @@ async function compareImages(
 }
 
 /**
- * Constructs a nonretryable owner-bound image lookup error.
+ * constructs a nonretryable owner-bound image lookup error
  * @param code unavailable source or evidence category
  * @param message safe user-facing explanation
  * @returns failed operation result

@@ -145,7 +145,7 @@ export const providerEvents = pgTable(
   (table) => [primaryKey({ columns: [table.provider, table.eventId] })],
 );
 
-/** Verified callbacks are durable before provider-job correlation; early events wait for a mapping. */
+/** verified callbacks are durable before provider-job correlation; early events wait for a mapping */
 export const providerWebhookInbox = pgTable(
   'provider_webhook_inbox',
   {

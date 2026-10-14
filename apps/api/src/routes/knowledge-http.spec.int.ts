@@ -1,22 +1,19 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { inject, describe, expect } from 'vitest';
 
 import { knowledgeDetailSchema } from '@antica/contracts';
 
-import { createHttpFixture } from '../fixtures/http.js';
+import { createHttpTest } from '../fixtures/http/test.js';
 import { knowledgeInput } from '../fixtures/knowledge.js';
 
-let fixture: Awaited<ReturnType<typeof createHttpFixture>>;
-beforeAll(async () => {
-  fixture = await createHttpFixture();
-}, 30_000);
-afterAll(async () => {
-  await fixture.close();
-});
+const resources = inject('httpResources');
+const it = createHttpTest(resources['routes/knowledge-http']!);
 
 describe('Knowledge HTTP boundaries', () => {
-  it('should apply explicit unknown-applicability and provenance filters', async () => {
+  it('should apply explicit unknown-applicability and provenance filters', async ({
+    fixture,
+  }) => {
     const created = await fixture.request(
       '/v1/knowledge',
       'POST',
@@ -51,7 +48,7 @@ describe('Knowledge HTTP boundaries', () => {
     ).toMatchObject({ items: [] });
   });
 
-  it.each([
+  it.for([
     ['POST', '/v1/sources', {}],
     ['GET', '/v1/sources/missing?limit=0', undefined],
     [
@@ -66,7 +63,7 @@ describe('Knowledge HTTP boundaries', () => {
     ['PATCH', '/v1/knowledge/missing', {}],
   ] as const)(
     'should reject invalid %s %s before returning private knowledge',
-    async (method, path, body) => {
+    async ([method, path, body], { fixture }) => {
       const response = await fixture.request(path, method, body);
       expect(response.status).toBe(422);
       expect(await response.json()).toMatchObject({

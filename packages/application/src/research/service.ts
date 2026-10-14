@@ -589,7 +589,7 @@ export function createResearchHandler(
 }
 
 /**
- * Freezes only selected curated citations and available public web excerpts.
+ * freezes only selected curated citations and available public web excerpts
  * @param params retrieval and web search dependencies
  * @param detail saved research request and source scope
  * @returns immutable retrieval pack and web availability flag
@@ -665,7 +665,7 @@ async function freezeSources(
 }
 
 /**
- * Saves a failed research state before returning the public error.
+ * saves a failed research state before returning the public error
  * @param params transaction, clock and identifier ports
  * @param ownerId authenticated collector identifier
  * @param jobId active research job identifier
@@ -714,7 +714,7 @@ async function failResearch(
 }
 
 /**
- * Registers link-only web sources and citations in the frozen research pack.
+ * registers link-only web sources and citations in the frozen research pack
  * @param unit owner-scoped source repositories
  * @param snapshot immutable research retrieval pack
  * @param clock timestamp source for new web versions
@@ -806,7 +806,7 @@ async function persistWebSources(
 }
 
 /**
- * Verifies that every referenced target belongs to the selected record.
+ * verifies that every referenced target belongs to the selected record
  * @param unit owner-scoped evidence repositories
  * @param input requested record reference
  * @returns success only for matching target identifiers
@@ -850,7 +850,7 @@ async function validateReferenceTarget(
 }
 
 /**
- * Resolves collection or source locators against their saved identities.
+ * resolves collection or source locators against their saved identities
  * @param unit owner-scoped collection and source repositories
  * @param input requested reference identity and locator
  * @returns success only for an authentic saved subject
@@ -951,7 +951,7 @@ async function validateReferenceSubject(
 }
 
 /**
- * Rejects generated citations absent from the frozen retrieval pack.
+ * rejects generated citations absent from the frozen retrieval pack
  * @param citations generated citation copies
  * @param paragraphs generated cited statements
  * @param snapshot immutable source identities supplied to the model
@@ -982,7 +982,7 @@ function validateGeneratedDraft(
 }
 
 /**
- * Ensures every claimed citation appears in the saved citation set.
+ * ensures every claimed citation appears in the saved citation set
  * @param paragraphs proposed research or note statements
  * @param citations citations available to those statements
  * @returns success only for resolvable support markers
@@ -1011,7 +1011,7 @@ function validateCitedText(
 }
 
 /**
- * Constructs a safe research operation error with code-specific retryability.
+ * constructs a safe research operation error with code-specific retryability
  * @param code public failure category
  * @param message safe user-facing explanation
  * @returns failed operation result

@@ -16,7 +16,9 @@ function iso(value: string): string {
   return new Date(value).toISOString();
 }
 
-/** Persists frozen edit inputs, first-write proposals, and proposal adoption. */
+/**
+ * persists frozen edit inputs, first-write proposals, and proposal adoption
+ */
 export function createEditDraftRepository(
   tx: Transaction,
   ownerId: string,
@@ -51,7 +53,6 @@ export function createEditDraftRepository(
 
   return {
     get,
-    /** @param run */
     async create(run) {
       const { detail, request } = run;
       if (
@@ -118,7 +119,6 @@ export function createEditDraftRepository(
         updatedAt: detail.updatedAt,
       });
     },
-    /** @param id @param result @param invocation @param expectedRevision @param updatedAt */
     async saveResult(id, result, invocation, expectedRevision, updatedAt) {
       const [run] = await tx
         .select({
@@ -168,7 +168,6 @@ export function createEditDraftRepository(
 
       return Boolean(changed);
     },
-    /** @param id @param expectedRevision @param selectedProposalIds @param updatedAt */
     async markApplied(id, expectedRevision, selectedProposalIds, updatedAt) {
       if (
         selectedProposalIds.length === 0 ||

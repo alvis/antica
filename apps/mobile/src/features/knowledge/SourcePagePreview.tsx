@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Image, Platform, Pressable, Text, View } from 'react-native';
 
 import { ActionButton, styles } from '@antica/ui';
+
 import { useLocale } from '../../locale';
 
 import type { FC } from 'react';

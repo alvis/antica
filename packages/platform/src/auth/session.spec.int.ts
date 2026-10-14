@@ -527,13 +527,14 @@ describe('fn:createAuthSession', () => {
         if (contentLength !== undefined) {
           headers.set('content-length', contentLength);
         }
+        const requestInit = {
+          method: 'POST',
+          headers,
+          body,
+          duplex: 'half',
+        } satisfies RequestInit & { duplex: 'half' };
         const response = await auth.handle(
-          new Request(`${baseUrl}/api/auth/phone-number/send-otp`, {
-            method: 'POST',
-            headers,
-            body,
-            duplex: 'half',
-          }),
+          new Request(`${baseUrl}/api/auth/phone-number/send-otp`, requestInit),
         );
         expect(response.status).toBe(413);
         expect(await response.json()).toMatchObject({

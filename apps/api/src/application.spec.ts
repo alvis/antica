@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createAnalysisService,
@@ -21,6 +21,7 @@ import type {
   ImageSearchService,
   MediaStoragePort,
 } from '@antica/application/server';
+import type { PublicError } from '@antica/contracts';
 
 import type { ApiAuth, ApplicationParams } from './application.js';
 import type { LocalTransfers } from './local-transfers.js';
@@ -139,6 +140,318 @@ describe('fn:createApplication', () => {
     });
   });
 
+  it('should correlate a redacted failure with sanitized server diagnostics', async () => {
+    const secret = 'private-provider-token-and-collector-notes';
+    const cause = new Error(secret);
+    cause.name = secret;
+    cause.stack = `Error: ${secret}\n    at provider (/private/${secret}/packages/platform/src/cloud.ts:56:78)`;
+    const failure = new TypeError(secret, { cause });
+    failure.stack = `TypeError: ${secret}\n    at authenticate (/private/${secret}/apps/api/src/auth.ts:12:34)`;
+    const write = vi.fn<typeof process.stderr.write>(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(write);
+    const app = createApplication(
+      createParams({
+        handle: async () => {
+          throw failure;
+        },
+        ownerId: async () => null,
+      }),
+    );
+
+    const response = await app.fetch(
+      new Request(`https://api.example/api/auth/session?token=${secret}`, {
+        method: 'POST',
+        headers: {
+          'authorization': `Bearer ${secret}`,
+          'cookie': `session=${secret}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ notes: secret }),
+      }),
+    );
+    const body: PublicError = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      code: 'JOB_FAILED',
+      message: 'Service request failed',
+      retryable: true,
+      requestId: expect.stringMatching(
+        /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/,
+      ),
+    });
+    expect(
+      write.mock.calls.map(([entry]) => JSON.parse(String(entry))),
+    ).toEqual([
+      {
+        event: 'api.request_failed',
+        requestId: body.requestId,
+        status: 500,
+        errorType: 'TypeError',
+        sourceFrame: 'apps/api/src/auth.ts:12:34',
+        stackFingerprint: '2dfc8aec94ba7e3e',
+        causes: [
+          {
+            errorType: 'Error',
+            sourceFrame: 'packages/platform/src/cloud.ts:56:78',
+            stackFingerprint: 'ca2e48b5cfff72ba',
+          },
+        ],
+      },
+    ]);
+    expect(
+      JSON.stringify({ body, diagnostics: write.mock.calls }),
+    ).not.toContain(secret);
+  });
+
+  it('should identify range failures without exposing external stack paths', async () => {
+    const failure = new RangeError('private-provider-limit');
+    failure.stack =
+      'RangeError: private-provider-limit\n    at query (/private/provider-secret/sdk.js:56:78)';
+    const write = vi.fn<typeof process.stderr.write>(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(write);
+    const app = createApplication(
+      createParams({
+        handle: async () => {
+          throw failure;
+        },
+        ownerId: async () => null,
+      }),
+    );
+
+    const response = await app.fetch(
+      new Request('https://api.example/api/auth/session'),
+    );
+    const body: PublicError = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      code: 'JOB_FAILED',
+      message: 'Service request failed',
+      retryable: true,
+      requestId: expect.any(String),
+    });
+    expect(
+      write.mock.calls.map(([entry]) => JSON.parse(String(entry))),
+    ).toEqual([
+      {
+        event: 'api.request_failed',
+        requestId: body.requestId,
+        status: 500,
+        errorType: 'RangeError',
+        sourceFrame: null,
+        stackFingerprint: expect.stringMatching(/^[\da-f]{16}$/),
+        causes: [],
+      },
+    ]);
+  });
+
+  it('should retain a correlated diagnostic when an unexpected error has no stack', async () => {
+    const failure = new Error('private-upstream-response');
+    delete failure.stack;
+    const write = vi.fn<typeof process.stderr.write>(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(write);
+    const app = createApplication(
+      createParams({
+        handle: async () => {
+          throw failure;
+        },
+        ownerId: async () => null,
+      }),
+    );
+
+    const response = await app.fetch(
+      new Request('https://api.example/api/auth/session'),
+    );
+    const body: PublicError = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      code: 'JOB_FAILED',
+      message: 'Service request failed',
+      retryable: true,
+      requestId: expect.any(String),
+    });
+    expect(
+      write.mock.calls.map(([entry]) => JSON.parse(String(entry))),
+    ).toEqual([
+      {
+        event: 'api.request_failed',
+        requestId: body.requestId,
+        status: 500,
+        errorType: 'Error',
+        sourceFrame: null,
+        stackFingerprint: null,
+        causes: [],
+      },
+    ]);
+  });
+
+  it('should retain a non-error cause without serializing its provider payload', async () => {
+    const secret = 'private-provider-payload';
+    const cause = {
+      name: 'TypeError',
+      stack: `/private/${secret}/provider.js:1:2`,
+      providerToken: secret,
+    };
+    const failure = new Error(secret, { cause });
+    delete failure.stack;
+    const write = vi.fn<typeof process.stderr.write>(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(write);
+    const app = createApplication(
+      createParams({
+        handle: async () => {
+          throw failure;
+        },
+        ownerId: async () => null,
+      }),
+    );
+
+    const response = await app.fetch(
+      new Request('https://api.example/api/auth/session'),
+    );
+    const body: PublicError = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      code: 'JOB_FAILED',
+      message: 'Service request failed',
+      retryable: true,
+      requestId: expect.any(String),
+    });
+    expect(
+      write.mock.calls.map(([entry]) => JSON.parse(String(entry))),
+    ).toEqual([
+      {
+        event: 'api.request_failed',
+        requestId: body.requestId,
+        status: 500,
+        errorType: 'Error',
+        sourceFrame: null,
+        stackFingerprint: null,
+        causes: [
+          { errorType: 'NonError', sourceFrame: null, stackFingerprint: null },
+        ],
+      },
+    ]);
+    expect(
+      JSON.stringify({ body, diagnostics: write.mock.calls }),
+    ).not.toContain(secret);
+  });
+
+  it('should stop a cyclic cause chain without repeating the outer failure', async () => {
+    const secret = 'private-cyclic-provider-response';
+    const failure = new Error(secret);
+    const cause = new TypeError(secret, { cause: failure });
+    failure.cause = cause;
+    delete failure.stack;
+    delete cause.stack;
+    const write = vi.fn<typeof process.stderr.write>(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(write);
+    const app = createApplication(
+      createParams({
+        handle: async () => {
+          throw failure;
+        },
+        ownerId: async () => null,
+      }),
+    );
+
+    const response = await app.fetch(
+      new Request('https://api.example/api/auth/session'),
+    );
+    const body: PublicError = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      code: 'JOB_FAILED',
+      message: 'Service request failed',
+      retryable: true,
+      requestId: expect.any(String),
+    });
+    expect(
+      write.mock.calls.map(([entry]) => JSON.parse(String(entry))),
+    ).toEqual([
+      {
+        event: 'api.request_failed',
+        requestId: body.requestId,
+        status: 500,
+        errorType: 'Error',
+        sourceFrame: null,
+        stackFingerprint: null,
+        causes: [
+          { errorType: 'TypeError', sourceFrame: null, stackFingerprint: null },
+        ],
+      },
+    ]);
+    expect(
+      JSON.stringify({ body, diagnostics: write.mock.calls }),
+    ).not.toContain(secret);
+  });
+
+  it('should bound diagnostics to the first three sanitized causes', async () => {
+    const secret = 'private-deep-provider-response';
+    const fourth = new Error(secret);
+    const third = new RangeError(secret, { cause: fourth });
+    const second = new SyntaxError(secret, { cause: third });
+    const first = new TypeError(secret, { cause: second });
+    const failure = new Error(secret, { cause: first });
+    for (const error of [failure, first, second, third, fourth]) {
+      delete error.stack;
+    }
+    const write = vi.fn<typeof process.stderr.write>(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(write);
+    const app = createApplication(
+      createParams({
+        handle: async () => {
+          throw failure;
+        },
+        ownerId: async () => null,
+      }),
+    );
+
+    const response = await app.fetch(
+      new Request('https://api.example/api/auth/session'),
+    );
+    const body: PublicError = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      code: 'JOB_FAILED',
+      message: 'Service request failed',
+      retryable: true,
+      requestId: expect.any(String),
+    });
+    expect(
+      write.mock.calls.map(([entry]) => JSON.parse(String(entry))),
+    ).toEqual([
+      {
+        event: 'api.request_failed',
+        requestId: body.requestId,
+        status: 500,
+        errorType: 'Error',
+        sourceFrame: null,
+        stackFingerprint: null,
+        causes: [
+          { errorType: 'TypeError', sourceFrame: null, stackFingerprint: null },
+          {
+            errorType: 'SyntaxError',
+            sourceFrame: null,
+            stackFingerprint: null,
+          },
+          {
+            errorType: 'RangeError',
+            sourceFrame: null,
+            stackFingerprint: null,
+          },
+        ],
+      },
+    ]);
+    expect(
+      JSON.stringify({ body, diagnostics: write.mock.calls }),
+    ).not.toContain(secret);
+  });
+
   it('should normalize malformed JSON before a record command runs', async () => {
     const app = createApplication(
       createParams({
@@ -218,7 +531,11 @@ function createParams(
       ids,
     ),
     jobs: createJobService(transaction),
-    sources: createSourceService(transaction, clock, ids),
+    sources: createSourceService({
+      transaction,
+      clock,
+      ids,
+    }),
     knowledge: createKnowledgeService(transaction, clock, ids),
     research: createResearchService(transaction, clock, ids),
     images,

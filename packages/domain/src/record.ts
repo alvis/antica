@@ -15,19 +15,19 @@ const analysisRelevantFields = new Set([
 ]);
 
 /**
- * Identifies record fields that change the inputs to analysis.
+ * identifies record fields that change the inputs to analysis
  * @param field Record field name.
- * @returns Whether the field is relevant to analysis freshness.
+ * @returns whether the field is relevant to analysis freshness
  */
 export function isAnalysisRelevantRecordField(field: string): boolean {
   return analysisRelevantFields.has(field);
 }
 
 /**
- * Compares the latest analyzed input version with the current record version.
+ * compares the latest analyzed input version with the current record version
  * @param latestRunInputVersion Version used by the latest run, if any.
  * @param currentInputVersion Current record analysis input version.
- * @returns The record's analysis freshness state.
+ * @returns the record's analysis freshness state
  */
 export function calculateAnalysisFreshness(
   latestRunInputVersion: number | null,

@@ -60,3 +60,4 @@ minimumReleaseAgeExclude:
 overrides:
   react-dom: 19.2.3
   test-renderer: 1.2.0
+  '@types/istanbul-lib-instrument@1.7.8>source-map': 0.7.6

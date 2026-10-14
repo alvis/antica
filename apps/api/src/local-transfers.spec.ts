@@ -60,11 +60,15 @@ describe('fn:mountLocalTransfers', () => {
       openReadToken: vi.fn(),
     });
     const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 });
-    const request = new Request('http://localhost/v1/storage/uploads/invalid', {
+    const requestOptions = {
       method: 'PUT',
       body,
       duplex: 'half',
-    });
+    } satisfies RequestInit & { duplex: 'half' };
+    const request = new Request(
+      'http://localhost/v1/storage/uploads/invalid',
+      requestOptions,
+    );
     const response = await app.fetch(request);
     expect(response.status).toBe(403);
     expect(pull).not.toHaveBeenCalled();
@@ -92,13 +96,14 @@ describe('fn:mountLocalTransfers', () => {
       { pull, cancel },
       { highWaterMark: 0 },
     );
+    const requestOptions = {
+      method: 'PUT',
+      body,
+      headers: { 'content-length': '1', 'content-type': 'image/png' },
+      duplex: 'half',
+    } satisfies RequestInit & { duplex: 'half' };
     const response = await app.fetch(
-      new Request('http://localhost/v1/storage/uploads/valid', {
-        method: 'PUT',
-        body,
-        headers: { 'content-length': '1', 'content-type': 'image/png' },
-        duplex: 'half',
-      }),
+      new Request('http://localhost/v1/storage/uploads/valid', requestOptions),
     );
     expect(response.status).toBe(413);
     expect(cancel).toHaveBeenCalledTimes(1);

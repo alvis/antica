@@ -1,13 +1,22 @@
+import { useQuery } from '@tanstack/react-query';
+
+import { useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { Text, View } from 'react-native';
+
+import { knowledgePageSchema } from '@antica/contracts';
 import { ActionButton, TextField, styles } from '@antica/ui';
+
 import { useAuth } from '../../../auth';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { localizeStatus, useLocale } from '../../../locale';
-import { knowledgePageSchema } from '@antica/contracts';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Text, View } from 'react-native';
+import {
+  localizeKnowledgeKind,
+  localizeStatus,
+  useLocale,
+} from '../../../locale';
 
 export default function KnowledgeRoute() {
   const router = useRouter();
@@ -54,7 +63,9 @@ export default function KnowledgeRoute() {
             <Text style={styles.heading}>{entry.titleZhHant}</Text>
             <Text style={styles.secondary}>
               {entry.displayCode} · {localizeStatus(entry.status, t)} ·{' '}
-              {entry.kinds.join(', ')}
+              {entry.kinds
+                .map((kind) => localizeKnowledgeKind(kind, t))
+                .join(', ')}
             </Text>
             <Text style={styles.body}>{entry.summaryZhHant}</Text>
             <ActionButton

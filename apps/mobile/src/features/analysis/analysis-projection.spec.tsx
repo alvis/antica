@@ -9,12 +9,9 @@ import {
 import { analysisRunDetailSchema } from '@antica/contracts';
 
 import { collectionRecord, renderMobile } from '../../mobile.spec.fixtures';
+import { firstProposalId, runId } from '../../saved-analysis.spec.fixtures';
 
-import {
-  actionableRun,
-  firstProposalId,
-  runId,
-} from './analysis.spec.fixtures';
+import { actionableRun } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../auth', () => ({ useAuth: jest.fn() }));

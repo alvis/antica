@@ -1,7 +1,11 @@
 export { renderCanonicalImage } from './pixels.js';
 export { validateIndexSpace } from './index-space.js';
 export type { IndexCompatibility } from './index-space.js';
-export { createLocalImageRetrieval, developmentImageIndex } from './image.js';
+export {
+  createLocalImageRetrieval,
+  developmentImageIndex,
+  getImageMatchIdentity,
+} from './image.js';
 export type {
   ImageSearchEntry,
   LocalImageRetrievalParams,

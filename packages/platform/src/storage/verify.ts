@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { OriginalObject } from './media-store.js';
 
+/**
+ * detects the supported media type from stored byte signatures
+ */
 export function sniffMime(bytes: Uint8Array): string | null {
   const header = Buffer.from(bytes.subarray(0, 16));
   if (header.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
@@ -48,7 +51,9 @@ export function sniffMime(bytes: Uint8Array): string | null {
   return null;
 }
 
-/** verifies stored bytes against the declared length, checksum and actual file signature */
+/**
+ * verifies stored bytes against the declared length, checksum and actual file signature
+ */
 export function verifyBytes(
   bytes: Uint8Array,
   expected: Pick<OriginalObject, 'byteLength' | 'sha256' | 'mimeType'>,

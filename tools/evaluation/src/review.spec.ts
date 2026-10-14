@@ -1,11 +1,11 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { createDevelopmentModels } from '@antica/platform/ai';
-
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 
 import { compareInference } from './comparison.js';
 import { readSnapshot } from './dataset.js';

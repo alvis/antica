@@ -1,15 +1,20 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useAuth } from '../../../auth';
-import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../locale';
+import { randomUUID } from 'expo-crypto';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { Text, View } from 'react-native';
+
 import {
   researchAcceptedSchema,
   researchRequestSchema,
 } from '@antica/contracts';
-import { randomUUID } from 'expo-crypto';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { ActionButton, TextField, styles } from '@antica/ui';
+
+import { useAuth } from '../../../auth';
+import { Screen } from '../../../components/Screen';
+import { useLocale } from '../../../locale';
 
 export default function NewResearchRoute() {
   const { recordId, entryId } = useLocalSearchParams<{

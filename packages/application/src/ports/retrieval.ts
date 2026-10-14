@@ -70,7 +70,7 @@ export interface TextIndexHandle {
   readonly provider: string;
   readonly providerJobId: string | null;
   readonly providerDocumentIds: readonly string[];
-  /** Immutable local progress artifact for resumable multi-chunk indexing. */
+  /** immutable local progress artifact for resumable multi-chunk indexing */
   readonly checkpointAssetId: string;
 }
 export type TextIndexProgress =

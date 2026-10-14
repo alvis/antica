@@ -44,7 +44,6 @@ import type { Transaction } from '../transaction.js';
 
 type ReferenceCursor = { readonly createdAt: string; readonly id: string };
 
-/** @param value */
 function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
@@ -53,12 +52,10 @@ function iso(value: string): string {
   return new Date(value).toISOString();
 }
 
-/** @param cursor */
 function encodeCursor(cursor: ReferenceCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
-/** @param value */
 function decodeCursor(value: string): ReferenceCursor {
   const cursor = JSON.parse(
     Buffer.from(value, 'base64url').toString('utf8'),
@@ -70,7 +67,6 @@ function decodeCursor(value: string): ReferenceCursor {
   return cursor;
 }
 
-/** @param row */
 function toJobState(row: typeof jobs.$inferSelect): JobState {
   if (row.state === 'running') {
     return { kind: 'running', stage: row.stage };
@@ -100,11 +96,6 @@ function toJobState(row: typeof jobs.$inferSelect): JobState {
   return { kind: 'queued' };
 }
 
-/**
- * @param tx
- * @param ownerId
- * @param sourceIds
- */
 async function currentVersionIds(
   tx: Transaction,
   ownerId: string,
@@ -130,11 +121,6 @@ async function currentVersionIds(
   return sourceIds.map((id) => bySource.get(id)!);
 }
 
-/**
- * @param tx
- * @param ownerId
- * @param citation
- */
 async function ensureCitation(
   tx: Transaction,
   ownerId: string,
@@ -358,11 +344,6 @@ export function createResearchRepository(
 
   return {
     get,
-    /**
-     * @param id
-     * @param jobId
-     * @param request
-     */
     async create(id, jobId, request) {
       await tx.insert(researchRuns).values({
         id,
@@ -390,7 +371,6 @@ export function createResearchRepository(
         );
       }
     },
-    /** @param detail */
     async saveDetail(detail) {
       const [run] = await tx
         .select({ id: researchRuns.id })
@@ -452,7 +432,6 @@ export function createResearchRepository(
         }
       }
     },
-    /** @param id */
     async getRetrievalSnapshot(id) {
       const [run] = await tx
         .select({ id: researchRuns.id })
@@ -477,7 +456,6 @@ export function createResearchRepository(
         >) ?? null
       );
     },
-    /** @param snapshot */
     async saveRetrievalSnapshot(snapshot) {
       const [run] = await tx
         .select({ id: researchRuns.id })
@@ -533,7 +511,6 @@ export function createResearchRepository(
         });
       }
     },
-    /** @param note */
     async addNote(note) {
       const detail = await get(note.researchId);
       if (!detail) {
@@ -572,10 +549,6 @@ export function createResearchRepository(
         );
       }
     },
-    /**
-     * @param link
-     * @param identity
-     */
     async addReference(link, identity) {
       const sourceLocatorId = link.reference.kind === 'source' ? link.id : null;
       if (sourceLocatorId && link.reference.kind === 'source') {
@@ -612,14 +585,9 @@ export function createResearchRepository(
         createdAt: link.createdAt,
       });
     },
-    /** @param id */
     async getReference(id) {
       return readReference(id);
     },
-    /**
-     * @param recordId
-     * @param identity
-     */
     async findReference(recordId, identity) {
       const [row] = await tx
         .select({ id: referenceLinks.id })
@@ -634,10 +602,6 @@ export function createResearchRepository(
 
       return row ? readReference(row.id) : null;
     },
-    /**
-     * @param recordId
-     * @param filters
-     */
     async queryReferences(
       recordId,
       filters,

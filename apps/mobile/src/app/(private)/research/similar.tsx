@@ -1,8 +1,19 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useAuth } from '../../../auth';
-import { QueryState } from '../../../components/QueryState';
-import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../locale';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { randomUUID } from 'expo-crypto';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import {
+  Image,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+
 import {
   evidenceCreationSchema,
   imageComparisonSchema,
@@ -13,23 +24,25 @@ import {
   referenceInputSchema,
   referenceLinkSchema,
 } from '@antica/contracts';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { randomUUID } from 'expo-crypto';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import {
-  Image,
-  Pressable,
-  Text,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { ActionButton, TextField, styles } from '@antica/ui';
+
+import { useAuth } from '../../../auth';
+import { QueryState } from '../../../components/QueryState';
+import { Screen } from '../../../components/Screen';
+import { useLocale } from '../../../locale';
 
 import type {
   ImageComparison,
   ImageMatch,
   ImageSearchResult,
 } from '@antica/contracts';
+
+interface ComparisonSelection {
+  queryAnchorId: string;
+  scope: 'reference_library' | 'my_collection';
+  match: ImageMatch;
+  response: ImageComparison;
+}
 
 export default function SimilarRoute() {
   const router = useRouter();
@@ -49,8 +62,9 @@ export default function SimilarRoute() {
   const [currentAnchorId, setCurrentAnchorId] = useState(anchorId ?? '');
   const [whole, setWhole] = useState(true);
   const [result, setResult] = useState<ImageSearchResult | null>(null);
-  const [comparison, setComparison] = useState<ImageComparison | null>(null);
-  const [selected, setSelected] = useState<ImageMatch | null>(null);
+  const [comparison, setComparison] = useState<ComparisonSelection | null>(
+    null,
+  );
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -75,6 +89,10 @@ export default function SimilarRoute() {
     media.data?.reads.find(
       (read) => read.assetOrDerivativeId === view?.derivativeId,
     )?.url ?? media.data?.reads[0]?.url;
+  const activeComparison =
+    comparison?.queryAnchorId === currentAnchorId && comparison.scope === scope
+      ? comparison
+      : null;
 
   const selectRegion = async (x: number, y: number): Promise<void> => {
     if (!recordId || !assetId || !view || busy) {
@@ -109,6 +127,7 @@ export default function SimilarRoute() {
         setCurrentAnchorId(evidence.id);
         setWhole(false);
         setResult(null);
+        setComparison(null);
       } else {
         setError(t('processing'));
       }
@@ -148,22 +167,27 @@ export default function SimilarRoute() {
   };
 
   const compare = async (match: ImageMatch): Promise<void> => {
-    setSelected(match);
+    if (busy) {
+      return;
+    }
+    const queryAnchorId = currentAnchorId;
     setBusy(true);
     setError('');
+    setComparison(null);
     try {
       const data = await api.post('/v1/search/images', imageComparisonSchema, {
         body: {
           mode: 'compare',
-          queryAnchorId: currentAnchorId,
+          queryAnchorId,
           selected: match.ref,
           selectedRegion: match.matchingRegions[0]?.region ?? null,
           selectedCanonicalViewId:
             match.matchingRegions[0]?.canonicalViewId ?? null,
         },
       });
-      setComparison(data);
+      setComparison({ queryAnchorId, scope, match, response: data });
     } catch (cause) {
+      setComparison(null);
       setError((cause as Error).message);
     } finally {
       setBusy(false);
@@ -171,10 +195,11 @@ export default function SimilarRoute() {
   };
 
   const saveReference = async (): Promise<void> => {
-    if (!record.data || !selected || busy) {
+    if (!record.data || !activeComparison || busy) {
       return;
     }
-    if (selected.ref.kind === 'reference' && !selected.sourceLocator) {
+    const { match } = activeComparison;
+    if (match.ref.kind === 'reference' && !match.sourceLocator) {
       setError(t('sourceNeedsReview'));
 
       return;
@@ -183,16 +208,16 @@ export default function SimilarRoute() {
     setError('');
     try {
       const reference =
-        selected.ref.kind === 'reference'
+        match.ref.kind === 'reference'
           ? {
               kind: 'source' as const,
-              locator: selected.sourceLocator!,
-              referenceImageId: selected.ref.referenceImageId,
+              locator: match.sourceLocator!,
+              referenceImageId: match.ref.referenceImageId,
             }
           : {
               kind: 'collection' as const,
-              recordId: selected.ref.recordId,
-              originalAssetId: selected.ref.originalAssetId,
+              recordId: match.ref.recordId,
+              originalAssetId: match.ref.originalAssetId,
               evidenceAnchorId: null,
             };
       const input = referenceInputSchema.parse({
@@ -205,7 +230,7 @@ export default function SimilarRoute() {
           evidenceAnchorId: currentAnchorId,
         },
         reference,
-        comparisonId: comparison?.comparisonId ?? null,
+        comparisonId: activeComparison.response.comparisonId,
         noteZhHant: note,
       });
       await api.post('/v1/references', referenceLinkSchema, {
@@ -215,7 +240,6 @@ export default function SimilarRoute() {
       await queryClient.invalidateQueries({
         queryKey: ['references', record.data.id],
       });
-      setSelected(null);
       setComparison(null);
       setNote('');
     } catch (cause) {
@@ -257,6 +281,8 @@ export default function SimilarRoute() {
             onPress={() => {
               setCurrentAnchorId(anchorId ?? '');
               setWhole(true);
+              setResult(null);
+              setComparison(null);
             }}
             secondary
           />
@@ -269,6 +295,7 @@ export default function SimilarRoute() {
           onPress={() => {
             setScope('reference_library');
             setResult(null);
+            setComparison(null);
           }}
           secondary={scope !== 'reference_library'}
         />
@@ -277,6 +304,7 @@ export default function SimilarRoute() {
           onPress={() => {
             setScope('my_collection');
             setResult(null);
+            setComparison(null);
           }}
           secondary={scope !== 'my_collection'}
         />
@@ -341,22 +369,22 @@ export default function SimilarRoute() {
           )}
         </View>
       ))}
-      {comparison && (
+      {activeComparison && (
         <View style={styles.card}>
           <Text style={styles.heading}>{t('compare')}</Text>
           <Text style={styles.body}>{t('similarity')}</Text>
-          {comparison.similaritiesZhHant.map((value, index) => (
+          {activeComparison.response.similaritiesZhHant.map((value, index) => (
             <Text key={index} style={styles.body}>
               {value}
             </Text>
           ))}
           <Text style={styles.body}>{t('differences')}</Text>
-          {comparison.differencesZhHant.map((value, index) => (
+          {activeComparison.response.differencesZhHant.map((value, index) => (
             <Text key={index} style={styles.body}>
               {value}
             </Text>
           ))}
-          {comparison.limitsZhHant.map((value, index) => (
+          {activeComparison.response.limitsZhHant.map((value, index) => (
             <Text key={index} style={styles.secondary}>
               {value}
             </Text>

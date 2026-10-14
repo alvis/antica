@@ -108,9 +108,18 @@ function createProvider(
 /**
  * supplies actual two-color canonical PNG bytes and observable authorized readers
  * @param model offline structured provider
+ * @param images authorized query region and selected source reference
+ * @param images.queryRegion selected query geometry
+ * @param images.selectedMatch selected reference and its source locator
  * @returns isolated comparison dependencies
  */
-async function createFixture(model = createProvider()) {
+async function createFixture(
+  model = createProvider(),
+  images: {
+    queryRegion?: Region;
+    selectedMatch?: Pick<ImageSearchEntry['match'], 'ref' | 'sourceLocator'>;
+  } = {},
+) {
   const raw = Buffer.from(
     Array.from({ length: 16 }, (_, pixel) =>
       pixel % 4 < 2 ? [255, 0, 0] : [0, 0, 255],
@@ -123,7 +132,13 @@ async function createFixture(model = createProvider()) {
     originalAssetId: ids.query,
     canonicalViewId: ids.queryView,
     bytes,
-    region: { kind: 'rect', x: 0, y: 0, width: 0.5, height: 1 },
+    region: images.queryRegion ?? {
+      kind: 'rect',
+      x: 0,
+      y: 0,
+      width: 0.5,
+      height: 1,
+    },
   };
   const selected: ImageSearchEntry = {
     image: {
@@ -140,6 +155,7 @@ async function createFixture(model = createProvider()) {
       sourceTitle: null,
       contributorNames: [],
       warningsZhHant: [],
+      ...images.selectedMatch,
     },
     filterIds: {
       objectTypeIds: [],
@@ -265,7 +281,8 @@ describe('fn:createCloudImageComparison', () => {
     });
   });
   it('should send actual independently cropped pixel pairs and retain frozen identity without tools', async () => {
-    const fixture = await createFixture();
+    const provideComparison = vi.fn((output: ImageComparison) => output);
+    const fixture = await createFixture(createProvider(provideComparison));
     const result = await createCloudImageComparison(fixture.params)(
       request,
       index,
@@ -296,13 +313,14 @@ describe('fn:createCloudImageComparison', () => {
     if (!result.success) {
       throw new Error('Expected valid comparison');
     }
-    expect(result.data.value.limitsZhHant).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining(
-          'Images do not establish age, origin, or authenticity',
-        ),
-      ]),
-    );
+    const providerOutput = provideComparison.mock.results[0]!.value;
+    expect(result.data.value).toEqual({
+      ...providerOutput,
+      limitsZhHant: [...providerOutput.limitsZhHant, expect.any(String)],
+    });
+    expect(
+      result.data.value.limitsZhHant.at(-1)!.trim().length,
+    ).toBeGreaterThan(0);
     const invocation = fixture.model.doGenerateCalls[0]!;
     const parts = invocation.prompt.flatMap((message) =>
       message.role === 'user' ? message.content : [],
@@ -325,10 +343,8 @@ describe('fn:createCloudImageComparison', () => {
   });
 
   it('should mask polygon pixels outside the selection before sending the pair', async () => {
-    const fixture = await createFixture();
-    fixture.readQuery.mockResolvedValue({
-      ...fixture.query,
-      region: {
+    const fixture = await createFixture(createProvider(), {
+      queryRegion: {
         kind: 'polygon',
         points: [
           { x: 0, y: 0 },
@@ -472,39 +488,61 @@ describe('fn:createCloudImageComparison', () => {
     expect(fixture.model.doGenerateCalls).toHaveLength(0);
   });
 
-  it.each(['真品', 'authentic', '95%', '百分之九十'])(
-    'should reject unsupported authenticity or probability text: %s',
-    async (statement) => {
-      const fixture = await createFixture(
-        createProvider((output) => ({
-          ...output,
-          differencesZhHant: [statement],
-        })),
-      );
-      expect(
-        await createCloudImageComparison(fixture.params)(request, index),
-      ).toMatchObject({
-        success: false,
-        error: { code: 'MODEL_OUTPUT_INVALID', retryable: false },
-        audit: {
-          invocation: {
-            requestedModelId: profile.modelId,
-            citationCheck: { valid: false },
-          },
-          rawOutput: { differencesZhHant: [statement] },
+  it('should preserve provider-authored non-authenticity uncertainty and append nonempty server limits', async () => {
+    const provideUncertainty = vi.fn((output: ImageComparison) => ({
+      ...output,
+      limitsZhHant: [
+        '不能據此判定真偽。 / Images do not establish age, origin, or authenticity.',
+      ],
+    }));
+    const fixture = await createFixture(createProvider(provideUncertainty));
+
+    const result = await createCloudImageComparison(fixture.params)(
+      request,
+      index,
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      throw new Error('Expected provider uncertainty to remain valid');
+    }
+    const providerOutput = provideUncertainty.mock.results[0]!.value;
+    expect(result.data.value).toEqual({
+      ...providerOutput,
+      limitsZhHant: [...providerOutput.limitsZhHant, expect.any(String)],
+    });
+    expect(
+      result.data.value.limitsZhHant.at(-1)!.trim().length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('should reject provider mutation of query identity and retain its failure audit', async () => {
+    const changeQueryIdentity = vi.fn((output: ImageComparison) => ({
+      ...output,
+      queryAnchorId: ids.foreign,
+    }));
+    const fixture = await createFixture(createProvider(changeQueryIdentity));
+
+    const result = await createCloudImageComparison(fixture.params)(
+      request,
+      index,
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { code: 'MODEL_OUTPUT_INVALID', retryable: false },
+      audit: {
+        invocation: {
+          requestedModelId: profile.modelId,
+          effectiveModelId: profile.modelId,
+          citationCheck: { valid: false, rejectedReferenceIds: [] },
         },
-      });
-    },
-  );
+        rawOutput: changeQueryIdentity.mock.results[0]!.value,
+      },
+    });
+  });
 
   it.each([
-    {
-      name: 'query identity',
-      mutate: (output: ImageComparison) => ({
-        ...output,
-        queryAnchorId: ids.foreign,
-      }),
-    },
     {
       name: 'selected identity',
       mutate: (output: ImageComparison) => ({
@@ -546,22 +584,6 @@ describe('fn:createCloudImageComparison', () => {
 
   it('should preserve source image citations and reject changed citation locators', async () => {
     for (const alter of [false, true]) {
-      const fixture = await createFixture(
-        createProvider((output) =>
-          alter
-            ? {
-                ...output,
-                citations: output.citations.map((citation) => ({
-                  ...citation,
-                  locator: {
-                    ...citation.locator,
-                    sourceVersionId: ids.foreign,
-                  },
-                })),
-              }
-            : output,
-        ),
-      );
       const ref = {
         kind: 'reference' as const,
         sourceVersionId: ids.sourceVersion,
@@ -577,10 +599,23 @@ describe('fn:createCloudImageComparison', () => {
         blockId: null,
         excerptAsRetrieved: null,
       };
-      fixture.readSelected.mockResolvedValue({
-        ...fixture.selected,
-        match: { ...fixture.selected.match, ref, sourceLocator: locator },
-      });
+      const fixture = await createFixture(
+        createProvider((output) =>
+          alter
+            ? {
+                ...output,
+                citations: output.citations.map((citation) => ({
+                  ...citation,
+                  locator: {
+                    ...citation.locator,
+                    sourceVersionId: ids.foreign,
+                  },
+                })),
+              }
+            : output,
+        ),
+        { selectedMatch: { ref, sourceLocator: locator } },
+      );
       const result = await createCloudImageComparison(fixture.params)(
         { ...request, selected: ref },
         index,

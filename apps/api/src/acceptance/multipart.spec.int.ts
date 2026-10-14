@@ -8,6 +8,8 @@ import {
 } from '@antica/application/server';
 import { createDatabase, createTransactionPort } from '@antica/platform';
 
+import type { MediaStoragePort } from '@antica/application/server';
+
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL;
 if (!databaseUrl) {
   throw new Error(
@@ -24,13 +26,10 @@ describe('Persistent multipart uploads', () => {
     const records = createRecordService(transaction, clock, {
       create: randomUUID,
     });
-    let checksumValid = false;
     const completeMultipart = vi.fn(async () => undefined);
-    const verifyOriginal = vi.fn(async () => {
-      if (!checksumValid) {
-        throw new Error('Stored media checksum mismatch');
-      }
-    });
+    const verifyOriginal = vi.fn<MediaStoragePort['verifyOriginal']>(
+      async () => undefined,
+    );
     const parts = Array.from({ length: 4 }, (_, index) => ({
       partNumber: index + 1,
       offset: index * 16 * 1024 * 1024,
@@ -125,6 +124,9 @@ describe('Persistent multipart uploads', () => {
       }
       expect(completeMultipart).not.toHaveBeenCalled();
       const key = randomUUID();
+      verifyOriginal.mockRejectedValueOnce(
+        new Error('Stored media checksum mismatch'),
+      );
       expect(
         await media.complete(ownerId, started.data.assetId, key, etags),
       ).toMatchObject({ success: false, error: { code: 'UPLOAD_INCOMPLETE' } });
@@ -138,7 +140,6 @@ describe('Persistent multipart uploads', () => {
           data: await unit.outbox.pending(100),
         })),
       ).toEqual({ success: true, data: [] });
-      checksumValid = true;
       const completed = await media.complete(
         ownerId,
         started.data.assetId,

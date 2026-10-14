@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createLocalMediaStore } from '@antica/platform';
 
@@ -12,7 +12,14 @@ const now = 1_800_000_000_000;
 const recordId = '10000000-0000-4000-8000-000000000001';
 const expectedKey = 'synthetic-benchmark/thumbnails/1.jpg';
 
-/** @param overrides signed token fields changed by an adversarial fixture */
+vi.useFakeTimers();
+vi.setSystemTime(now);
+
+/**
+ * creates a signed URL with optional adversarial token fields
+ * @param overrides signed token fields changed by an adversarial fixture
+ * @returns signed cover URL
+ */
 function signedUrl(overrides: Record<string, unknown> = {}): string {
   const body = Buffer.from(
     JSON.stringify({
@@ -29,7 +36,11 @@ function signedUrl(overrides: Record<string, unknown> = {}): string {
   return `${origin}/v1/storage/reads/${body}.${signature}`;
 }
 
-/** @param coverThumbnail candidate cover URL */
+/**
+ * verifies one candidate cover URL
+ * @param coverThumbnail candidate cover URL
+ * @returns verified cover counts
+ */
 function verify(coverThumbnail: string | null) {
   return verifyThumbnailPage(
     { items: [{ id: recordId, coverThumbnail }] },
@@ -38,18 +49,9 @@ function verify(coverThumbnail: string | null) {
   );
 }
 
-beforeEach(() => {
-  vi.stubEnv('NODE_ENV', 'test');
-  vi.spyOn(Date, 'now').mockReturnValue(now);
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllEnvs();
-});
-
 describe('fn:verifyThumbnailPage', () => {
   it('should verify the real local signer and deliberate nullable covers', async () => {
+    vi.stubEnv('NODE_ENV', 'test');
     const store = createLocalMediaStore({
       root: process.cwd(),
       publicBaseUrl: origin,

@@ -34,11 +34,12 @@ export interface TranscriptionService {
 }
 
 /**
- * Creates explicit transcription and collector confirmation commands.
- * @param transaction
- * @param selection
- * @param clock
- * @param ids
+ * creates commands that keep generated transcription separate from collector confirmation
+ * @param transaction provides owner-scoped audio, transcription, observation, and receipt updates
+ * @param selection identifies the model used for queued transcriptions
+ * @param clock timestamps transcription and confirmation changes
+ * @param ids creates transcription job, outbox, and observation identifiers
+ * @returns service that submits audio, reads generated text, and confirms an adopted observation with typed outcomes
  */
 export function createTranscriptionService(
   transaction: TransactionPort,

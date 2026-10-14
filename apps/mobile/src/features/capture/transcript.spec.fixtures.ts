@@ -96,9 +96,9 @@ const appliedRecord = {
 };
 
 /**
- * Supplies persisted transcript, edit draft, and record fixtures.
- * @param path Requested API resource.
- * @returns The selected persisted resource.
+ * supplies persisted transcript, edit draft, and record fixtures
+ * @param path requested API resource.
+ * @returns the selected persisted resource
  */
 export async function readCapture(path: string): Promise<unknown> {
   if (path === '/v1/locations') {
@@ -118,9 +118,9 @@ export async function readCapture(path: string): Promise<unknown> {
 }
 
 /**
- * Supplies accepted confirmation and adoption responses.
- * @param path Requested API command.
- * @returns The command result consumed by capture.
+ * supplies accepted confirmation and adoption responses
+ * @param path requested API command.
+ * @returns the command result consumed by capture
  */
 export async function submitCapture(path: string): Promise<unknown> {
   if (path.endsWith('/confirm')) {

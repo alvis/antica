@@ -123,8 +123,8 @@ describe('Session expiry', () => {
 });
 
 /**
- * Restores a fresh provider instance for tests that mutate collector identity.
- * @returns Mounted authenticated provider and its public hook state.
+ * restores a fresh provider instance for tests that mutate collector identity
+ * @returns mounted authenticated provider and its public hook state
  */
 async function restoreCollector(): Promise<
   RenderHookResult<ReturnType<typeof useAuth>, unknown>

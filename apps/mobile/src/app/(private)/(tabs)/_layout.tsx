@@ -23,7 +23,7 @@ export default function TabLayout(): ReactElement {
           borderTopColor: colors.border,
           minHeight: 64,
         },
-        tabBarLabelStyle: { fontSize: 14, marginHorizontal: 0 },
+        tabBarLabelStyle: { fontSize: 14, marginEnd: -5, marginStart: -5 },
       }}>
       <Tabs.Screen name="collection" options={{ title: t('collection') }} />
       <Tabs.Screen name="tasks" options={{ title: t('tasks') }} />

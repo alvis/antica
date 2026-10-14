@@ -1,10 +1,11 @@
 import type { CanonicalView, Point, Region } from './anchor.js';
 
 /**
- * Maps a normalized point in a canonical view into original asset coordinates.
- * @param view Canonical view and its transform to the original asset.
- * @param point Normalized point in the canonical view.
- * @returns Point in original asset coordinates.
+ * maps a normalized point in a canonical view into original asset coordinates
+ * @param view canonical view and its transform to the original asset
+ * @param point normalized point in the canonical view
+ * @returns point in original asset coordinates
+ * @throws {RangeError} when the view transform has a zero homogeneous denominator
  */
 export function mapEvidencePoint(view: CanonicalView, point: Point): Point {
   const [a, b, c, d, e, f, g, h, i] = view.transformToOriginal;
@@ -22,10 +23,10 @@ export function mapEvidencePoint(view: CanonicalView, point: Point): Point {
 }
 
 /**
- * Maps every vertex of a normalized evidence region into original coordinates.
- * @param view Canonical view and its transform to the original asset.
- * @param region Normalized rectangle or polygon.
- * @returns Region vertices in original asset coordinates.
+ * maps every vertex of a normalized evidence region into original coordinates
+ * @param view canonical view and its transform to the original asset
+ * @param region normalized rectangle or polygon
+ * @returns region vertices in original asset coordinates
  */
 export function mapEvidenceRegion(
   view: CanonicalView,

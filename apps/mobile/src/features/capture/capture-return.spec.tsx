@@ -134,6 +134,48 @@ it('should refresh the mounted record and collection screens before returning fr
   view.client.clear();
 });
 
+it('should refresh the mounted collection title after saving a record edit', async () => {
+  const resources = new Map<string, unknown>([
+    ['record', original],
+    ['collection', collectionPage(original)],
+    ['observations', emptyPage],
+  ]);
+  const view = await renderMobile(<ReturnJourney surface="collection" />, {
+    get: async (path) => readResource(resources, path),
+    patch: async () => {
+      resources.set('record', saved);
+      resources.set('collection', collectionPage(saved));
+
+      return saved;
+    },
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', {
+        name: `${original.code}, ${original.name}`,
+      }),
+    ).toBeTruthy(),
+  );
+  await showSurface(view.client, 'record');
+  await fireEvent.press(screen.getByRole('button', { name: 'Edit' }));
+  await fireEvent.changeText(screen.getByLabelText('Name'), saved.name!);
+  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy(),
+  );
+  expect(screen.getByRole('header', { name: saved.name! })).toBeTruthy();
+  await showSurface(view.client, 'collection');
+  expect(
+    screen.getByRole('button', { name: `${saved.code}, ${saved.name}` }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole('button', {
+      name: `${original.code}, ${original.name}`,
+    }),
+  ).toBeNull();
+  view.client.clear();
+});
+
 it('should refresh mounted observations immediately after confirming original words', async () => {
   const resources = new Map<string, unknown>([
     ['record', original],
@@ -174,10 +216,10 @@ it('should refresh mounted observations immediately after confirming original wo
 });
 
 /**
- * Keeps earlier native-stack screens mounted while the capture route is shown.
- * @param root0 Visible navigation surface.
- * @param root0.surface Screen shown after navigation.
- * @returns Mounted native stack screens.
+ * keeps earlier native-stack screens mounted while the capture route is shown
+ * @param root0 visible navigation surface.
+ * @param root0.surface screen shown after navigation.
+ * @returns mounted native stack screens
  */
 function ReturnJourney({
   surface,
@@ -196,9 +238,9 @@ function ReturnJourney({
 }
 
 /**
- * Applies the navigation result while preserving the mounted screen instances.
- * @param client Shared cache for the navigation stack.
- * @param surface Screen shown after navigation.
+ * applies the navigation result while preserving the mounted screen instances
+ * @param client shared cache for the navigation stack.
+ * @param surface screen shown after navigation.
  */
 async function showSurface(
   client: QueryClient,
@@ -214,10 +256,10 @@ async function showSurface(
 }
 
 /**
- * Supplies persisted resource state through the mobile transport boundary.
- * @param resources Persisted transport resources.
- * @param path Requested API resource.
- * @returns Current persisted resource.
+ * supplies persisted resource state through the mobile transport boundary
+ * @param resources persisted transport resources.
+ * @param path requested API resource.
+ * @returns current persisted resource
  */
 function readResource(resources: Map<string, unknown>, path: string): unknown {
   if (path === '/v1/locations') {
@@ -237,9 +279,9 @@ function readResource(resources: Map<string, unknown>, path: string): unknown {
 }
 
 /**
- * Builds the API collection projection of one persisted record.
- * @param record Persisted record detail.
- * @returns Valid collection API projection.
+ * builds the API collection projection of one persisted record
+ * @param record persisted record detail.
+ * @returns valid collection API projection
  */
 function collectionPage(
   record: typeof original,

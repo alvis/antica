@@ -558,7 +558,12 @@ describe('fn:createMediaRepository', () => {
 
           return { success: true as const, data: undefined };
         }),
-      ).rejects.toThrow('Media upload is missing or already completed');
+      ).rejects.toThrow(Error);
+      const unchanged = await transaction.run(ownerId, async (unit) => ({
+        success: true as const,
+        data: await unit.media.get(assetId),
+      }));
+      expect(unchanged.data).toMatchObject({ id: assetId, state: 'ready' });
     } finally {
       await database.close();
     }

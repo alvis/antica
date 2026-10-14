@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { mergeConfig } from 'vite';
@@ -96,7 +98,11 @@ const config: StorybookConfig = {
     '../src/**/*.stories.tsx',
     '../../../apps/mobile/src/**/*.stories.tsx',
   ],
-  framework: '@storybook/react-native-web-vite',
+  framework: dirname(
+    createRequire(import.meta.url).resolve(
+      '@storybook/react-native-web-vite/package.json',
+    ),
+  ),
   /**
    * adds the browser fixture while retaining framework aliases
    * @param config inherited Storybook Vite configuration

@@ -1,28 +1,105 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { describe, expect, it, vi } from 'vitest';
 
 import { readSnapshot } from './dataset.js';
 import { digestSnapshot } from './digest.js';
+import { runInferenceCommand } from './main.js';
+import { runRetrievalCommand } from './retrieval-main.js';
+import { runSensitivityCommand } from './sensitivity-main.js';
+
+import type {
+  createLocalImageRetrieval,
+  createLocalTextRetrieval,
+} from '@antica/platform/search';
+
+import type { checkOutput } from './comparison.js';
+
+const textAdapter = vi.hoisted(
+  () =>
+    ({
+      snapshot:
+        vi.fn<ReturnType<typeof createLocalTextRetrieval>['snapshot']>(),
+    }) satisfies Partial<ReturnType<typeof createLocalTextRetrieval>>,
+);
+const imageAdapter = vi.hoisted(
+  () =>
+    ({
+      search: vi.fn<ReturnType<typeof createLocalImageRetrieval>['search']>(),
+    }) satisfies Partial<ReturnType<typeof createLocalImageRetrieval>>,
+);
+const outputChecker = vi.hoisted(
+  () =>
+    ({ checkOutput: vi.fn<typeof checkOutput>() }) satisfies Partial<
+      typeof import('./comparison.js')
+    >,
+);
+
+vi.mock('@antica/platform/search', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@antica/platform/search')>();
+
+  return {
+    ...actual,
+    createLocalTextRetrieval: (
+      params: Parameters<typeof actual.createLocalTextRetrieval>[0],
+    ) => {
+      const adapter = actual.createLocalTextRetrieval(params);
+
+      return {
+        ...adapter,
+        snapshot: async (...args: Parameters<typeof adapter.snapshot>) =>
+          textAdapter.snapshot.getMockImplementation()
+            ? textAdapter.snapshot(...args)
+            : adapter.snapshot(...args),
+      };
+    },
+    createLocalImageRetrieval: (
+      params: Parameters<typeof actual.createLocalImageRetrieval>[0],
+    ) => {
+      const adapter = actual.createLocalImageRetrieval(params);
+
+      return {
+        ...adapter,
+        search: async (...args: Parameters<typeof adapter.search>) =>
+          imageAdapter.search.getMockImplementation()
+            ? imageAdapter.search(...args)
+            : adapter.search(...args),
+      };
+    },
+  } satisfies Partial<typeof import('@antica/platform/search')>;
+});
+
+vi.mock('./comparison.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./comparison.js')>();
+
+  return {
+    ...actual,
+    checkOutput: (...args: Parameters<typeof actual.checkOutput>) =>
+      outputChecker.checkOutput.getMockImplementation()
+        ? outputChecker.checkOutput(...args)
+        : actual.checkOutput(...args),
+  } satisfies Partial<typeof import('./comparison.js')>;
+});
 
 const commands = [
   {
     name: 'inference',
     help: 'Inference:',
-    load: async () => import('./main.js'),
+    run: runInferenceCommand,
   },
   {
     name: 'retrieval',
     help: 'Retrieval:',
-    load: async () => import('./retrieval-main.js'),
+    run: runRetrievalCommand,
   },
   {
     name: 'sensitivity',
     help: 'Sensitivity:',
-    load: async () => import('./sensitivity-main.js'),
+    run: runSensitivityCommand,
   },
 ];
 
@@ -46,38 +123,18 @@ function captureCommand(args: readonly string[]) {
   return { runtime, stdout, stderr };
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.doUnmock('./comparison.js');
-  vi.doUnmock('@antica/platform/search');
-});
-
 describe('evaluation commands', () => {
   it('should preserve a snapshot-only retrieval failure and fail the command', async () => {
-    vi.resetModules();
-    vi.doMock('@antica/platform/search', async (importOriginal) => {
-      const actual =
-        await importOriginal<typeof import('@antica/platform/search')>();
-
-      return {
-        ...actual,
-        createLocalTextRetrieval: (
-          params: Parameters<typeof actual.createLocalTextRetrieval>[0],
-        ) => ({
-          ...actual.createLocalTextRetrieval(params),
-          snapshot: async () => ({
-            success: false,
-            error: {
-              code: 'PROVIDER_UNAVAILABLE',
-              message: 'Snapshot failed',
-              retryable: true,
-            },
-          }),
-        }),
-      };
+    textAdapter.snapshot.mockResolvedValue({
+      success: false,
+      error: {
+        code: 'PROVIDER_UNAVAILABLE',
+        message: 'Snapshot failed',
+        retryable: true,
+      },
     });
     const captured = captureCommand(['--output', '-']);
-    await import('./retrieval-main.js');
+    await runRetrievalCommand();
     const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
     expect(report.text.evaluations[0]).toMatchObject({
       scores: null,
@@ -88,28 +145,8 @@ describe('evaluation commands', () => {
   });
 
   it('should preserve reference image identities in a returned image ranking', async () => {
-    vi.resetModules();
-    vi.doMock('@antica/platform/search', async (importOriginal) => ({
-      ...(await importOriginal<typeof import('@antica/platform/search')>()),
-      createLocalImageRetrieval: () => ({
-        search: async () => ({
-          success: true,
-          data: {
-            items: [
-              {
-                ref: {
-                  kind: 'reference',
-                  sourceVersionId: '40000000-0000-4000-8000-000000000008',
-                  referenceImageId: '40000000-0000-4000-8000-000000000002',
-                },
-              },
-            ],
-          },
-        }),
-      }),
-    }));
     const captured = captureCommand(['--output', '-']);
-    await import('./retrieval-main.js');
+    await runRetrievalCommand();
     const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
     expect(report.image.rankedIds).toEqual([
       '40000000-0000-4000-8000-000000000002',
@@ -144,7 +181,6 @@ describe('evaluation commands', () => {
           },
         }),
       );
-      vi.resetModules();
       const captured = captureCommand([
         '--models',
         'development:evidence-v1',
@@ -153,7 +189,7 @@ describe('evaluation commands', () => {
         '--output',
         '-',
       ]);
-      await import('./main.js');
+      await runInferenceCommand();
       const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
       expect(report.evaluations[0]).toMatchObject({
         error: { code: 'REVIEW_OUTPUT_MISMATCH' },
@@ -191,7 +227,6 @@ describe('evaluation commands', () => {
           ],
         }),
       );
-      vi.resetModules();
       const captured = captureCommand([
         '--models',
         'gateway:text-only',
@@ -200,7 +235,7 @@ describe('evaluation commands', () => {
         '--output',
         '-',
       ]);
-      await import('./main.js');
+      await runInferenceCommand();
       const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
       expect(report.evaluations[0]).toMatchObject({
         error: { code: 'MODEL_CAPABILITY_MISMATCH' },
@@ -213,17 +248,14 @@ describe('evaluation commands', () => {
   });
 
   it('should fail the sensitivity command when a permissive validator falsely accepts invalid seeds', async () => {
-    vi.resetModules();
-    vi.doMock('./comparison.js', () => ({
-      checkOutput: () => ({
-        schemaValid: true,
-        citationsValid: true,
-        rejectedReferenceIds: [],
-        schemaIssues: [],
-      }),
-    }));
+    outputChecker.checkOutput.mockReturnValue({
+      schemaValid: true,
+      citationsValid: true,
+      rejectedReferenceIds: [],
+      schemaIssues: [],
+    });
     const captured = captureCommand(['--output', '-']);
-    await import('./sensitivity-main.js');
+    await runSensitivityCommand();
     const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
     expect(report.falsePassCount).toBeGreaterThan(0);
     expect(report.passed).toBe(false);
@@ -231,22 +263,16 @@ describe('evaluation commands', () => {
   });
 
   it('should preserve image-provider failure and fail the retrieval command', async () => {
-    vi.resetModules();
-    vi.doMock('@antica/platform/search', async (importOriginal) => ({
-      ...(await importOriginal<typeof import('@antica/platform/search')>()),
-      createLocalImageRetrieval: () => ({
-        search: async () => ({
-          success: false,
-          error: {
-            code: 'PROVIDER_UNAVAILABLE',
-            message: 'Seeded image failure',
-            retryable: true,
-          },
-        }),
-      }),
-    }));
+    imageAdapter.search.mockResolvedValue({
+      success: false,
+      error: {
+        code: 'PROVIDER_UNAVAILABLE',
+        message: 'Seeded image failure',
+        retryable: true,
+      },
+    });
     const captured = captureCommand(['--output', '-']);
-    await import('./retrieval-main.js');
+    await runRetrievalCommand();
     const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
     expect(report.image).toMatchObject({
       scores: null,
@@ -259,9 +285,8 @@ describe('evaluation commands', () => {
   it.each(commands)(
     'should expose help for $name without creating reports',
     async (command) => {
-      vi.resetModules();
       const captured = captureCommand(['--help']);
-      await command.load();
+      await command.run();
       expect(captured.stdout).toHaveBeenCalledWith(
         expect.stringContaining(command.help),
       );
@@ -273,9 +298,8 @@ describe('evaluation commands', () => {
   it.each(commands)(
     'should produce an explicit JSON report for $name',
     async (command) => {
-      vi.resetModules();
       const captured = captureCommand(['--output', '-']);
-      await command.load();
+      await command.run();
       const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
       expect(report).toEqual(expect.any(Object));
       expect(captured.stderr).not.toHaveBeenCalled();
@@ -284,14 +308,13 @@ describe('evaluation commands', () => {
   );
 
   it('should preserve unknown-model failure in the JSON report and exit unsuccessfully', async () => {
-    vi.resetModules();
     const captured = captureCommand([
       '--models',
       'missing:model',
       '--output',
       '-',
     ]);
-    await import('./main.js');
+    await runInferenceCommand();
     const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
     expect(report.evaluations[0]).toMatchObject({
       requestedModelId: 'missing:model',
@@ -301,14 +324,13 @@ describe('evaluation commands', () => {
   });
 
   it('should report missing snapshot files through stderr and exit unsuccessfully', async () => {
-    vi.resetModules();
     const captured = captureCommand([
       '--snapshot',
       '/missing-antica-evaluation-fixture.json',
       '--output',
       '-',
     ]);
-    await import('./main.js');
+    await runInferenceCommand();
     expect(captured.stderr).toHaveBeenCalledWith(
       expect.stringContaining('ENOENT'),
     );

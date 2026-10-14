@@ -22,6 +22,7 @@ import type {
   DatabaseConnection,
   LocalMediaStore,
   MediaStore,
+  RetrievalReaders,
 } from '@antica/platform';
 
 import type { ApiAuth } from './application.js';
@@ -33,7 +34,7 @@ export interface Persistence {
   readonly transaction: TransactionPort;
   readonly storage: MediaStore;
   readonly local: LocalMediaStore | undefined;
-  readonly readers: ReturnType<typeof createRetrievalReaders>;
+  readonly readers: RetrievalReaders;
   readonly auth: ApiAuth;
   readonly trustedOrigins: readonly string[];
   readonly clock: ClockPort;

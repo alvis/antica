@@ -76,10 +76,10 @@ const storyAuthClient = {
 };
 
 /**
- * Creates a JSON response for the story transport.
+ * creates a JSON response for the story transport
  * @param body JSON-compatible fixture body.
  * @param status HTTP response status.
- * @returns Response consumed by the production API transport.
+ * @returns response consumed by the production API transport
  */
 function jsonResponse(body: unknown, status = successStatus): Response {
   return new Response(JSON.stringify(body), {
@@ -89,9 +89,9 @@ function jsonResponse(body: unknown, status = successStatus): Response {
 }
 
 /**
- * Returns a stable method and path key for a fixture request.
- * @param request Browser request received by the fixture.
- * @returns Stable method and pathname key.
+ * returns a stable method and path key for a fixture request
+ * @param request browser request received by the fixture.
+ * @returns stable method and pathname key
  */
 function requestPath(request: Request): string {
   const url = new URL(request.url, 'https://storybook.invalid');
@@ -100,13 +100,13 @@ function requestPath(request: Request): string {
 }
 
 /**
- * Supplies an authenticated mobile runtime backed by deterministic HTTP fixtures.
- * @param props Story content, locale, and API responses.
- * @param props.children Component rendered inside the providers.
+ * supplies an authenticated mobile runtime backed by deterministic HTTP fixtures
+ * @param props story content, locale, and API responses.
+ * @param props.children component rendered inside the providers.
  * @param props.responses HTTP response map for the story.
- * @param props.locale Initial interface locale.
- * @param props.delayMs Optional network delay.
- * @returns Isolated providers plus a visible request trace.
+ * @param props.locale initial interface locale.
+ * @param props.delayMs optional network delay.
+ * @returns isolated providers plus a visible request trace
  */
 export function MobileStoryShell({
   children,
@@ -162,11 +162,11 @@ export function MobileStoryShell({
 }
 
 /**
- * Creates the API-backed fetch fixture used by a story.
- * @param responses Response map for API methods and paths.
- * @param delayMs Optional response delay used by loading stories.
- * @param recordRequest Observer for the visible request trace.
- * @returns Fetch-compatible deterministic story transport.
+ * creates the API-backed fetch fixture used by a story
+ * @param responses response map for API methods and paths.
+ * @param delayMs optional response delay used by loading stories.
+ * @param recordRequest observer for the visible request trace.
+ * @returns fetch-compatible deterministic story transport
  */
 function createFixtureFetch(
   responses: StoryResponses,

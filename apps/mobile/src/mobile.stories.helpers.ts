@@ -1,8 +1,8 @@
 /**
- * Waits for a rendered Storybook element.
- * @param root Story canvas root.
+ * waits for a rendered Storybook element
+ * @param root story canvas root.
  * @param selector CSS selector for the expected element.
- * @returns The matching element.
+ * @returns the matching element
  */
 export async function findStoryElement(
   root: HTMLElement,
@@ -19,9 +19,9 @@ export async function findStoryElement(
 }
 
 /**
- * Waits for observable text in a rendered Storybook canvas.
- * @param root Story canvas root.
- * @param expected Text fragment expected in the canvas.
+ * waits for observable text in a rendered Storybook canvas
+ * @param root story canvas root.
+ * @param expected text fragment expected in the canvas.
  */
 export async function findStoryText(
   root: HTMLElement,
@@ -37,10 +37,10 @@ export async function findStoryText(
 }
 
 /**
- * Waits for a labelled Storybook button.
- * @param root Story canvas root.
- * @param label Accessible button label.
- * @returns The rendered button.
+ * waits for a labeled Storybook button
+ * @param root story canvas root.
+ * @param label accessible button label.
+ * @returns the rendered button
  */
 export async function findStoryButton(
   root: HTMLElement,
@@ -50,9 +50,9 @@ export async function findStoryButton(
 }
 
 /**
- * Edits a controlled input through its native value setter.
- * @param input Controlled input rendered in the story canvas.
- * @param value Next field value.
+ * edits a controlled input through its native value setter
+ * @param input controlled input rendered in the story canvas.
+ * @param value next field value.
  */
 export function setStoryInputValue(input: HTMLElement, value: string): void {
   if (!(input instanceof HTMLInputElement)) {

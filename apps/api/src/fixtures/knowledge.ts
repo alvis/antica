@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { KnowledgeWrite } from '@antica/contracts';
 
 /**
- * Creates a fresh draft and one inspection method for knowledge scenarios.
+ * creates a fresh draft and one inspection method for knowledge scenarios
  * @returns a valid draft input with a unique request key
  */
 export function knowledgeInput(): KnowledgeWrite {

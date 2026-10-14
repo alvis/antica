@@ -32,8 +32,9 @@ export interface DrainReport {
 }
 
 /**
- * Processes one persisted outbox snapshot; another invocation can resume unfinished jobs.
- * @param params
+ * creates a resumable dispatcher for persisted outbox jobs
+ * @param params supplies pending messages, transactional job state, handlers, and time
+ * @returns drain function that inspects up to the requested limit (default 100) and reports settled, deferred, and failed jobs
  */
 export function createOutboxDrain(
   params: OutboxDrainParams,

@@ -1,12 +1,20 @@
-import { beforeEach, expect, it, jest } from '@jest/globals';
+import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import {
   requestRecordingPermissionsAsync,
+  RecordingPresets,
   setAudioModeAsync,
   useAudioRecorder,
 } from 'expo-audio';
 import { File } from 'expo-file-system';
+
+import type {
+  PickMultipleFilesOptions,
+  PickMultipleFilesResult,
+  PickSingleFileOptions,
+  PickSingleFileResult,
+} from 'expo-file-system';
 import { launchImageLibraryAsync } from 'expo-image-picker';
 import { setItemAsync } from 'expo-secure-store';
 
@@ -16,64 +24,137 @@ import { CaptureContainer } from './CaptureContainer';
 import { uploadMedia } from './media-upload';
 import { jobId, transcriptionId, transcript } from './transcript.spec.fixtures';
 
-jest.mock('../../auth', () => ({ useAuth: jest.fn() }));
-jest.mock('./media-upload', () => ({ uploadMedia: jest.fn() }));
-jest.mock('expo-crypto', () => ({
-  randomUUID:
-    jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID,
-}));
-jest.mock('expo-file-system', () => ({
-  File: Object.assign(
-    jest.fn(() => ({ name: '' })),
-    { pickFileAsync: jest.fn() },
-  ),
-}));
-jest.mock('expo-router', () => ({
-  useRouter: jest.fn(),
-  useLocalSearchParams: () => ({}),
-}));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
-}));
-jest.mock('expo-audio', () => ({
-  useAudioRecorder: jest.fn(),
-  requestRecordingPermissionsAsync: jest.fn(),
-  setAudioModeAsync: jest.fn(),
-  RecordingPresets: { HIGH_QUALITY: {} },
-}));
-jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
+jest.mock(
+  '../../auth',
+  () =>
+    ({
+      useAuth: jest.fn<typeof import('../../auth').useAuth>(),
+    }) satisfies Partial<typeof import('../../auth')>,
+);
+jest.mock(
+  './media-upload',
+  () =>
+    ({
+      uploadMedia: jest.fn<typeof uploadMedia>(),
+    }) satisfies Partial<typeof import('./media-upload')>,
+);
+jest.mock(
+  'expo-crypto',
+  () =>
+    ({
+      randomUUID:
+        jest.requireActual<typeof import('node:crypto')>('node:crypto')
+          .randomUUID,
+    }) satisfies Partial<typeof import('expo-crypto')>,
+);
+function mockPickFileAsync() {
+  const pickFileMock = jest.fn(async () => ({
+    canceled: true as const,
+    result: null,
+  }));
+
+  function canceledPickFile(
+    options?: PickSingleFileOptions,
+  ): Promise<PickSingleFileResult>;
+  function canceledPickFile(
+    options?: PickMultipleFilesOptions,
+  ): Promise<PickMultipleFilesResult>;
+  function canceledPickFile(
+    initialUri?: string,
+    mimeType?: string,
+  ): Promise<File | File[]>;
+  function canceledPickFile(
+    _options?: PickSingleFileOptions | PickMultipleFilesOptions | string,
+    _mimeType?: string,
+  ): Promise<PickSingleFileResult | PickMultipleFilesResult | File | File[]> {
+    return pickFileMock();
+  }
+
+  return Object.assign(canceledPickFile, pickFileMock);
+}
+
+jest.mock('expo-file-system', () => {
+  return {
+    File: Object.assign(
+      jest.fn<(...uris: ConstructorParameters<typeof File>) => File>(
+        () => ({ name: '' }) satisfies Partial<File> as File,
+      ),
+      {
+        createDownloadTask: jest.fn<typeof File.createDownloadTask>(),
+        downloadFileAsync: jest.fn<typeof File.downloadFileAsync>(),
+        pickFileAsync: mockPickFileAsync(),
+      },
+    ),
+  } satisfies Partial<typeof import('expo-file-system')>;
+});
+jest.mock(
+  'expo-router',
+  () =>
+    ({
+      useRouter: jest.fn<typeof import('expo-router').useRouter>(),
+      useLocalSearchParams: () => ({}),
+    }) satisfies Partial<typeof import('expo-router')>,
+);
+jest.mock(
+  'expo-secure-store',
+  () =>
+    ({
+      getItemAsync: jest.fn(async () => null),
+      setItemAsync: jest.fn(async () => undefined),
+    }) satisfies Partial<typeof import('expo-secure-store')>,
+);
+jest.mock('expo-audio', () => {
+  const recorder = {
+    prepareToRecordAsync: jest.fn<
+      ReturnType<typeof useAudioRecorder>['prepareToRecordAsync']
+    >(async () => undefined),
+    record: jest.fn<ReturnType<typeof useAudioRecorder>['record']>(),
+    stop: jest.fn<ReturnType<typeof useAudioRecorder>['stop']>(
+      async () => undefined,
+    ),
+    get uri(): string | null {
+      return 'file:///voice.m4a';
+    },
+  } satisfies Partial<ReturnType<typeof useAudioRecorder>>;
+
+  return {
+    useAudioRecorder: jest.fn<typeof useAudioRecorder>(
+      () => recorder as unknown as ReturnType<typeof useAudioRecorder>,
+    ),
+    requestRecordingPermissionsAsync: jest.fn<
+      typeof requestRecordingPermissionsAsync
+    >(
+      async () =>
+        ({ granted: true }) as Awaited<
+          ReturnType<typeof requestRecordingPermissionsAsync>
+        >,
+    ),
+    setAudioModeAsync: jest.fn<typeof setAudioModeAsync>(),
+    RecordingPresets: {
+      HIGH_QUALITY: {} as Parameters<typeof useAudioRecorder>[0],
+      LOW_QUALITY: {} as Parameters<typeof useAudioRecorder>[0],
+    },
+  } satisfies Partial<typeof import('expo-audio')>;
+});
+jest.mock(
+  'expo-image-picker',
+  () =>
+    ({
+      launchImageLibraryAsync: jest.fn<typeof launchImageLibraryAsync>(),
+    }) satisfies Partial<typeof import('expo-image-picker')>,
+);
 
 const pickAudio = File.pickFileAsync as (options: {
   mimeTypes: string;
 }) => Promise<{ canceled: boolean; result: File | null }>;
 
-const recorder = {
-  prepareToRecordAsync: jest.fn(async () => undefined),
-  record: jest.fn(),
-  stop: jest.fn(async () => undefined),
-  uri: 'file:///voice.m4a' as string | null,
-};
-
-beforeEach(() => {
-  recorder.uri = 'file:///voice.m4a';
-  jest
-    .mocked(useAudioRecorder)
-    .mockReturnValue(
-      recorder as unknown as ReturnType<typeof useAudioRecorder>,
-    );
-  jest
-    .mocked(requestRecordingPermissionsAsync)
-    .mockResolvedValue({ granted: true } as Awaited<
-      ReturnType<typeof requestRecordingPermissionsAsync>
-    >);
-  jest.mocked(pickAudio).mockResolvedValue({ canceled: true, result: null });
-});
+const recorder = jest.mocked(useAudioRecorder)(RecordingPresets.HIGH_QUALITY);
+const recorderMock = jest.mocked(recorder);
 
 /**
- * Opens a new capture at its voice-note step.
- * @param includePhoto Import a photo before the voice note.
- * @returns Isolated API and navigation boundaries.
+ * opens a new capture at its voice-note step
+ * @param includePhoto import a photo before the voice note.
+ * @returns isolated API and navigation boundaries
  */
 async function openAudio(
   includePhoto = false,
@@ -97,7 +178,7 @@ async function openAudio(
 it('should decline voice recording when microphone permission is denied', async () => {
   jest
     .mocked(requestRecordingPermissionsAsync)
-    .mockResolvedValue({ granted: false } as Awaited<
+    .mockResolvedValueOnce({ granted: false } as Awaited<
       ReturnType<typeof requestRecordingPermissionsAsync>
     >);
   await openAudio();
@@ -105,13 +186,15 @@ it('should decline voice recording when microphone permission is denied', async 
     screen.getByRole('button', { name: 'Start recording' }),
   );
   await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-  expect(recorder.record).not.toHaveBeenCalled();
+  expect(recorderMock.record.mock.calls).toHaveLength(0);
 });
 
 it.each([true, false])(
   'should stop recording and offer transcription only when a recording URI exists (%s)',
   async (hasUri) => {
-    recorder.uri = hasUri ? 'file:///voice.m4a' : null;
+    jest
+      .spyOn(recorder, 'uri', 'get')
+      .mockReturnValue(hasUri ? 'file:///voice.m4a' : null);
     await openAudio();
     await fireEvent.press(
       screen.getByRole('button', { name: 'Start recording' }),
@@ -125,12 +208,12 @@ it.each([true, false])(
       allowsRecording: true,
       playsInSilentMode: true,
     });
-    expect(recorder.prepareToRecordAsync).toHaveBeenCalledTimes(1);
-    expect(recorder.record).toHaveBeenCalledTimes(1);
+    expect(recorderMock.prepareToRecordAsync.mock.calls).toHaveLength(1);
+    expect(recorderMock.record.mock.calls).toHaveLength(1);
     await fireEvent.press(
       screen.getByRole('button', { name: 'Stop recording' }),
     );
-    expect(recorder.stop).toHaveBeenCalledTimes(1);
+    expect(recorderMock.stop.mock.calls).toHaveLength(1);
     expect(
       Boolean(screen.queryByRole('button', { name: 'Transcribe voice note' })),
     ).toBe(hasUri);
@@ -138,13 +221,13 @@ it.each([true, false])(
 );
 
 it('should import audio with fallback metadata and preserve the uploaded file on transcription retry', async () => {
-  jest.mocked(pickAudio).mockResolvedValue({
+  jest.mocked(pickAudio).mockResolvedValueOnce({
     canceled: false,
     result: { uri: 'file:///import.m4a', name: '', type: '' } as File,
   });
   jest
     .mocked(uploadMedia)
-    .mockResolvedValue('00000000-0000-4000-8000-000000000044');
+    .mockResolvedValueOnce('00000000-0000-4000-8000-000000000044');
   const view = await openAudio();
   await fireEvent.press(screen.getByRole('button', { name: 'Import audio' }));
   view.commands.mockRejectedValueOnce(
@@ -191,7 +274,7 @@ it('should leave voice input empty after cancellation and report audio picker fa
 });
 
 it('should surface recorder setup errors and leave recording stopped', async () => {
-  recorder.prepareToRecordAsync.mockRejectedValueOnce(
+  recorderMock.prepareToRecordAsync.mockRejectedValueOnce(
     new Error('Recorder unavailable'),
   );
   await openAudio();
@@ -202,11 +285,11 @@ it('should surface recorder setup errors and leave recording stopped', async () 
     expect(screen.getByRole('alert')).toHaveTextContent('Recorder unavailable'),
   );
   expect(screen.queryByRole('button', { name: 'Stop recording' })).toBeNull();
-  expect(recorder.record).not.toHaveBeenCalled();
+  expect(recorderMock.record.mock.calls).toHaveLength(0);
 });
 
 it('should report failure to persist an accepted transcription job', async () => {
-  jest.mocked(pickAudio).mockResolvedValue({
+  jest.mocked(pickAudio).mockResolvedValueOnce({
     canceled: false,
     result: {
       uri: 'file:///speech.wav',
@@ -216,7 +299,7 @@ it('should report failure to persist an accepted transcription job', async () =>
   });
   jest
     .mocked(uploadMedia)
-    .mockResolvedValue('00000000-0000-4000-8000-000000000044');
+    .mockResolvedValueOnce('00000000-0000-4000-8000-000000000044');
   const view = await openAudio();
   view.reads.mockImplementation(async (path) =>
     path.startsWith('/v1/jobs/')
@@ -244,7 +327,7 @@ it('should report failure to persist an accepted transcription job', async () =>
 });
 
 it('should persist an accepted transcription and poll until its recovered words are available', async () => {
-  jest.mocked(pickAudio).mockResolvedValue({
+  jest.mocked(pickAudio).mockResolvedValueOnce({
     canceled: false,
     result: {
       uri: 'file:///speech.wav',
@@ -254,7 +337,7 @@ it('should persist an accepted transcription and poll until its recovered words 
   });
   jest
     .mocked(uploadMedia)
-    .mockResolvedValue('00000000-0000-4000-8000-000000000044');
+    .mockResolvedValueOnce('00000000-0000-4000-8000-000000000044');
   const view = await openAudio();
   let jobReads = 0;
   view.reads.mockImplementation(async (path) => {

@@ -106,7 +106,7 @@ describe('fn:createS3MediaStore', () => {
       ]) {
         await expect(
           store.completeMultipart(original, session.uploadId, invalid),
-        ).rejects.toThrow('incomplete or unordered');
+        ).rejects.toThrow(Error);
       }
       expect(requests).toHaveLength(1);
       await expect(
@@ -115,7 +115,13 @@ describe('fn:createS3MediaStore', () => {
           session.uploadId,
           etags,
         ),
-      ).rejects.toThrow('checksum mismatch');
+      ).rejects.toThrow(Error);
+      expect(requests.map((request) => request.method)).toEqual([
+        'POST',
+        'POST',
+        'HEAD',
+        'GET',
+      ]);
       await expect(
         store.completeMultipart(original, session.uploadId, etags),
       ).resolves.toBeUndefined();

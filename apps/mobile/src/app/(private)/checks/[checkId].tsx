@@ -1,14 +1,20 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { randomUUID } from 'expo-crypto';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { Text, View } from 'react-native';
+
+import { checkDetailSchema, checkPatchSchema } from '@antica/contracts';
 import { ActionButton, TextField, styles } from '@antica/ui';
+
 import { useAuth } from '../../../auth';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
 import { useLocale } from '../../../locale';
-import { checkDetailSchema, checkPatchSchema } from '@antica/contracts';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { randomUUID } from 'expo-crypto';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Text, View } from 'react-native';
 
 export default function CheckRoute() {
   const { checkId } = useLocalSearchParams<{ checkId: string }>();

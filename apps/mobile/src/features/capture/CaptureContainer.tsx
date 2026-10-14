@@ -1,8 +1,24 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { uploadMedia } from './media-upload';
-import { useAuth } from '../../auth';
-import { Screen } from '../../components/Screen';
-import { localizeProposalField, localizeStatus, useLocale } from '../../locale';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from 'expo-audio';
+
+import { randomUUID } from 'expo-crypto';
+import { File } from 'expo-file-system';
+import {
+  launchCameraAsync,
+  launchImageLibraryAsync,
+  requestCameraPermissionsAsync,
+} from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { getItemAsync, setItemAsync } from 'expo-secure-store';
+import { useEffect, useState } from 'react';
+import { Image, Text, View } from 'react-native';
+
 import {
   editDraftRequestSchema,
   editDraftAcceptedSchema,
@@ -24,25 +40,15 @@ import {
   transcriptionConfirmedSchema,
   transcriptionDetailSchema,
 } from '@antica/contracts';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  useAudioRecorder,
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-} from 'expo-audio';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { ActionButton, TextField, styles } from '@antica/ui';
+
+import { useAuth } from '../../auth';
+import { Screen } from '../../components/Screen';
+import { localizeProposalField, localizeStatus, useLocale } from '../../locale';
+
+import { uploadMedia } from './media-upload';
+
 import type { FC } from 'react';
-import { randomUUID } from 'expo-crypto';
-import { File } from 'expo-file-system';
-import { getItemAsync, setItemAsync } from 'expo-secure-store';
-import {
-  launchCameraAsync,
-  launchImageLibraryAsync,
-  requestCameraPermissionsAsync,
-} from 'expo-image-picker';
-import { Image, Text, View } from 'react-native';
 
 import type {
   EditDraftApply,
@@ -172,7 +178,7 @@ export const CaptureContainer: FC = () => {
     enabled:
       Boolean(transcriptionResourceId) &&
       ['succeeded', 'partial'].includes(transcription.data?.state.kind ?? ''),
-    queryFn: ({ signal }) =>
+    queryFn: async ({ signal }) =>
       api.get(
         `/v1/transcriptions/${transcriptionResourceId}`,
         transcriptionDetailSchema,
@@ -184,7 +190,7 @@ export const CaptureContainer: FC = () => {
     enabled:
       Boolean(editResourceId) &&
       ['succeeded', 'partial'].includes(editDraft.data?.state.kind ?? ''),
-    queryFn: ({ signal }) =>
+    queryFn: async ({ signal }) =>
       api.get(
         `/v1/edit-drafts/${editResourceId}`,
         editDraftDetailSchema,
@@ -224,6 +230,7 @@ export const CaptureContainer: FC = () => {
       .catch((cause: unknown) => {
         setError((cause as Error).message);
       });
+
     return () => {
       active = false;
     };
@@ -677,6 +684,7 @@ export const CaptureContainer: FC = () => {
     if (draft.originalWords.trim() && !savedObservation) {
       setStep(4);
       setError(t('confirmOriginalWords'));
+
       return;
     }
 

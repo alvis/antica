@@ -10,11 +10,12 @@ import type {
 } from '../ports/index.js';
 
 /**
- * Generates a draft exclusively from the persisted record and source-text snapshot.
- * @param transaction
- * @param model
- * @param catalog
- * @param clock
+ * creates a worker that saves an edit draft from its frozen record and source text
+ * @param transaction provides owner-scoped draft and job updates
+ * @param model proposes edits from the frozen input
+ * @param catalog resolves the selected structured-output model
+ * @param clock timestamps saved results and completed jobs
+ * @returns handler for an owner and job ID that reports completion or a typed draft failure
  */
 export function createEditDraftHandler(
   transaction: TransactionPort,

@@ -50,7 +50,6 @@ import type {
 
 import type { Transaction } from '../transaction.js';
 
-/** @param value */
 function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
@@ -137,10 +136,6 @@ type TaskCursor = {
   readonly kind: 'analysisAction' | 'recordCheck';
 };
 
-/**
- * @param value
- * @param signature
- */
 function decodeTaskCursor(value: string, signature: string): TaskCursor {
   const cursor = JSON.parse(
     Buffer.from(value, 'base64url').toString('utf8'),
@@ -157,15 +152,15 @@ function decodeTaskCursor(value: string, signature: string): TaskCursor {
   return cursor;
 }
 
-/** @param cursor */
 function encodeTaskCursor(cursor: TaskCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
 /**
  * persists immutable analysis snapshots/results and mutable resolution projections
- * @param tx
- * @param ownerId
+ * @param tx transaction shared with the enclosing owner-scoped operation
+ * @param ownerId collector whose runs and projections the repository may access
+ * @returns repository for the collector's analysis runs and resolutions
  */
 export function createAnalysisRepository(
   tx: Transaction,
@@ -283,7 +278,6 @@ export function createAnalysisRepository(
 
   return {
     get,
-    /** @param snapshotId */
     async getBySnapshotId(snapshotId) {
       const [row] = await tx
         .select({ id: analysisRuns.id })
@@ -299,7 +293,6 @@ export function createAnalysisRepository(
 
       return row ? get(row.id) : null;
     },
-    /** @param run */
     async create(run) {
       const snapshot = run.requestedSnapshot;
       if (
@@ -405,11 +398,6 @@ export function createAnalysisRepository(
         );
       }
     },
-    /**
-     * @param id
-     * @param expectedStatuses
-     * @param status
-     */
     async setStatus(id, expectedStatuses, status) {
       const mutableStatuses = expectedStatuses.filter(
         (value) => value === 'queued' || value === 'running',
@@ -439,11 +427,6 @@ export function createAnalysisRepository(
 
       return Boolean(changed);
     },
-    /**
-     * @param runId
-     * @param input
-     * @param snapshot
-     */
     async bindRetrievalSnapshot(runId, input, snapshot) {
       if (input.retrievalSnapshotId !== snapshot.id) {
         throw new Error('Retrieval snapshot ID mismatch');
@@ -515,13 +498,6 @@ export function createAnalysisRepository(
 
       return Boolean(changed);
     },
-    /**
-     * @param id
-     * @param output
-     * @param suggestedMethodVersions
-     * @param invocation
-     * @param status
-     */
     async saveOutput(
       id,
       generatedOutput,
@@ -669,10 +645,6 @@ export function createAnalysisRepository(
           ),
         );
     },
-    /**
-     * @param runId
-     * @param actionId
-     */
     async getActionState(runId, actionId): Promise<ActionState | null> {
       const [row] = await tx
         .select()
@@ -703,11 +675,6 @@ export function createAnalysisRepository(
           }
         : null;
     },
-    /**
-     * @param state
-     * @param expectedRevision
-     * @param resolution
-     */
     async updateActionState(state, expectedRevision, resolution) {
       const [changed] = await tx
         .update(actionStates)
@@ -776,7 +743,6 @@ export function createAnalysisRepository(
 
       return true;
     },
-    /** @param runId */
     async getProposalStates(runId): Promise<readonly ProposalState[]> {
       const rows = await tx
         .select()
@@ -796,12 +762,6 @@ export function createAnalysisRepository(
         latestAdoptionEventId: row.proposal_states.latestEventId,
       }));
     },
-    /**
-     * @param runId
-     * @param proposalId
-     * @param status
-     * @param eventId
-     */
     async appendAdoption(runId, proposalId, status, eventId) {
       const [run] = await tx
         .select({ recordId: analysisRuns.recordId })
@@ -841,7 +801,6 @@ export function createAnalysisRepository(
         throw new Error('Proposal already resolved');
       }
     },
-    /** @param query */
     async queryTasks(query: TaskQuery): Promise<TaskPage> {
       const limit = Math.min(query.limit ?? 30, 100);
       const signature = hash({

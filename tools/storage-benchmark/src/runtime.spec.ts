@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   runStorageBenchmark,
   summarize,
   validateBenchmarkUrl,
 } from './runtime.js';
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 describe('fn:validateBenchmarkUrl', () => {
   it('should accept explicitly isolated loopback PostgreSQL destinations', () => {

@@ -1,18 +1,18 @@
 import { ApiError } from './api-error.js';
 
-/** Provides a session cookie from the Better Auth Expo client. */
+/** session cookie access through the Better Auth Expo client */
 export interface SessionCookieProvider {
   getCookie(): Promise<string>;
   onUnauthorized(): void;
 }
 
-/** Configures the authenticated JSON transport. */
+/** configuration for authenticated JSON transport */
 export interface ApiTransportConfig {
   baseUrl: string;
   session: SessionCookieProvider;
 }
 
-/** Options for an authenticated JSON command. */
+/** options for an authenticated JSON command */
 export interface RequestOptions {
   body?: unknown;
   idempotencyKey?: string;
@@ -23,21 +23,21 @@ interface JsonRequestOptions extends RequestOptions {
   method: 'GET' | 'POST' | 'PATCH';
 }
 
-/** Parses an API response into a domain contract. */
+/** API response parser for a domain contract */
 export interface JsonSchema<T> {
   parse(value: unknown): T;
 }
 
 const UNAUTHORIZED_STATUS = 401;
 
-/** Sends authenticated JSON commands and validates server responses. */
+/** authenticated JSON command transport with response validation */
 export class ApiTransport {
   readonly #baseUrl: string;
   readonly #session: SessionCookieProvider;
 
   /**
-   * Creates a transport bound to the configured API and session.
-   * @param config API origin and session provider.
+   * creates a transport bound to the configured API and session
+   * @param config API origin and session provider
    */
   constructor(config: ApiTransportConfig) {
     this.#baseUrl = config.baseUrl.replace(/\/$/, '');
@@ -45,11 +45,11 @@ export class ApiTransport {
   }
 
   /**
-   * Reads and validates a JSON response.
-   * @param path Relative endpoint path appended to the configured origin.
-   * @param schema Response schema.
-   * @param signal Optional cancellation signal.
-   * @returns Parsed response.
+   * reads and validates a JSON response
+   * @param path relative endpoint path appended to the configured origin
+   * @param schema response schema
+   * @param signal optional cancellation signal
+   * @returns parsed response
    */
   public async get<T>(
     path: string,
@@ -60,11 +60,11 @@ export class ApiTransport {
   }
 
   /**
-   * Posts an authenticated JSON command.
-   * @param path Relative endpoint path appended to the configured origin.
-   * @param schema Response schema.
-   * @param options Command body, idempotency key, and signal.
-   * @returns Parsed response.
+   * posts an authenticated JSON command
+   * @param path relative endpoint path appended to the configured origin
+   * @param schema response schema
+   * @param options command body, idempotency key, and signal
+   * @returns parsed response
    */
   public async post<T>(
     path: string,
@@ -75,11 +75,11 @@ export class ApiTransport {
   }
 
   /**
-   * Patches an authenticated JSON resource.
-   * @param path Relative endpoint path appended to the configured origin.
-   * @param schema Response schema.
-   * @param options Command body, idempotency key, and signal.
-   * @returns Parsed response.
+   * patches an authenticated JSON resource
+   * @param path relative endpoint path appended to the configured origin
+   * @param schema response schema
+   * @param options command body, idempotency key, and signal
+   * @returns parsed response
    */
   public async patch<T>(
     path: string,
@@ -90,11 +90,12 @@ export class ApiTransport {
   }
 
   /**
-   * Uploads bytes directly to a signed URL.
-   * @param url Signed upload URL.
-   * @param bytes File bytes.
-   * @param headers Signed request headers.
-   * @returns The remote ETag, when provided.
+   * uploads bytes directly to a signed URL
+   * @param url signed upload URL
+   * @param bytes file bytes
+   * @param headers signed request headers
+   * @returns the remote ETag, when provided
+   * @throws ApiError when the signed upload response is unsuccessful
    */
   public async putSigned(
     url: string,
@@ -103,22 +104,23 @@ export class ApiTransport {
   ): Promise<string> {
     const response = await fetch(url, { method: 'PUT', headers, body: bytes });
     if (!response.ok) {
-      throw new ApiError(
-        response.status,
-        'UPLOAD_FAILED',
-        'The file upload failed.',
-      );
+      throw new ApiError({
+        status: response.status,
+        code: 'UPLOAD_FAILED',
+        message: 'The file upload failed.',
+      });
     }
 
     return response.headers.get('etag') ?? '';
   }
 
   /**
-   * Sends a cookie-authenticated JSON request and parses its response.
-   * @param path Relative endpoint path.
-   * @param schema Response contract.
-   * @param options HTTP method, command options, and cancellation signal.
-   * @returns Parsed response.
+   * sends a cookie-authenticated JSON request and parses its response
+   * @param path relative endpoint path
+   * @param schema response contract
+   * @param options HTTP method, command options, and cancellation signal
+   * @returns parsed response
+   * @throws ApiError when the authenticated response is unsuccessful
    */
   async #request<T>(
     path: string,
@@ -146,7 +148,11 @@ export class ApiTransport {
     if (!response.ok) {
       const content = await response.json().catch((): unknown => null);
       const error = readPublicError(content);
-      throw new ApiError(response.status, error.code, error.message);
+      throw new ApiError({
+        status: response.status,
+        code: error.code,
+        message: error.message,
+      });
     }
 
     return schema.parse(await response.json());
@@ -154,9 +160,9 @@ export class ApiTransport {
 }
 
 /**
- * Reads a public API error while preserving a safe fallback for malformed bodies.
- * @param value Decoded response body.
- * @returns Public code and message.
+ * reads a public API error while preserving a safe fallback for malformed bodies
+ * @param value decoded response body
+ * @returns public code and message
  */
 function readPublicError(value: unknown): { code: string; message: string } {
   if (typeof value === 'object' && value !== null) {

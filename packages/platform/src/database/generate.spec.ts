@@ -3,22 +3,27 @@ import { realpathSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const spawn = vi.hoisted(() => vi.fn());
-vi.mock('node:child_process', () => ({ spawn }));
+const { spawn } = vi.hoisted(
+  () =>
+    ({ spawn: vi.fn() }) satisfies Partial<typeof import('node:child_process')>,
+);
+vi.mock(
+  'node:child_process',
+  () => ({ spawn }) satisfies Partial<typeof import('node:child_process')>,
+);
 
 describe('database migration generator command', () => {
   const originalExitCode = process.exitCode;
 
   beforeEach(() => {
     vi.resetModules();
-    spawn.mockReset();
   });
 
   afterEach(() => {
     process.exitCode = originalExitCode;
   });
 
-  it('runs Drizzle Kit from the platform package and forwards success', async () => {
+  it('should run Drizzle Kit from the platform package and forward success', async () => {
     const child = new EventEmitter();
     spawn.mockReturnValue(child);
 
@@ -46,7 +51,7 @@ describe('database migration generator command', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('forwards a nonzero child exit code', async () => {
+  it('should forward a nonzero child exit code', async () => {
     const child = new EventEmitter();
     spawn.mockReturnValue(child);
 
@@ -56,7 +61,7 @@ describe('database migration generator command', () => {
     expect(process.exitCode).toBe(7);
   });
 
-  it('reports a missing child exit code as failure', async () => {
+  it('should report a missing child exit code as failure', async () => {
     const child = new EventEmitter();
     spawn.mockReturnValue(child);
 

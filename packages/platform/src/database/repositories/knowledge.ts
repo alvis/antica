@@ -41,7 +41,11 @@ type KnowledgeCursor = {
   readonly id: string;
 };
 
-/** @param value */
+interface KnowledgeQueryRow {
+  readonly entry: typeof knowledgeEntries.$inferSelect;
+  readonly revision: typeof knowledgeRevisions.$inferSelect;
+}
+
 function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
@@ -50,17 +54,12 @@ function iso(value: string): string {
   return new Date(value).toISOString();
 }
 
-/** @param query */
 function querySignature(query: KnowledgeQuery): string {
   const { cursor: _cursor, limit: _limit, ...filters } = query;
 
   return hash(filters);
 }
 
-/**
- * @param value
- * @param signature
- */
 function decodeCursor(value: string, signature: string): KnowledgeCursor {
   const cursor = JSON.parse(
     Buffer.from(value, 'base64url').toString('utf8'),
@@ -76,15 +75,10 @@ function decodeCursor(value: string, signature: string): KnowledgeCursor {
   return cursor;
 }
 
-/** @param cursor */
 function encodeCursor(cursor: KnowledgeCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
-/**
- * @param tx
- * @param entry
- */
 async function saveRevision(
   tx: Transaction,
   entry: KnowledgeEntry,
@@ -129,10 +123,6 @@ async function saveRevision(
   }
 }
 
-/**
- * @param content
- * @param query
- */
 function matchesFilters(
   content: KnowledgeContent,
   query: KnowledgeQuery,
@@ -177,8 +167,9 @@ function matchesFilters(
 
 /**
  * persists immutable knowledge revisions and independently versioned inspection methods
- * @param tx
- * @param ownerId
+ * @param tx transaction shared by the repository's knowledge operations
+ * @param ownerId owner whose knowledge and methods the repository may access
+ * @returns knowledge repository bound to the transaction and owner
  */
 export function createKnowledgeRepository(
   tx: Transaction,
@@ -379,55 +370,65 @@ export function createKnowledgeRepository(
       return `KN-${String(result[0]?.value).padStart(6, '0')}`;
     },
     get,
-    /** @param query */
     async query(query): Promise<CursorPage<KnowledgeSummary>> {
       const limit = Math.min(query.limit ?? 30, 100);
       const signature = querySignature(query);
-      const cursor = query.cursor
-        ? decodeCursor(query.cursor, signature)
-        : null;
+      let cursor = query.cursor ? decodeCursor(query.cursor, signature) : null;
       const searchPattern = query.q ? `%${query.q}%` : null;
-      const rows = await tx
-        .select({ entry: knowledgeEntries, revision: knowledgeRevisions })
-        .from(knowledgeEntries)
-        .innerJoin(
-          knowledgeRevisions,
-          and(
-            eq(knowledgeRevisions.entryId, knowledgeEntries.id),
-            eq(knowledgeRevisions.revision, knowledgeEntries.currentRevision),
-          ),
-        )
-        .where(
-          and(
-            eq(knowledgeEntries.ownerId, ownerId),
-            query.status
-              ? eq(knowledgeRevisions.status, query.status)
-              : undefined,
-            searchPattern
-              ? or(
-                  ilike(knowledgeRevisions.titleZhHant, searchPattern),
-                  sql`exists (select 1 from knowledge_revision_aliases a where a.entry_id = ${knowledgeEntries.id} and a.revision = ${knowledgeEntries.currentRevision} and a.alias ilike ${searchPattern})`,
-                )
-              : undefined,
-            query.kinds?.length
-              ? sql`exists (select 1 from knowledge_revision_kinds where knowledge_revision_kinds.entry_id = ${knowledgeEntries.id} and knowledge_revision_kinds.revision = ${knowledgeEntries.currentRevision} and ${inArray(knowledgeRevisionKinds.kind, query.kinds)})`
-              : undefined,
-            cursor
-              ? or(
-                  lt(knowledgeEntries.updatedAt, cursor.updatedAt),
-                  and(
-                    eq(knowledgeEntries.updatedAt, cursor.updatedAt),
-                    lt(knowledgeEntries.id, cursor.id),
-                  ),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(desc(knowledgeEntries.updatedAt), desc(knowledgeEntries.id))
-        .limit(501);
-      const filtered = rows.filter((row) =>
-        matchesFilters(row.revision.content as KnowledgeContent, query),
-      );
+      const filtered: KnowledgeQueryRow[] = [];
+      for (;;) {
+        const rows = await tx
+          .select({ entry: knowledgeEntries, revision: knowledgeRevisions })
+          .from(knowledgeEntries)
+          .innerJoin(
+            knowledgeRevisions,
+            and(
+              eq(knowledgeRevisions.entryId, knowledgeEntries.id),
+              eq(knowledgeRevisions.revision, knowledgeEntries.currentRevision),
+            ),
+          )
+          .where(
+            and(
+              eq(knowledgeEntries.ownerId, ownerId),
+              query.status
+                ? eq(knowledgeRevisions.status, query.status)
+                : undefined,
+              searchPattern
+                ? or(
+                    ilike(knowledgeRevisions.titleZhHant, searchPattern),
+                    sql`exists (select 1 from knowledge_revision_aliases a where a.entry_id = ${knowledgeEntries.id} and a.revision = ${knowledgeEntries.currentRevision} and a.alias ilike ${searchPattern})`,
+                  )
+                : undefined,
+              query.kinds?.length
+                ? sql`exists (select 1 from knowledge_revision_kinds where knowledge_revision_kinds.entry_id = ${knowledgeEntries.id} and knowledge_revision_kinds.revision = ${knowledgeEntries.currentRevision} and ${inArray(knowledgeRevisionKinds.kind, query.kinds)})`
+                : undefined,
+              cursor
+                ? or(
+                    lt(knowledgeEntries.updatedAt, cursor.updatedAt),
+                    and(
+                      eq(knowledgeEntries.updatedAt, cursor.updatedAt),
+                      lt(knowledgeEntries.id, cursor.id),
+                    ),
+                  )
+                : undefined,
+            ),
+          )
+          .orderBy(desc(knowledgeEntries.updatedAt), desc(knowledgeEntries.id))
+          .limit(200);
+        for (const row of rows) {
+          if (matchesFilters(row.revision.content as KnowledgeContent, query)) {
+            filtered.push(row);
+          }
+          if (filtered.length > limit) {
+            break;
+          }
+        }
+        if (filtered.length > limit || rows.length < 200) {
+          break;
+        }
+        const last = rows.at(-1)!.entry;
+        cursor = { signature, updatedAt: last.updatedAt, id: last.id };
+      }
       const page = filtered.slice(0, limit);
       const summaries = await Promise.all(
         page.map(async (row) => {
@@ -484,7 +485,6 @@ export function createKnowledgeRepository(
             : null,
       };
     },
-    /** @param entry */
     async create(entry) {
       await tx.insert(knowledgeEntries).values({
         id: entry.id,
@@ -496,10 +496,6 @@ export function createKnowledgeRepository(
       });
       await saveRevision(tx, entry);
     },
-    /**
-     * @param entry
-     * @param expectedRevision
-     */
     async addRevision(entry, expectedRevision) {
       const [changed] = await tx
         .update(knowledgeEntries)
@@ -521,10 +517,6 @@ export function createKnowledgeRepository(
     },
     getMethod,
     getMethodVersion,
-    /**
-     * @param method
-     * @param version
-     */
     async createMethod(method, version) {
       const [entry] = await tx
         .select({ id: knowledgeEntries.id })
@@ -562,11 +554,6 @@ export function createKnowledgeRepository(
         .set({ currentVersionId: version.id })
         .where(eq(inspectionMethods.id, method.id));
     },
-    /**
-     * @param entryId
-     * @param revision
-     * @param methodVersionIds
-     */
     async linkMethods(entryId, revision, methodVersionIds) {
       const [entry] = await tx
         .select({ id: knowledgeEntries.id })
@@ -610,11 +597,6 @@ export function createKnowledgeRepository(
         })),
       );
     },
-    /**
-     * @param methodId
-     * @param expectedVersionId
-     * @param version
-     */
     async addMethodVersion(methodId, expectedVersionId, version) {
       if (version.methodId !== methodId) {
         throw new Error('Inspection method version has the wrong owner');

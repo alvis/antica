@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createS3MediaStore } from './s3.js';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { GetObjectCommandOutput } from '@aws-sdk/client-s3';
 
 import type { S3MediaStore } from './s3.js';
 
@@ -77,7 +78,6 @@ describe('fn:createS3MediaStore', () => {
 
     await expect(store.ensureDevelopmentBucket()).rejects.toThrow();
     expect(send).not.toHaveBeenCalled();
-    send.mockRestore();
   });
 
   it('should create a missing development bucket after a 404 probe', async () => {
@@ -260,7 +260,10 @@ describe('fn:createS3MediaStore', () => {
   });
 
   it('should reject an SDK object response with no body', async () => {
-    vi.spyOn(S3Client.prototype, 'send').mockResolvedValueOnce({} as never);
+    const response = { $metadata: {} } satisfies GetObjectCommandOutput;
+    vi.spyOn(S3Client.prototype, 'send').mockImplementationOnce(
+      async () => response,
+    );
     const store = createS3MediaStore({
       bucket: 'private-originals',
       region: 'eu-west-2',

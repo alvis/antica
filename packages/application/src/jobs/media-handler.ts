@@ -63,11 +63,12 @@ export interface MediaProcessorPort {
 }
 
 /**
- * Finishes a verified original and applies its record version change exactly once.
- * @param transaction
- * @param processor
- * @param clock
- * @param ids
+ * creates a worker that finishes media jobs and advances record versions once
+ * @param transaction provides owner-scoped job, media, and record updates
+ * @param processor creates image derivatives or prepared video frames and optionally indexes images
+ * @param clock timestamps completed jobs
+ * @param ids creates derivative and canonical view identifiers
+ * @returns handler for an owner and job ID that reports completion or a typed job failure
  */
 export function createMediaJobHandler(
   transaction: TransactionPort,

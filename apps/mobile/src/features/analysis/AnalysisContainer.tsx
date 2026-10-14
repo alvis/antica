@@ -1,8 +1,13 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useAuth } from '../../auth';
-import { QueryState } from '../../components/QueryState';
-import { Screen } from '../../components/Screen';
-import { localizeProposalField, localizeStatus, useLocale } from '../../locale';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { randomUUID } from 'expo-crypto';
+
+import { useRouter } from 'expo-router';
+
+import { useRef, useState } from 'react';
+
+import { Linking, Pressable, Text, View } from 'react-native';
+
 import {
   actionResolutionRequestSchema,
   actionResolutionResultSchema,
@@ -13,15 +18,16 @@ import {
   recordCheckSchema,
   recordDetailSchema,
 } from '@antica/contracts';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { randomUUID } from 'expo-crypto';
-import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
-import { Linking, Pressable, Text, View } from 'react-native';
+import { ActionButton, TextField, styles } from '@antica/ui';
 
-import type { Finding, ProposedChange } from '@antica/contracts';
+import { useAuth } from '../../auth';
+import { QueryState } from '../../components/QueryState';
+import { Screen } from '../../components/Screen';
+import { localizeProposalField, localizeStatus, useLocale } from '../../locale';
 
 import type { FC } from 'react';
+
+import type { Finding, ProposedChange } from '@antica/contracts';
 
 export type AnalysisContainerProps = { runId: string };
 type ReferenceKind = 'evidence' | 'observation' | 'citation';

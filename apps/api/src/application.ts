@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { Hono } from 'hono';
 
@@ -136,14 +136,65 @@ function mountErrors(app: Hono<ApiEnv>): void {
       );
     }
 
+    const requestId = randomUUID();
+    const causes: ReturnType<typeof sanitizedError>[] = [];
+    const seen = new Set<unknown>([error]);
+    let cause: unknown = error.cause;
+    for (let depth = 0; depth < 3 && cause !== undefined; depth += 1) {
+      if (seen.has(cause)) {
+        break;
+      }
+      seen.add(cause);
+      causes.push(sanitizedError(cause));
+      cause = cause instanceof Error ? cause.cause : undefined;
+    }
+    process.stderr.write(
+      `${JSON.stringify({
+        event: 'api.request_failed',
+        requestId,
+        status: failedStatus,
+        ...sanitizedError(error),
+        causes,
+      })}\n`,
+    );
+
     return context.json(
       {
         code: 'JOB_FAILED',
         message: 'Service request failed',
         retryable: true,
-        requestId: randomUUID(),
+        requestId,
       },
       failedStatus,
     );
   });
+}
+
+function sanitizedError(error: unknown): {
+  errorType: 'TypeError' | 'RangeError' | 'SyntaxError' | 'Error' | 'NonError';
+  sourceFrame: string | null;
+  stackFingerprint: string | null;
+} {
+  if (!(error instanceof Error)) {
+    return { errorType: 'NonError', sourceFrame: null, stackFingerprint: null };
+  }
+  const stack = error.stack;
+
+  return {
+    errorType:
+      error instanceof TypeError
+        ? 'TypeError'
+        : error instanceof RangeError
+          ? 'RangeError'
+          : error instanceof SyntaxError
+            ? 'SyntaxError'
+            : 'Error',
+    sourceFrame:
+      stack?.match(
+        /\b(?:apps\/api|packages\/[a-z-]+)\/src\/[A-Za-z0-9_./-]+:\d+:\d+/,
+      )?.[0] ?? null,
+    stackFingerprint: stack
+      ? createHash('sha256').update(stack).digest('hex').slice(0, 16)
+      : null,
+  };
 }

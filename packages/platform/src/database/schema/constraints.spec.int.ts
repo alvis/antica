@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, inject } from 'vitest';
 
-import { createDatabase } from '../connection.js';
-import { migrateDatabase } from '../migrate.js';
+import { createDatabaseTest } from '../spec/fixtures/runner.js';
 
 import {
   adoptionEvents,
@@ -31,17 +30,13 @@ if (!url) {
   );
 }
 
-const connection = createDatabase({ url, maxConnections: 1 });
-
-beforeAll(async () => {
-  await migrateDatabase({ url });
-});
-afterAll(async () => {
-  await connection.close();
-});
+const resources = inject('platformDatabases');
+const it = createDatabaseTest(resources.constraints!);
 
 describe('persisted record constraints', () => {
-  it('accepts a positive piece count and rejects zero', async () => {
+  it('should accept a positive piece count and reject zero', async ({
+    connection,
+  }) => {
     const ownerId = randomUUID();
     await expect(
       connection.db.transaction(async (tx) => {
@@ -68,7 +63,9 @@ describe('persisted record constraints', () => {
     });
   });
 
-  it('rejects a period whose end precedes its start', async () => {
+  it('should reject a period whose end precedes its start', async ({
+    connection,
+  }) => {
     await expect(
       connection.db.insert(records).values({
         id: randomUUID(),
@@ -85,7 +82,9 @@ describe('persisted record constraints', () => {
 });
 
 describe('persisted media and evidence constraints', () => {
-  it('requires exactly one owning resource for an asset', async () => {
+  it('should require exactly one owning resource for an asset', async ({
+    connection,
+  }) => {
     const ownerId = randomUUID();
     await expect(
       connection.db.transaction(async (tx) => {
@@ -134,7 +133,9 @@ describe('persisted media and evidence constraints', () => {
     });
   });
 
-  it('rejects a region anchor without region geometry', async () => {
+  it('should reject a region anchor without region geometry', async ({
+    connection,
+  }) => {
     const ownerId = randomUUID();
     await expect(
       connection.db.transaction(async (tx) => {
@@ -194,7 +195,9 @@ describe('persisted media and evidence constraints', () => {
 });
 
 describe('persisted account and workflow behavior', () => {
-  it('removes sessions and accounts when their user is deleted', async () => {
+  it('should remove sessions and accounts when their user is deleted', async ({
+    connection,
+  }) => {
     const id = randomUUID();
     const sessionId = randomUUID();
     const accountId = randomUUID();
@@ -231,7 +234,9 @@ describe('persisted account and workflow behavior', () => {
     }
   });
 
-  it('rejects duplicate outbox events by name and idempotency key', async () => {
+  it('should reject duplicate outbox events by name and idempotency key', async ({
+    connection,
+  }) => {
     const ownerId = randomUUID();
     const idempotencyKey = randomUUID();
     await expect(
@@ -260,7 +265,7 @@ describe('persisted account and workflow behavior', () => {
     });
   });
 
-  it('rejects unknown edit-draft states', async () => {
+  it('should reject unknown edit-draft states', async ({ connection }) => {
     const ownerId = randomUUID();
     await expect(
       connection.db.transaction(async (tx) => {
@@ -323,7 +328,9 @@ describe('persisted account and workflow behavior', () => {
 });
 
 describe('persisted research ownership and analysis outcomes', () => {
-  it('rejects attaching another owner’s knowledge entry to a source version', async () => {
+  it('should reject attaching another owner’s knowledge entry to a source version', async ({
+    connection,
+  }) => {
     const ownerId = randomUUID();
     const otherOwnerId = randomUUID();
     await expect(
@@ -373,7 +380,9 @@ describe('persisted research ownership and analysis outcomes', () => {
     ).rejects.toMatchObject({ cause: { code: '23503' } });
   });
 
-  it('rejects an adoption event outside accepted or skipped', async () => {
+  it('should reject an adoption event outside accepted or skipped', async ({
+    connection,
+  }) => {
     const ownerId = randomUUID();
     await expect(
       connection.db.transaction(async (tx) => {

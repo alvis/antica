@@ -4,7 +4,7 @@ import type { TransactionPort } from '@antica/application/ports';
 import type { SourceCommand } from '@antica/contracts';
 
 /**
- * Registers an owned media upload for a source command fixture.
+ * registers an owned media upload for a source command fixture
  * @param transaction collector-scoped persistence
  * @param ownerId fixture collector
  * @param options media kind and readiness
@@ -67,7 +67,7 @@ export async function sourceInput(
 }
 
 /**
- * Provides source metadata without shared mutable fixture state.
+ * provides source metadata without shared mutable fixture state
  * @returns collector-entered book metadata
  */
 function sourceMetadata(): Extract<

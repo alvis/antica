@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { UnitOfWork } from '@antica/application/ports';
 import type { EvidenceAnchor, Observation, RecordCheck } from '@antica/domain';
 
-/** Persisted collector evidence and its real inspection method. */
+/** persisted collector evidence and its real inspection method */
 export interface LinkedAnalysisEvidence {
   readonly recordId: string;
   readonly componentId: string;
@@ -18,7 +18,9 @@ export interface LinkedAnalysisEvidence {
 
 const now = '2026-10-13T00:00:00.000Z';
 
-/** Creates a complete relational fixture through owner-scoped repositories. */
+/**
+ * creates a complete relational fixture through owner-scoped repositories
+ */
 export async function createLinkedAnalysisEvidence(
   unit: UnitOfWork,
 ): Promise<LinkedAnalysisEvidence> {

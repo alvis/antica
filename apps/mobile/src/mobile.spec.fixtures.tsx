@@ -55,10 +55,10 @@ export const collectionRecord = recordDetailSchema.parse({
 });
 
 /**
- * Renders a native journey with isolated API, navigation, and query state.
- * @param element Native route or feature to render.
+ * renders a native journey with isolated API, navigation, and query state
+ * @param element native route or feature to render.
  * @param responses API replies for this journey.
- * @returns Isolated query state and observable network/navigation boundaries.
+ * @returns isolated query state and observable network/navigation boundaries
  */
 export async function renderMobile(
   element: ReactNode,

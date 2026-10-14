@@ -6,6 +6,7 @@ import type { ImageSearchEntry, SearchImage } from '../search/image.js';
 import type { TextSearchEntry } from '../search/text.js';
 import type { MediaStore } from '../storage/media-store.js';
 import type { Database } from './connection.js';
+import { projectedParseRunId } from './source-projection.js';
 import {
   canonicalViews,
   citations,
@@ -27,6 +28,7 @@ import {
   sourceVersions,
 } from './schema/index.js';
 
+/** owner-scoped persistence and media capabilities for retrieval */
 export interface RetrievalReaderParams {
   readonly db: Database;
   readonly transaction: TransactionPort;
@@ -34,12 +36,21 @@ export interface RetrievalReaderParams {
   readonly ownerId: string;
 }
 
-/** reads authorized canonical pixels and cited text from persisted collector data */
+/** owner-scoped readers for canonical images and cited text */
+export interface RetrievalReaders {
+  readQuery(this: void, anchorId: string): Promise<SearchImage>;
+  readImageEntries(this: void): Promise<readonly ImageSearchEntry[]>;
+  readTextEntries(this: void): Promise<readonly TextSearchEntry[]>;
+}
+
+/**
+ * reads authorized canonical pixels and cited text from persisted collector data
+ */
 export function createRetrievalReaders({
   db,
   storage,
   ownerId,
-}: RetrievalReaderParams) {
+}: RetrievalReaderParams): RetrievalReaders {
   async function readQuery(anchorId: string): Promise<SearchImage> {
     const [row] = await db
       .select({
@@ -353,19 +364,13 @@ export function createRetrievalReaders({
           content: knowledgeRevisions.content,
         })
         .from(sourceRegions)
+        .innerJoin(sourcePages, eq(sourceRegions.pageId, sourcePages.id))
         .innerJoin(
           sourceVersions,
           and(
             eq(sourceRegions.sourceVersionId, sourceVersions.id),
             eq(sourceVersions.ownerId, ownerId),
-            eq(sourceRegions.parseRunId, sourceVersions.activeParseRunId),
-          ),
-        )
-        .innerJoin(
-          sourcePages,
-          and(
-            eq(sourceRegions.pageId, sourcePages.id),
-            eq(sourcePages.sourceVersionId, sourceVersions.id),
+            eq(sourceRegions.parseRunId, projectedParseRunId()),
           ),
         )
         .innerJoin(
@@ -399,6 +404,7 @@ export function createRetrievalReaders({
         )
         .where(
           and(
+            eq(sourcePages.sourceVersionId, sourceVersions.id),
             sql`length(trim(${sourceRegions.rawText})) > 0`,
             regionCursor
               ? or(

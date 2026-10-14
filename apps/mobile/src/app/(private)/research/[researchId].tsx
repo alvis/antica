@@ -1,18 +1,24 @@
-import { ActionButton, TextField, styles } from '@antica/ui';
-import { useAuth } from '../../../auth';
-import { QueryState } from '../../../components/QueryState';
-import { Screen } from '../../../components/Screen';
-import { localizeStatus, useLocale } from '../../../locale';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { randomUUID } from 'expo-crypto';
+
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+import { useState } from 'react';
+
+import { Linking, Text, View } from 'react-native';
+
 import {
   noteInputSchema,
   noteSchema,
   researchDetailSchema,
 } from '@antica/contracts';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { randomUUID } from 'expo-crypto';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Linking, Text, View } from 'react-native';
+import { ActionButton, TextField, styles } from '@antica/ui';
+
+import { useAuth } from '../../../auth';
+import { QueryState } from '../../../components/QueryState';
+import { Screen } from '../../../components/Screen';
+import { localizeStatus, useLocale } from '../../../locale';
 
 export default function ResearchDetailRoute() {
   const { researchId } = useLocalSearchParams<{ researchId: string }>();

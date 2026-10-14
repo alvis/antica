@@ -1,6 +1,8 @@
-import { ActionButton, styles } from '@antica/ui';
-import { useLocale } from '../locale';
 import { ActivityIndicator, Text, View } from 'react-native';
+
+import { ActionButton, styles } from '@antica/ui';
+
+import { useLocale } from '../locale';
 
 import type { FC, PropsWithChildren } from 'react';
 
@@ -29,7 +31,7 @@ export const QueryState: FC<QueryStateProps> = ({
     return (
       <View style={styles.card}>
         <Text accessibilityRole="alert" style={styles.error}>
-          {error.message || t('error')}
+          {t('readFailed')}
         </Text>
         <ActionButton label={t('retry')} onPress={retry} />
       </View>

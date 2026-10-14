@@ -17,7 +17,7 @@ import { jobs } from './runtime.js';
 const instant = (name: string) =>
   timestamp(name, { withTimezone: true, mode: 'string' });
 
-/** Immutable provider output is separate from explicit collector confirmation. */
+/** immutable provider output is separate from explicit collector confirmation */
 export const transcriptionRuns = pgTable(
   'transcription_runs',
   {
@@ -58,7 +58,7 @@ export const transcriptionRuns = pgTable(
   ],
 );
 
-/** Frozen record/source inputs and generated proposals remain available after selective application. */
+/** frozen record/source inputs and generated proposals remain available after selective application */
 export const editDraftRuns = pgTable(
   'edit_draft_runs',
   {
@@ -98,7 +98,7 @@ export const editDraftRuns = pgTable(
   ],
 );
 
-/** Stores the actual comparison result and exact invocation returned by the adapter. */
+/** stores the actual comparison result and exact invocation returned by the adapter */
 export const comparisonResults = pgTable(
   'comparison_results',
   {
@@ -113,7 +113,7 @@ export const comparisonResults = pgTable(
   ],
 );
 
-/** Keeps rejected generated output and model audit without presenting it as a successful comparison. */
+/** keeps rejected generated output and model audit without presenting it as a successful comparison */
 export const comparisonFailures = pgTable(
   'comparison_failures',
   {
