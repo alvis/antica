@@ -299,7 +299,7 @@ async function openRecoveredWords(): Promise<void> {
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Import file' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   await waitFor(() =>
     expect(screen.getByLabelText('Original words')).toHaveDisplayValue(
       'Recovered words',

@@ -115,7 +115,7 @@ it('should refresh the mounted record and collection screens before returning fr
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Import file' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
   await fireEvent.changeText(screen.getByLabelText('Name'), saved.name!);
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
@@ -206,7 +206,7 @@ it('should refresh mounted observations immediately after confirming original wo
     expect(screen.getByRole('button', { name: 'Import file' })).toBeTruthy(),
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   await fireEvent.changeText(
     screen.getByLabelText('Original words'),
     observation.text,

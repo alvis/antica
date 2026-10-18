@@ -11,6 +11,8 @@ import {
 
 import { uploadMedia } from '../../../adapters/media-upload';
 
+import { componentLabelsOf } from '../capture-grid';
+
 import { describeActionLinkError } from './useActionLink';
 
 import type { QueryClient } from '@tanstack/react-query';
@@ -95,14 +97,11 @@ export function useCaptureSave(
 
         return;
       }
-      const labels = [
-        ...new Set(
-          draft.files.map((file) => file.componentLabel.trim()).filter(Boolean),
-        ),
-      ];
+      // only labels the collector picked or typed become components; the whole record and a
+      // deselected file name none
       const components = [
         ...draft.record.components,
-        ...labels
+        ...componentLabelsOf(draft.files)
           .filter(
             (label) =>
               !draft.record?.components.some(
@@ -129,8 +128,8 @@ export function useCaptureSave(
             ? draft.name.trim() || null
             : draft.record.name,
           unitKind: draft.kind,
+          // the piece count is the collector's to give; labelled photos never derive it (FR-2)
           components,
-          pieceCount: draft.kind === 'set' ? Math.max(components.length, 2) : 1,
           location: {
             locationId: location?.id ?? draft.record.location.locationId,
             detail: editedFields.locationDetail
@@ -171,6 +170,9 @@ export function useCaptureSave(
       const nextFiles = [...draft.files];
       const failures: Record<string, string> = {};
       for (const [index, file] of nextFiles.entries()) {
+        if (file.excluded) {
+          continue;
+        }
         const component = components.find(
           (item) => item.label === file.componentLabel.trim(),
         );

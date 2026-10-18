@@ -23,8 +23,8 @@ export const checkId = '00000000-0000-4000-8000-000000000033';
 export const observationId = '00000000-0000-4000-8000-000000000034';
 /** route that resolves the answered action */
 export const actionPath = `/v1/analyses/${runId}/actions/${actionId}`;
-/** Continue presses from the media step to the review step */
-const stepsBeforeSave = 4;
+/** buttons pressed from the media step to the review step: media, grid, words, details */
+const stepsBeforeSave = ['Continue', 'Next', 'Continue', 'Continue'];
 
 /**
  * builds the run of an action answered by this capture
@@ -87,8 +87,8 @@ export async function importAndSave(): Promise<void> {
     expect(screen.getByRole('button', { name: 'Import file' })).toBeTruthy(),
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Import file' }));
-  for (let pressed = 0; pressed < stepsBeforeSave; pressed += 1) {
-    await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  for (const name of stepsBeforeSave) {
+    await fireEvent.press(screen.getByRole('button', { name }));
   }
   await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
 }

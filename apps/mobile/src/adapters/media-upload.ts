@@ -39,6 +39,13 @@ export interface LocalMedia {
   checkRequestKey?: string;
   /** evidence anchor created for this photo when it answers a check or an analysis action */
   anchorId?: string;
+  /**
+   * shot the collector chose in the in-app camera; a local hint for label suggestions,
+   * never uploaded because the media contract has no field for it
+   */
+  shotType?: 'set' | 'base' | 'mark' | 'detail';
+  /** left out of saving by the collector; the local file stays until the draft is discarded */
+  excluded?: boolean;
 }
 
 /** record or source intake receiving an uploaded file */

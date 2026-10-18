@@ -1,9 +1,9 @@
-# Captures a photo through the system camera (the emulator's virtual scene on
-# AOSP Camera2), saves the record, and confirms the upload finished (A2). The
+# Captures a photo through the in-app camera (the emulator's virtual scene),
+# saves the record, and confirms the upload finished (A2). The
 # saved record waits for an explicit Analyse (B06); the run's describe action
 # opens capture linked to it, and the confirmed words mark it supplied (C04).
 # Runs after 02-authenticate: it relaunches without clearing state and relies
-# on that session. The camera2 IDs tie it to the emulator's AOSP camera app.
+# on that session.
 appId: ${APP_ID}
 ---
 - launchApp
@@ -25,17 +25,26 @@ appId: ${APP_ID}
       visible: While using the app
     commands:
       - tapOn: While using the app
+# B02: the in-app camera shows the emulator's virtual scene; the shot joins the
+# draft at once and the camera stays open.
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-preview
+    timeout: 30000
 - tapOn:
-    id: com.android.camera2:id/shutter_button
+    id: capture-camera-shutter
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-shot-count
+      text: '.* 1 .*'
+    timeout: 30000
+# The last-shot thumbnail opens the grid to review the photo.
 - tapOn:
-    id: com.android.camera2:id/done_button
-- runFlow: support/dismiss-dev-logbox.yaml
+    id: capture-camera-last-shot
+- assertVisible:
+    id: capture-grid-tile-1
 - tapOn:
-    id: capture-media-continue
-# The components step lists the captured file by name.
-- assertVisible: .*\.jpe?g
-- tapOn:
-    id: capture-components-continue
+    id: capture-grid-next
 - tapOn:
     id: capture-voice-continue
 - tapOn:

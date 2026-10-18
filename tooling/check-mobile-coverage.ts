@@ -28,6 +28,9 @@ export const domCoverageSources = [
   'components/SettingsAction.stories.tsx',
   'mobile.stories.spec.dom.helpers.tsx',
   'features/auth/components/LoginCodeStep.stories.tsx',
+  'features/capture/components/CaptureCamera.stories.tsx',
+  'features/capture/components/CaptureCameraFallback.stories.tsx',
+  'features/capture/components/CaptureGridStep.stories.tsx',
 ] as const;
 
 /** runtime helpers required even though generic discovery excludes spec files */

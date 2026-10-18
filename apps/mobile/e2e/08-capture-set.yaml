@@ -1,0 +1,145 @@
+# PT-3 (B02–B03, B06): photographs a complete set six times through the in-app
+# camera (the emulator's virtual scene), choosing shot types; labels two photos
+# as the whole set and four with two typed components in the grid; saves; and
+# confirms one record holds all six media assets with no derived piece count. Runs after 02-authenticate on that session and after 04,
+# which granted camera access.
+appId: ${APP_ID}
+---
+- launchApp
+# A cold start on a loaded host can take well over a minute in dev builds.
+- extendedWaitUntil:
+    visible:
+      id: collection-add-item
+    timeout: 120000
+- runFlow: support/dismiss-dev-logbox.yaml
+- tapOn:
+    id: collection-add-item
+- tapOn:
+    id: capture-kind-set
+- tapOn:
+    id: capture-media-photo
+- runFlow:
+    when:
+      visible: While using the app
+    commands:
+      - tapOn: While using the app
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-preview
+    timeout: 30000
+# B02: two complete-set shots, two of the bases, a mark and a detail. Each shot
+# joins the draft before the next, so the camera never leaves the screen.
+- runFlow:
+    file: support/camera-shot.yaml
+    env:
+      SHOT: set
+      COUNT: '1'
+- runFlow:
+    file: support/camera-shot.yaml
+    env:
+      SHOT: set
+      COUNT: '2'
+- runFlow:
+    file: support/camera-shot.yaml
+    env:
+      SHOT: base
+      COUNT: '3'
+- runFlow:
+    file: support/camera-shot.yaml
+    env:
+      SHOT: base
+      COUNT: '4'
+- runFlow:
+    file: support/camera-shot.yaml
+    env:
+      SHOT: mark
+      COUNT: '5'
+- runFlow:
+    file: support/camera-shot.yaml
+    env:
+      SHOT: detail
+      COUNT: '6'
+- tapOn:
+    id: capture-camera-last-shot
+# B03: six tiles, all selected for saving.
+- assertVisible:
+    id: capture-grid-tile-6
+# Photos 1 and 2 show the whole set, which is not a component.
+- tapOn:
+    id: capture-grid-label-1
+- tapOn:
+    id: capture-label-whole
+- tapOn:
+    id: capture-grid-label-2
+- tapOn:
+    id: capture-label-whole
+# Photos 3 and 4 name new components, typed once each; shot types are views
+# and are never offered as components.
+- runFlow:
+    file: support/new-component-label.yaml
+    env:
+      TILE: '3'
+      LABEL: Left vase
+- runFlow:
+    file: support/new-component-label.yaml
+    env:
+      TILE: '4'
+      LABEL: Right vase
+# Photos 5 and 6 reuse them from the labels already used in this item.
+- scrollUntilVisible:
+    element:
+      id: capture-grid-label-6
+    direction: DOWN
+- tapOn:
+    id: capture-grid-label-5
+- tapOn:
+    id: capture-label-used-1
+- tapOn:
+    id: capture-grid-label-6
+- tapOn:
+    id: capture-label-used-2
+- scrollUntilVisible:
+    element:
+      id: capture-grid-next
+    direction: DOWN
+- tapOn:
+    id: capture-grid-next
+- tapOn:
+    id: capture-voice-continue
+- tapOn:
+    id: capture-details-name
+- inputText: ${RECORD_NAME}
+# Submit the field to close the keyboard, which otherwise covers Continue.
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: capture-details-continue
+    direction: DOWN
+- tapOn:
+    id: capture-details-continue
+- runFlow: support/dismiss-dev-logbox.yaml
+# PT-3: the save step lists all six photos for the one record.
+- assertVisible:
+    text: 'antica-.*'
+    index: 5
+- tapOn:
+    id: capture-save
+# B06: one record, named once, whose photos finished uploading. The record
+# lists media in tall cards, so only the save step above can count all six on
+# one screen. Labelling never derives a piece count, so it stays unknown and
+# the record's details leave it out (FR-2).
+- extendedWaitUntil:
+    visible: ${RECORD_NAME}
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: record-fields
+    direction: DOWN
+- assertNotVisible:
+    id: record-field-piece-count
+- scrollUntilVisible:
+    element:
+      id: record-media-.*-(uploaded|processing|ready)
+    direction: DOWN
+    timeout: 60000

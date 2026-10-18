@@ -249,7 +249,7 @@ void describe('fn:waitForGalleryIndex', () => {
 });
 
 void describe('fn:runMaestroJourneys', () => {
-  void it('should sign in with the issued code, seed the gallery, then run imports, camera capture and record messages', () => {
+  void it('should sign in with the issued code, seed the gallery, then run imports, camera capture, record messages, record editing and a labelled set', () => {
     const { io, ran } = recordingIO();
 
     runMaestroJourneys({ ...run, locale: 'en' }, io);
@@ -266,6 +266,7 @@ void describe('fn:runMaestroJourneys', () => {
         'maestro /e2e/04-camera-capture.yaml',
         'maestro /e2e/05-record-messages.yaml',
         'maestro /e2e/07-record-edit.yaml',
+        'maestro /e2e/08-capture-set.yaml',
       ],
     );
     assert.ok(ran[0]?.args.includes('APP_LOCALE=en'));
@@ -281,6 +282,7 @@ void describe('fn:runMaestroJourneys', () => {
       ran[8]?.args.includes('EDITED_NAME=Celadon bowl 2026-10-16T10:00:00'),
     );
     assert.ok(ran[8]?.args.includes('LOCATION=Main display-room cabinet'));
+    assert.ok(ran[9]?.args.includes('RECORD_NAME=Set 2026-10-16T10:00:00'));
   });
 
   void it('should add the language-settings flow around a second code in the default language', () => {
@@ -326,6 +328,13 @@ void describe('fn:runMaestroJourneys', () => {
           '-e',
           'LOCATION_DETAIL=第二層右上角',
           '/e2e/07-record-edit.yaml',
+        ],
+        [
+          '-e',
+          'APP_ID=app.id',
+          '-e',
+          'RECORD_NAME=Set 2026-10-16T10:00:00',
+          '/e2e/08-capture-set.yaml',
         ],
         [
           '-e',

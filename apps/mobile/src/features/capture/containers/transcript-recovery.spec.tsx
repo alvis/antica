@@ -72,7 +72,7 @@ async function openWords(): Promise<void> {
     expect(screen.getByRole('button', { name: 'Import file' })).toBeTruthy(),
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
 }
 
 it('should explain a failed existing-record load', async () => {

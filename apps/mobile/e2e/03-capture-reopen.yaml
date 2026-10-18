@@ -12,8 +12,11 @@ appId: ${APP_ID}
 - tapOn: Done
 - tapOn:
     id: capture-media-continue
+# B03: the grid shows the imported photo, selected for saving.
+- assertVisible:
+    id: capture-grid-tile-1
 - tapOn:
-    id: capture-components-continue
+    id: capture-grid-next
 - tapOn:
     id: capture-voice-original-words
 - inputText: ${ORIGINAL_WORDS}

@@ -1,0 +1,13 @@
+# Chooses a shot type in the in-app camera, takes one photo, and waits until it
+# joined the draft as photo ${COUNT}, so the next shutter press is never lost.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: capture-camera-shot-${SHOT}
+- tapOn:
+    id: capture-camera-shutter
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-shot-count
+      text: '.* ${COUNT} .*'
+    timeout: 30000

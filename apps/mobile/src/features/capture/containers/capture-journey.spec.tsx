@@ -52,7 +52,7 @@ describe('Capture retry journey', () => {
     await waitFor(() => expect(screen.getByText('Import file')).toBeTruthy());
     await fireEvent.press(screen.getByText('Import file'));
     await fireEvent.press(screen.getByText('Continue'));
-    await fireEvent.press(screen.getByText('Continue'));
+    await fireEvent.press(screen.getByText('Next'));
     await fireEvent.changeText(
       screen.getByLabelText('Original words'),
       'Blue decoration',

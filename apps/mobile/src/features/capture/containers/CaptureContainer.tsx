@@ -11,9 +11,10 @@ import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
 import { locationsQuery } from '../api/capture-queries';
+import { labelFile, summarizeRecord, toggleSelected } from '../capture-grid';
 import { CaptureActionLink } from '../components/CaptureActionLink';
-import { CaptureComponentsStep } from '../components/CaptureComponentsStep';
 import { CaptureDetailsStep } from '../components/CaptureDetailsStep';
+import { CaptureGridStep } from '../components/CaptureGridStep';
 import { CaptureKindStep } from '../components/CaptureKindStep';
 import { CaptureMediaStep } from '../components/CaptureMediaStep';
 import { CaptureSaveStep } from '../components/CaptureSaveStep';
@@ -26,7 +27,11 @@ import { useCaptureObservation } from '../hooks/useCaptureObservation';
 import { useCaptureRecord } from '../hooks/useCaptureRecord';
 import { useCaptureSave } from '../hooks/useCaptureSave';
 import { useEditDraft } from '../hooks/useEditDraft';
+import { useShotCleanup } from '../hooks/useShotCleanup';
+import { useVideoThumbnails } from '../hooks/useVideoThumbnails';
 import { useVoiceNote } from '../hooks/useVoiceNote';
+
+import { CaptureCameraContainer } from './CaptureCameraContainer';
 
 import type { FC } from 'react';
 
@@ -37,6 +42,9 @@ const mediaStep = 2;
 
 /** step a description answer opens at to type or speak the words */
 const wordsStep = 4;
+
+/** step that reviews and labels the photos and videos */
+const gridStep = 3;
 
 export const CaptureContainer: FC = () => {
   const router = useRouter();
@@ -57,6 +65,7 @@ export const CaptureContainer: FC = () => {
     draftState;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
   const runtime: CaptureRuntime = { api, t, busy, setBusy, setError };
   // specs queue mocked API responses in call order, so keep this hook order stable
   const voice = useVoiceNote({ setDraft, setError, t });
@@ -102,6 +111,9 @@ export const CaptureContainer: FC = () => {
     router,
   });
   const confirmedObservationId = observation.confirmedObservationId;
+  const thumbnails = useVideoThumbnails(draft.files);
+  useShotCleanup(draft.files);
+  const summary = summarizeRecord(draft.record, t('newItem'));
 
   /**
    * supplies the action with the confirmed words and returns to its run
@@ -160,23 +172,38 @@ export const CaptureContainer: FC = () => {
       )}
       {step === 2 && (
         <CaptureMediaStep
-          onChoose={(camera, video) => void chooseMedia(camera, video)}
+          onChoose={(camera, video) =>
+            camera && !video
+              ? setCameraOpen(true)
+              : void chooseMedia(camera, video)
+          }
           onContinue={draftState.next}
         />
       )}
-      {step === 3 && (
-        <CaptureComponentsStep
+      {step === gridStep && (
+        <CaptureGridStep
           kind={draft.kind}
+          recordName={summary.name}
+          recordCode={summary.code}
           files={draft.files}
-          onLabel={(fileId, componentLabel) =>
-            update({
-              files: draft.files.map((item) =>
-                item.id === fileId ? { ...item, componentLabel } : item,
-              ),
-            })
+          componentLabels={summary.componentLabels}
+          thumbnails={thumbnails}
+          onToggle={(fileId) =>
+            setDraft((current) => ({
+              ...current,
+              files: toggleSelected(current.files, fileId),
+            }))
           }
-          onPhoto={() => void chooseMedia(true, false)}
-          onContinue={draftState.next}
+          onLabel={(fileId, componentLabel) =>
+            setDraft((current) => ({
+              ...current,
+              files: labelFile(current.files, fileId, componentLabel),
+            }))
+          }
+          onAddPhoto={() => setCameraOpen(true)}
+          onAddVideo={() => void chooseMedia(true, true)}
+          onBack={() => setStep(mediaStep)}
+          onNext={draftState.next}
         />
       )}
       {step === 4 && (
@@ -220,7 +247,7 @@ export const CaptureContainer: FC = () => {
       )}
       {step === 6 && (
         <CaptureSaveStep
-          files={draft.files}
+          files={draft.files.filter((file) => !file.excluded)}
           fileErrors={fileErrors}
           busy={busy}
           onSave={() => void save()}
@@ -230,6 +257,27 @@ export const CaptureContainer: FC = () => {
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
         </Text>
+      )}
+      {cameraOpen && (
+        <CaptureCameraContainer
+          recordName={summary.name}
+          recordCode={summary.code}
+          onShot={(file) =>
+            setDraft((current) => ({
+              ...current,
+              files: [...current.files, file],
+            }))
+          }
+          onImport={() => {
+            setCameraOpen(false);
+            void chooseMedia(false, false);
+          }}
+          onReview={() => {
+            setCameraOpen(false);
+            setStep(gridStep);
+          }}
+          onClose={() => setCameraOpen(false)}
+        />
       )}
     </Screen>
   );

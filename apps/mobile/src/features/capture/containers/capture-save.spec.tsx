@@ -73,12 +73,21 @@ async function openFields(
   await fireEvent.press(screen.getByRole('button', { name: 'Import file' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
   if (componentLabel) {
+    await fireEvent.press(
+      screen.getByRole('button', {
+        name: 'Change the component label of Photo 1',
+      }),
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'New label…' }));
     await fireEvent.changeText(
-      screen.getByLabelText('Component label'),
+      screen.getByLabelText('New label name'),
       componentLabel,
     );
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Use this label' }),
+    );
   }
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
 
   return view;
 }
@@ -120,7 +129,6 @@ it('should save edited set fields, existing location, components, and object ima
         name: 'Blue vase',
         description: 'Blue glaze with an uncertain date',
         unitKind: 'set',
-        pieceCount: 2,
         components: [{ label: 'Lid' }],
         tags: ['Ceramic'],
         dimensions: { height: { value: 12.5, unit: 'mm' } },
@@ -131,6 +139,10 @@ it('should save edited set fields, existing location, components, and object ima
       },
     },
   });
+  // labelling a component never derives the piece count (FR-2)
+  expect(
+    (view.patches.mock.calls[0]?.[2].body as { fields: object }).fields,
+  ).not.toHaveProperty('pieceCount');
   expect(jest.mocked(uploadMedia).mock.calls[0]?.[3]).toEqual([
     expect.any(String),
   ]);
@@ -393,15 +405,16 @@ it('should reuse an existing set component for multiple photos and clear erased 
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Import file' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.changeText(
-    screen.getAllByLabelText('Component label')[0],
-    'Lid',
-  );
-  await fireEvent.changeText(
-    screen.getAllByLabelText('Component label')[1],
-    'Lid',
-  );
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  // the record's existing component is offered as a used label for every photo
+  for (const item of ['Photo 1', 'Photo 2']) {
+    await fireEvent.press(
+      screen.getByRole('button', {
+        name: `Change the component label of ${item}`,
+      }),
+    );
+    await fireEvent.press(screen.getByRole('radio', { name: 'Lid' }));
+  }
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
   await fireEvent.changeText(screen.getByLabelText('Name'), '');
   await fireEvent.changeText(
@@ -421,9 +434,11 @@ it('should reuse an existing set component for multiple photos and clear erased 
       name: null,
       tags: [],
       components: [{ id: componentId, label: 'Lid' }],
-      pieceCount: 2,
     },
   });
+  expect(
+    (view.patches.mock.calls[0]?.[2].body as { fields: object }).fields,
+  ).not.toHaveProperty('pieceCount');
   expect(
     jest.mocked(uploadMedia).mock.calls.map(([, file, , componentIds]) => ({
       name: file.name,
