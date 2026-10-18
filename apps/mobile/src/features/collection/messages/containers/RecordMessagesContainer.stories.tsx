@@ -214,6 +214,11 @@ const meta = {
       control: 'text',
       description: 'Collection record whose conversation is shown.',
     },
+    messageId: {
+      control: 'text',
+      description:
+        'Message to scroll to and mark, when opened from the change history.',
+    },
   },
 } satisfies Meta<typeof RecordMessagesContainer>;
 
@@ -256,6 +261,41 @@ export const ThreadWithOlderMessages = {
     );
     earlier.click();
     await findStoryText(canvasElement, 'What is the glaze?');
+  },
+} satisfies Story;
+
+/** fixture numbers of the conversation opened from the change history */
+const openedFixture = { question: 5, answer: 6 } as const;
+const openedQuestion = storyEntry(
+  openedFixture.question,
+  'collector',
+  'Tag it as a bowl.',
+);
+
+export const OpenedFromChangeHistory = {
+  args: { messageId: openedQuestion.id },
+  render: (args) => (
+    <MessagesStory
+      {...args}
+      responses={{
+        [`GET /v1/records/${storyRecord.id}`]: storyRecord,
+        [`GET ${messagesPath}`]: {
+          items: [
+            openedQuestion,
+            storyEntry(
+              openedFixture.answer,
+              'assistant',
+              'Added the bowl tag.',
+            ),
+          ],
+          nextCursor: null,
+        },
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    await findStoryText(canvasElement, 'Opened from change history');
+    await findStoryText(canvasElement, 'Tag it as a bowl.');
   },
 } satisfies Story;
 

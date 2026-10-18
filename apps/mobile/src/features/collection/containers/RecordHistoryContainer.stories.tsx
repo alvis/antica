@@ -7,6 +7,7 @@ import {
 } from '../../../mobile.stories.fixtures';
 import {
   findStoryButton,
+  findStoryElement,
   findStoryText,
 } from '../../../mobile.stories.helpers';
 
@@ -43,6 +44,20 @@ const describedByVoice = recordHistoryEntrySchema.parse({
   after:
     'Porcelain bowl with cobalt floral decoration, a double ring at the rim, and light wear on the unglazed foot.',
 });
+const taggedByMessage = recordHistoryEntrySchema.parse({
+  id: '00000000-0000-4000-8000-000000000925',
+  occurredAt,
+  status: 'accepted',
+  source: {
+    kind: 'editDraft',
+    editDraftId: '00000000-0000-4000-8000-000000000926',
+    proposalId,
+    recordMessageId: '00000000-0000-4000-8000-000000000927',
+  },
+  field: 'tags',
+  before: [],
+  after: ['bowl', 'porcelain'],
+});
 const dated = recordHistoryEntrySchema.parse({
   id: '00000000-0000-4000-8000-000000000924',
   occurredAt: '2026-10-15T08:00:00.000Z',
@@ -61,7 +76,10 @@ const pagedResponses: StoryResponses = {
   [historyPath]: (request) =>
     new URL(request.url).searchParams.has('cursor')
       ? { items: [dated], nextCursor: null }
-      : { items: [renamed, describedByVoice], nextCursor: 'older' },
+      : {
+          items: [renamed, taggedByMessage, describedByVoice],
+          nextCursor: 'older',
+        },
 };
 
 const meta = {
@@ -90,6 +108,10 @@ export const ChangesWithOlderPage = {
   play: async ({ canvasElement }) => {
     await findStoryText(canvasElement, 'Late Qing blue-and-white bowl');
     await findStoryText(canvasElement, 'Edited by voice or message');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-history-entry-${taggedByMessage.id}-source"]`,
+    );
     (await findStoryButton(canvasElement, 'Show older changes')).click();
     await findStoryText(canvasElement, 'Late Qing (1850–1911)');
   },

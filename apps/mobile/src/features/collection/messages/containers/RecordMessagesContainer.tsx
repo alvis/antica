@@ -24,6 +24,7 @@ import { MessageComposer } from '../components/MessageComposer';
 import { ReplyStatus } from '../components/ReplyStatus';
 import { useEditCardStates } from '../hooks/useEditCardStates';
 import { useMessageComposer } from '../hooks/useMessageComposer';
+import { useMessageFocus } from '../hooks/useMessageFocus';
 import { useRecordMessageThread } from '../hooks/useRecordMessageThread';
 import { useResend } from '../hooks/useResend';
 
@@ -33,17 +34,31 @@ import type { FC, ReactElement } from 'react';
 
 import type { RecordMessageEntry } from '@antica/contracts';
 
+/** outline of the message opened from the record's change history */
+const focusedRowStyle = {
+  borderColor: colors.jade,
+  borderWidth: 2,
+  borderRadius: 12,
+  paddingHorizontal: 8,
+} as const;
+
 /** properties for a record's message area */
-export type RecordMessagesContainerProps = { recordId: string };
+export type RecordMessagesContainerProps = {
+  recordId: string;
+  /** message to scroll to and mark, when opened from the record's change history */
+  messageId?: string;
+};
 
 /**
  * shows a record's conversation with the assistant, its edit cards, and the composer
  * @param props screen properties
  * @param props.recordId record the conversation is about
+ * @param props.messageId message to scroll to and mark, if any
  * @returns the conversation thread above a composer, inside the record's screen frame
  */
 export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
   recordId,
+  messageId,
 }) => {
   const { api } = useAuth();
   const { t } = useLocale();
@@ -64,6 +79,7 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
   });
   const cards = useEditCardStates();
   const newestFirst = [...thread.entries].reverse();
+  const focus = useMessageFocus(messageId, newestFirst);
 
   /**
    * offers to post a failed message again while no resend of it is in flight or accepted
@@ -82,7 +98,15 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
   }: {
     item: RecordMessageEntry;
   }): ReactElement => (
-    <View style={{ gap: 8, paddingVertical: 6 }}>
+    <View
+      testID={`record-message-row-${item.id}`}
+      style={[
+        { gap: 8, paddingVertical: 6 },
+        item.id === messageId && focusedRowStyle,
+      ]}>
+      {item.id === messageId && (
+        <Text style={styles.label}>{t('openedFromHistory')}</Text>
+      )}
       <MessageBubble
         messageId={item.id}
         author={item.author}
@@ -137,6 +161,8 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
             ) : (
               <FlatList
                 testID="record-messages-thread"
+                ref={focus.listRef}
+                onScrollToIndexFailed={focus.onScrollToIndexFailed}
                 inverted
                 data={newestFirst}
                 keyExtractor={(item) => item.id}

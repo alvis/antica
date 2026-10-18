@@ -345,7 +345,6 @@ export const messages = {
   confirmChange: ['Confirm', '確認'],
   rejectChange: ['Reject', '不採用'],
   changeApplied: ['Applied', '已套用'],
-  emptyValue: ['(empty)', '（空白）'],
   messageStale: [
     'The item changed after this screen loaded. It has been reloaded; send again.',
     '此畫面載入後藏品已有變更。已重新載入，請再次傳送。',

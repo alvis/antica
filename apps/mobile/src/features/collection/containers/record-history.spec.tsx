@@ -19,6 +19,7 @@ import {
   datedUntil,
   describedByVoice,
   historyMaterialId,
+  historyMessageId,
   historyPath,
   historyProposalId,
   historyRunId,
@@ -27,6 +28,7 @@ import {
   material,
   renamed,
   tagged,
+  taggedByMessage,
 } from './record-history.spec.fixtures';
 import { RecordHistoryContainer } from './RecordHistoryContainer';
 
@@ -145,6 +147,26 @@ it('should open the analysis proposal behind a change', async () => {
   expect(view.router.push).toHaveBeenCalledWith(
     `/analysis/${historyRunId}?proposalId=${historyProposalId}`,
   );
+});
+
+it('should open the message that requested an edit, and offer nothing for a voice-only edit', async () => {
+  const view = await renderHistory(async () =>
+    page([taggedByMessage, describedByVoice]),
+  );
+
+  await fireEvent.press(
+    await screen.findByTestId(
+      `record-history-entry-${taggedByMessage.id}-source`,
+    ),
+  );
+
+  expect(view.router.push).toHaveBeenCalledWith(
+    `/collection/${collectionRecord.id}/messages?messageId=${historyMessageId}`,
+  );
+  expect(entryText(taggedByMessage)).toContain('Edited by voice or message');
+  expect(
+    screen.queryByTestId(`record-history-entry-${describedByVoice.id}-source`),
+  ).toBeNull();
 });
 
 it('should load older changes through the cursor and stop at the last page', async () => {

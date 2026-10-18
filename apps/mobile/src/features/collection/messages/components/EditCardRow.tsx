@@ -46,7 +46,7 @@ export function formatProposalValue(
           .join(' · ')
       : (value ?? '');
 
-  return text.trim() === '' ? t('emptyValue') : text;
+  return text.trim() === '' ? t('noValue') : text;
 }
 
 /**

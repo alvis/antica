@@ -39,6 +39,8 @@ appId: ${APP_ID}
     text: Save
     index: 1
 - assertVisible: ${RECORD_NAME}
-- extendedWaitUntil:
-    visible: .*Uploaded
+# The record's action and message cards push the media status below the fold.
+- scrollUntilVisible:
+    element: .*Uploaded
+    direction: DOWN
     timeout: 30000

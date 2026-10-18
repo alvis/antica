@@ -55,7 +55,7 @@ export const RecordHistoryContainer: FC<RecordHistoryContainerProps> = ({
             ) : null
           }
           renderItem={({ item }) => {
-            const route = historySourceRoute(item.source);
+            const route = historySourceRoute(recordId, item.source);
 
             return (
               <RecordHistoryEntry
