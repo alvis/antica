@@ -206,7 +206,7 @@ export function waitForGalleryIndex(
 }
 
 /**
- * runs journeys 01–04: request a code, sign in, import and reopen, then camera capture
+ * runs journeys 01–05: request a code, sign in, import and reopen, camera capture, then record messages
  * @param run journey settings
  * @param io side effects
  */
@@ -245,6 +245,15 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
     maestroStep(run.deviceId, flow('04-camera-capture.yaml'), {
       APP_ID: run.appId,
       RECORD_NAME: `Camera ${stamp}`,
+    }),
+  );
+  // talks to the assistant about the camera record from 04 and edits it through a card
+  io.run(
+    maestroStep(run.deviceId, flow('05-record-messages.yaml'), {
+      APP_ID: run.appId,
+      RECORD_NAME: `Camera ${stamp}`,
+      NEW_NAME: `青瓷碗 ${stamp}`,
+      NEW_PERIOD: '清代',
     }),
   );
 }

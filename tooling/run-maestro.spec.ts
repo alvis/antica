@@ -232,7 +232,7 @@ void describe('fn:waitForGalleryIndex', () => {
 });
 
 void describe('fn:runMaestroJourneys', () => {
-  void it('should sign in with the issued code, seed the gallery, then run imports and camera capture', () => {
+  void it('should sign in with the issued code, seed the gallery, then run imports, camera capture and record messages', () => {
     const { io, ran } = recordingIO();
 
     runMaestroJourneys(run, io);
@@ -247,11 +247,15 @@ void describe('fn:runMaestroJourneys', () => {
         'adb file:///sdcard/Pictures/sample.jpg',
         'maestro /e2e/03-capture-reopen.yaml',
         'maestro /e2e/04-camera-capture.yaml',
+        'maestro /e2e/05-record-messages.yaml',
       ],
     );
     assert.ok(ran[1]?.args.includes('OTP_CODE=424242'));
     assert.ok(ran[5]?.args.includes('RECORD_NAME=E2E 2026-10-16T10:00:00'));
     assert.ok(ran[6]?.args.includes('RECORD_NAME=Camera 2026-10-16T10:00:00'));
+    assert.ok(ran[7]?.args.includes('RECORD_NAME=Camera 2026-10-16T10:00:00'));
+    assert.ok(ran[7]?.args.includes('NEW_NAME=青瓷碗 2026-10-16T10:00:00'));
+    assert.ok(ran[7]?.args.includes('NEW_PERIOD=清代'));
   });
 
   void it('should stop before authenticating when no code was issued during the run', () => {
