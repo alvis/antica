@@ -138,6 +138,16 @@
       "notes": "Explicit period edit; before is the stored collector claim."
     },
     {
+      "id": "edit-name-period",
+      "kind": "edit",
+      "record": "blue-white-bowl",
+      "requestKey": "51000000-0000-4000-8000-000000000016",
+      "messageZhHant": "請把名稱改成「青花纏枝蓮紋碗」，年代改成「清代晚期」。",
+      "expectedFields": ["name", "period"],
+      "permittedFields": [],
+      "notes": "Two explicit edits in one message; each field gets its own proposal."
+    },
+    {
       "id": "mixed-name",
       "kind": "mixed",
       "record": "blue-white-bowl",

@@ -695,6 +695,123 @@ describe('fn:createDevelopmentModels', () => {
         },
       });
     });
+
+    it('should propose every labelled quoted value and name each card', async () => {
+      const result = await draftMessage(
+        '請把名稱改成「青花纏枝蓮紋碗」，年代改成「清代晚期」',
+      );
+      const nameOnly = await draftMessage('請把名稱改成「青花纏枝蓮紋碗」');
+      const periodOnly = await draftMessage('請把年代改成「清代晚期」');
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant:
+              '開發示範：已建議修改「名稱」、「年代」，請在卡片確認是否套用。',
+            suggestedDescriptionZhHant: '青花瓷碗',
+            proposedChanges: [
+              {
+                id:
+                  nameOnly.success &&
+                  nameOnly.data.value.proposedChanges[0]!.id,
+                field: 'name',
+                before: '青花碗',
+                proposed: '青花纏枝蓮紋碗',
+                findingIds: [],
+              },
+              {
+                id:
+                  periodOnly.success &&
+                  periodOnly.data.value.proposedChanges[0]!.id,
+                field: 'period',
+                before: fields.period,
+                proposed: { label: '清代晚期', status: 'collectorClaim' },
+                findingIds: [],
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    it('should keep only the first quoted value for a repeated field', async () => {
+      const result = await draftMessage(
+        '名稱改成「青花纏枝蓮紋碗」，名稱也可以叫「青花大碗」',
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant: '開發示範：已建議修改「名稱」，請在卡片確認是否套用。',
+            proposedChanges: [{ field: 'name', proposed: '青花纏枝蓮紋碗' }],
+          },
+        },
+      });
+      expect(result.success && result.data.value.proposedChanges).toHaveLength(
+        1,
+      );
+    });
+
+    it('should propose only the changed value when another is already current', async () => {
+      const result = await draftMessage(
+        '名稱就是「青花碗」，年代改成「清代晚期」',
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant: '開發示範：已建議修改「年代」，請在卡片確認是否套用。',
+            proposedChanges: [
+              {
+                field: 'period',
+                proposed: { label: '清代晚期', status: 'collectorClaim' },
+              },
+            ],
+          },
+        },
+      });
+      expect(result.success && result.data.value.proposedChanges).toHaveLength(
+        1,
+      );
+    });
+
+    it('should name every unchanged field when no quoted value differs', async () => {
+      const result = await draftMessage(
+        '請把年代改成「明代」，名稱就是「青花碗」',
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant: '開發示範：年代、名稱沒有需要修改的地方。',
+            proposedChanges: [],
+          },
+        },
+      });
+    });
+
+    it('should ignore an unlabelled or empty quote beside a labelled one', async () => {
+      const result = await draftMessage(
+        '「青花」兩字很重要，「 」，請把名稱改成「青花纏枝蓮紋碗」',
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant: '開發示範：已建議修改「名稱」，請在卡片確認是否套用。',
+            proposedChanges: [{ field: 'name', proposed: '青花纏枝蓮紋碗' }],
+          },
+        },
+      });
+      expect(result.success && result.data.value.proposedChanges).toHaveLength(
+        1,
+      );
+    });
   });
 
   it('should reject an unknown analysis model without generating any output', async () => {

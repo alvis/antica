@@ -407,33 +407,62 @@ function mentions(message: string, labels: readonly string[]): boolean {
   return labels.some((label) => message.includes(label));
 }
 
+/** describes one closed, non-empty 「quoted」 value and the field it targets */
+interface QuotedValue {
+  /** trimmed quoted text */
+  readonly value: string;
+  /** allowlisted field named closest before the quote, or null when none is */
+  readonly field: ProposedChange['field'] | null;
+}
+
+/** names the fields the development adapter proposes from quoted values */
+type QuotedField = keyof typeof developmentFieldNames;
+
+/** describes one name or period change before its identity is assigned */
+type QuotedChange = Extract<DevelopmentChange, { field: QuotedField }>;
+
 /**
- * reads the first 「quoted」 value and the allowlisted label closest before it
+ * reads every closed, non-empty 「quoted」 value with the allowlisted label closest before it
  * @param message collector message
- * @returns trimmed quoted value and its targeted field, or undefined when none is closed
+ * @returns quoted values in message order, stopping at the first unclosed quote
  */
-function readQuoted(
-  message: string,
-):
-  | { readonly value: string; readonly field: ProposedChange['field'] | null }
-  | undefined {
-  const start = message.indexOf('「');
-  const end = message.indexOf('」', start + 1);
-  const value = message.slice(start + 1, end).trim();
-  if (start < 0 || end < 0 || value === '') {
-    return undefined;
+function readQuoted(message: string): readonly QuotedValue[] {
+  const quoted: QuotedValue[] = [];
+  let start = message.indexOf('「');
+  let end = message.indexOf('」', start + 1);
+  while (start >= 0 && end >= 0) {
+    const value = message.slice(start + 1, end).trim();
+    if (value !== '') {
+      quoted.push({ value, field: readLabel(message, start) });
+    }
+    start = message.indexOf('「', end + 1);
+    end = message.indexOf('」', start + 1);
   }
+
+  return quoted;
+}
+
+/**
+ * finds the allowlisted field whose label occurs closest before a position
+ * @param message collector message
+ * @param position index of the opening quote
+ * @returns the closest labelled field, or null when no label precedes the position
+ */
+function readLabel(
+  message: string,
+  position: number,
+): ProposedChange['field'] | null {
   let field: ProposedChange['field'] | null = null;
   let closest = -1;
   for (const [label, labelled] of Object.entries(allowlistedFieldLabels)) {
-    const position = message.lastIndexOf(label, start);
-    if (position > closest) {
-      closest = position;
+    const found = message.lastIndexOf(label, position);
+    if (found > closest) {
+      closest = found;
       field = labelled;
     }
   }
 
-  return { value, field };
+  return field;
 }
 
 /**
@@ -481,39 +510,40 @@ function draftDevelopmentEdit(
 }
 
 /**
- * proposes the quoted value for its closest named field, or the text as the description
- * @param requestKey frozen request identity that seeds the proposal ID
+ * proposes the first quoted value per name or period, or the text as the description
+ * @param requestKey frozen request identity that seeds the proposal IDs
  * @param fields frozen record fields
- * @param target quoted value with its field, and the fallback description text
- * @param target.quoted first quoted value and its closest named field
+ * @param target quoted values with their fields, and the fallback description text
+ * @param target.quoted quoted values in message order with their closest named fields
  * @param target.description text proposed when no name or period is quoted
- * @returns reply and at most one proposal
+ * @returns reply and one proposal per changed name or period, or the description fallback
  */
 function proposeAllowlisted(
   requestKey: string,
   fields: RecordFields,
   target: {
-    readonly quoted: ReturnType<typeof readQuoted>;
+    readonly quoted: readonly QuotedValue[];
     readonly description: string;
   },
 ): DevelopmentDraft {
-  const { quoted } = target;
-  if (quoted?.field === 'name') {
-    return proposeField(requestKey, fields, {
-      field: 'name',
-      before: fields.name,
-      proposed: quoted.value,
-    });
+  const targeted = new Map<QuotedField, QuotedChange>();
+  for (const { value, field } of target.quoted) {
+    if (field === 'name' && !targeted.has(field)) {
+      targeted.set(field, { field, before: fields.name, proposed: value });
+    }
+    if (field === 'period' && !targeted.has(field)) {
+      targeted.set(field, {
+        field,
+        before: fields.period,
+        proposed: { label: value, status: 'collectorClaim' },
+      });
+    }
   }
-  if (quoted?.field === 'period') {
-    return proposeField(requestKey, fields, {
-      field: 'period',
-      before: fields.period,
-      proposed: { label: quoted.value, status: 'collectorClaim' },
-    });
+  if (targeted.size === 0) {
+    return proposeDescription(requestKey, target.description, fields);
   }
 
-  return proposeDescription(requestKey, target.description, fields);
+  return proposeFields(requestKey, fields, [...targeted.values()]);
 }
 
 /**
@@ -550,36 +580,35 @@ function proposeDescription(
 }
 
 /**
- * proposes one non-description field and names its waiting card in the reply
- * @param requestKey frozen request identity that seeds the proposal ID
+ * proposes the changed name or period values and names their waiting cards in the reply
+ * @param requestKey frozen request identity that seeds the proposal IDs
  * @param fields frozen record fields
- * @param change field, exact before value and proposed value
- * @returns reply and proposal, or a no-change reply when the value is current
+ * @param changes targeted fields in message order with exact before and proposed values
+ * @returns reply and proposals, or a no-change reply when every value is current
  */
-function proposeField(
+function proposeFields(
   requestKey: string,
   fields: RecordFields,
-  change: DevelopmentChange & { field: keyof typeof developmentFieldNames },
+  changes: readonly QuotedChange[],
 ): DevelopmentDraft {
-  const label = developmentFieldNames[change.field];
-  if (isDeepStrictEqual(change.before, change.proposed)) {
-    return {
-      replyZhHant: `開發示範：${label}沒有需要修改的地方。`,
-      suggestedDescriptionZhHant: fields.description,
-      proposedChanges: [],
-    };
-  }
+  const changed = changes.filter(
+    (change) => !isDeepStrictEqual(change.before, change.proposed),
+  );
+  const labels = (changed.length > 0 ? changed : changes).map(
+    (change) => developmentFieldNames[change.field],
+  );
 
   return {
-    replyZhHant: `開發示範：已建議修改「${label}」，請在卡片確認是否套用。`,
+    replyZhHant:
+      changed.length > 0
+        ? `開發示範：已建議修改「${labels.join('」、「')}」，請在卡片確認是否套用。`
+        : `開發示範：${labels.join('、')}沒有需要修改的地方。`,
     suggestedDescriptionZhHant: fields.description,
-    proposedChanges: [
-      {
-        ...change,
-        id: stableId(`${requestKey}:${change.field}`),
-        findingIds: [],
-      },
-    ],
+    proposedChanges: changed.map((change) => ({
+      ...change,
+      id: stableId(`${requestKey}:${change.field}`),
+      findingIds: [],
+    })),
   };
 }
 
