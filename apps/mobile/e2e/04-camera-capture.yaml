@@ -1,0 +1,40 @@
+# Captures a photo through the system camera (the emulator's virtual scene on
+# AOSP Camera2), saves the record, and confirms the upload finished (A2).
+# Runs after 02-authenticate: it relaunches without clearing state and relies
+# on that session. The camera2 IDs tie it to the emulator's AOSP camera app.
+appId: ${APP_ID}
+---
+- launchApp
+- runFlow: support/dismiss-dev-logbox.yaml
+- tapOn: Add item
+- tapOn: Single item
+- tapOn: Photo
+- runFlow:
+    when:
+      visible: While using the app
+    commands:
+      - tapOn: While using the app
+- tapOn:
+    id: com.android.camera2:id/shutter_button
+- tapOn:
+    id: com.android.camera2:id/done_button
+- runFlow: support/dismiss-dev-logbox.yaml
+- tapOn: Continue
+- assertVisible: .*\.jpe?g
+- tapOn: Continue
+- tapOn: Continue
+- tapOn: Name
+- inputText: ${RECORD_NAME}
+# Submit the field to close the keyboard, which otherwise covers Continue.
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn: Continue
+- runFlow: support/dismiss-dev-logbox.yaml
+# The step heading also reads "Save"; index 1 is the button until GAP01 adds testIDs.
+- tapOn:
+    text: Save
+    index: 1
+- assertVisible: ${RECORD_NAME}
+- extendedWaitUntil:
+    visible: .*Uploaded
+    timeout: 30000

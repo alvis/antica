@@ -4,3 +4,4 @@ appId: ${APP_ID}
 - inputText: ${OTP_CODE}
 - tapOn: Verify code
 - assertVisible: Collection
+- runFlow: support/dismiss-dev-logbox.yaml
