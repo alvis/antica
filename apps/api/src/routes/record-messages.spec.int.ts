@@ -7,6 +7,7 @@ import {
   editDraftResultSchema,
   observationSchema,
   recordDetailSchema,
+  recordHistoryPageSchema,
   recordMessagePageSchema,
   recordMessagePostedSchema,
   transcriptionAcceptedSchema,
@@ -363,6 +364,49 @@ describe('fn:createRecordMessageRoutes', () => {
         (item) => item.draft.status,
       ),
     ).toEqual(['applied', 'applied']);
+  });
+
+  it('should link the history of an adopted proposal to the collector message once', async ({
+    fixture,
+  }) => {
+    const record = await createRecord(fixture);
+    await fixture.request(
+      `/v1/records/${record.id}/messages`,
+      'POST',
+      post('整理描述'),
+    );
+    await fixture.runtime.drain();
+    const [collector, assistant] = (await conversation(fixture, record.id))
+      .items;
+    expect(assistant!.editDraftId).toBe(collector!.editDraftId);
+    const [description] = assistant!.draft.proposedChanges;
+    const applied = await fixture.request(
+      `/v1/edit-drafts/${collector!.editDraftId}/apply`,
+      'POST',
+      {
+        requestKey: randomUUID(),
+        expectedDraftRevision: assistant!.draft.revision,
+        expectedRecordRevision: 1,
+        selectedProposalIds: [description!.id],
+      },
+    );
+    expect(applied.status).toBe(200);
+
+    const history = recordHistoryPageSchema.parse(
+      await (await fixture.request(`/v1/records/${record.id}/history`)).json(),
+    );
+
+    expect(history.items).toHaveLength(1);
+    expect(history.items[0]).toMatchObject({
+      field: 'description',
+      status: 'accepted',
+      source: {
+        kind: 'editDraft',
+        editDraftId: collector!.editDraftId,
+        proposalId: description!.id,
+        recordMessageId: collector!.id,
+      },
+    });
   });
 
   it('should start nothing new when the same post is replayed by body or by header', async ({
