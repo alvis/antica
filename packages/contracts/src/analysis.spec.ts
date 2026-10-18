@@ -4,6 +4,7 @@ import {
   actionResolutionRequestSchema,
   applyAnalysisChangesSchema,
   analysisRunDetailSchema,
+  editDraftGenerationSchema,
   editDraftResultSchema,
   validateAnalysisOutput,
   validateAnalysisReferences,
@@ -298,6 +299,20 @@ describe('edit draft result validation', () => {
   it('should reject a reply that is not text', () => {
     expect(
       editDraftResultSchema.safeParse({ ...result, replyZhHant: 1 }).success,
+    ).toBe(false);
+  });
+  it('should require a model-generated draft to include its reply', () => {
+    expect(editDraftGenerationSchema.safeParse(result).success).toBe(false);
+    expect(
+      editDraftGenerationSchema.parse({ ...result, replyZhHant: '好的' })
+        .replyZhHant,
+    ).toBe('好的');
+    expect(
+      editDraftGenerationSchema.safeParse({
+        ...result,
+        replyZhHant: '好的',
+        extra: true,
+      }).success,
     ).toBe(false);
   });
 });

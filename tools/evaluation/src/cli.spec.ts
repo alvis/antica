@@ -33,8 +33,15 @@ describe('fn:parseEvaluationArguments', () => {
       registry: undefined,
       reviews: undefined,
       limit: 2,
+      runs: 1,
       help: false,
     });
+  });
+
+  it('should accept an explicit run count and dataset default', () => {
+    expect(
+      parseEvaluationArguments(['--runs', '3'], 'result.json', 'editing-v1'),
+    ).toMatchObject({ runs: 3, snapshot: 'editing-v1' });
   });
 
   it('should reject duplicate IDs, stray arguments, and invalid cutoffs', () => {
@@ -44,6 +51,9 @@ describe('fn:parseEvaluationArguments', () => {
       ['--limit', '0'],
       ['--limit', '1.5'],
       ['--limit', '101'],
+      ['--runs', '0'],
+      ['--runs', '1.5'],
+      ['--runs', '11'],
       ['--models', ''],
       ['--registry', 'profiles.json'],
     ]) {

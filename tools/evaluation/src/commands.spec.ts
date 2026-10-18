@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { readSnapshot } from './dataset.js';
 import { digestSnapshot } from './digest.js';
+import { readEditingDataset } from './editing-dataset.js';
+import { runEditingCommand } from './editing-main.js';
 import { runInferenceCommand } from './main.js';
 import { runRetrievalCommand } from './retrieval-main.js';
 import { runSensitivityCommand } from './sensitivity-main.js';
@@ -100,6 +102,11 @@ const commands = [
     name: 'sensitivity',
     help: 'Sensitivity:',
     run: runSensitivityCommand,
+  },
+  {
+    name: 'editing',
+    help: 'Editing:',
+    run: runEditingCommand,
   },
 ];
 
@@ -241,6 +248,96 @@ describe('evaluation commands', () => {
         error: { code: 'MODEL_CAPABILITY_MISMATCH' },
         invocation: null,
       });
+      expect(captured.runtime.exitCode).toBe(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('should report a live editing model without a gateway key as inconclusive instead of falling back', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'antica-cli-editing-'));
+    vi.stubEnv('AI_GATEWAY_API_KEY', '');
+    try {
+      const path = join(directory, 'registry.json');
+      await writeFile(
+        path,
+        JSON.stringify({
+          profiles: [
+            {
+              modelId: 'gateway:editing',
+              provider: 'gateway',
+              providerModelVersion: null,
+              adapterKind: 'live',
+              roles: ['recordEditing'],
+              capabilities: {
+                textInput: true,
+                imageInput: false,
+                audioInput: false,
+                structuredOutput: true,
+                toolCalling: false,
+              },
+            },
+          ],
+        }),
+      );
+      const captured = captureCommand([
+        '--models',
+        'gateway:editing',
+        '--registry',
+        path,
+        '--output',
+        '-',
+      ]);
+      await runEditingCommand();
+      const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
+      expect(report.evaluations[0]).toMatchObject({
+        passedCases: 0,
+        assumptionA8: { verdict: 'inconclusive', runsPerCase: 1 },
+        cases: expect.arrayContaining([
+          expect.objectContaining({
+            output: null,
+            error: expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE' }),
+          }),
+        ]),
+      });
+      expect(captured.runtime.exitCode).toBe(1);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('should fail the editing command for an unknown model', async () => {
+    const captured = captureCommand([
+      '--models',
+      'missing:model',
+      '--output',
+      '-',
+    ]);
+    await runEditingCommand();
+    const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
+    expect(report.evaluations[0]).toMatchObject({
+      error: { code: 'MODEL_UNKNOWN' },
+    });
+    expect(captured.runtime.exitCode).toBe(1);
+  });
+
+  it('should fail the editing command when a development case fails', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'antica-cli-editing-'));
+    try {
+      const fixture = await readEditingDataset('editing-v1');
+      const path = join(directory, 'dataset.json');
+      await writeFile(
+        path,
+        JSON.stringify({
+          ...fixture,
+          cases: [{ ...fixture.cases[4], expectedFields: ['tags'] }],
+        }),
+      );
+      const captured = captureCommand(['--snapshot', path, '--output', '-']);
+      await runEditingCommand();
+      const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
+      expect(report.evaluations[0]).toMatchObject({ passedCases: 0 });
       expect(captured.runtime.exitCode).toBe(1);
     } finally {
       await rm(directory, { recursive: true, force: true });

@@ -122,6 +122,7 @@ export {
   analysisResultProjectionSchema,
   analysisRunDetailSchema,
   applyAnalysisChangesSchema,
+  editDraftGenerationSchema,
   editDraftResultSchema,
   findingSchema,
   inspectionTaskSchema,

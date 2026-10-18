@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "run build",
+    "editing": "tsx src/editing-main.ts",
     "lint": "run lint --",
     "retrieval": "tsx src/retrieval-main.ts",
     "sensitivity": "tsx src/sensitivity-main.ts",

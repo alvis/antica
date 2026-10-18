@@ -242,54 +242,56 @@ it('should reject incomplete inner tags without reconstructing fields', () => {
   }
 });
 
-it.each(['main.ts', 'retrieval-main.ts', 'sensitivity-main.ts'])(
-  'should preserve the real invalid-option failure for %s',
-  async (entry) => {
-    const sourceUrl = new URL(`./${entry}`, import.meta.url);
-    const directory = await mkdtemp(join(tmpdir(), 'antica-owner-cli-'));
-    try {
-      const mode = readActiveOwner().project.mode;
-      if (mode.enabled && mode.provider === 'istanbul') {
-        retained = await exerciseParent(retained);
-      }
-      const launch = await runEntry(sourceUrl, directory);
-      const { result } = launch;
-      expect(result.error).toBeUndefined();
-      expect(result.signal).toBeNull();
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('Unknown option');
-      expect(result.stdout).toBe('');
-      const receipt = await readVerifiedReceipt(launch);
-      if (mode.enabled && mode.provider === 'istanbul') {
-        const consumed = new Set<string>();
-        for (const changed of [
-          { field: 'pid', value: result.pid + 1, message: 'PID mismatch' },
-          { field: 'token', value: randomUUID(), message: 'token mismatch' },
-          {
-            field: 'sourceUrl',
-            value: 'file:///x',
-            message: 'source mismatch',
-          },
-        ]) {
-          await expect(
-            appendChild(
-              launch,
-              { ...receipt, [changed.field]: changed.value },
-              consumed,
-            ),
-          ).rejects.toThrow(changed.message);
-        }
-        await appendChild(launch, receipt, consumed);
-        await expect(appendChild(launch, receipt, consumed)).rejects.toThrow(
-          'already consumed',
-        );
-        retained = await exerciseParent(retained);
-      }
-    } finally {
-      await archiveEntry(directory, sourceUrl);
+it.each([
+  'main.ts',
+  'retrieval-main.ts',
+  'sensitivity-main.ts',
+  'editing-main.ts',
+])('should preserve the real invalid-option failure for %s', async (entry) => {
+  const sourceUrl = new URL(`./${entry}`, import.meta.url);
+  const directory = await mkdtemp(join(tmpdir(), 'antica-owner-cli-'));
+  try {
+    const mode = readActiveOwner().project.mode;
+    if (mode.enabled && mode.provider === 'istanbul') {
+      retained = await exerciseParent(retained);
     }
-  },
-);
+    const launch = await runEntry(sourceUrl, directory);
+    const { result } = launch;
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Unknown option');
+    expect(result.stdout).toBe('');
+    const receipt = await readVerifiedReceipt(launch);
+    if (mode.enabled && mode.provider === 'istanbul') {
+      const consumed = new Set<string>();
+      for (const changed of [
+        { field: 'pid', value: result.pid + 1, message: 'PID mismatch' },
+        { field: 'token', value: randomUUID(), message: 'token mismatch' },
+        {
+          field: 'sourceUrl',
+          value: 'file:///x',
+          message: 'source mismatch',
+        },
+      ]) {
+        await expect(
+          appendChild(
+            launch,
+            { ...receipt, [changed.field]: changed.value },
+            consumed,
+          ),
+        ).rejects.toThrow(changed.message);
+      }
+      await appendChild(launch, receipt, consumed);
+      await expect(appendChild(launch, receipt, consumed)).rejects.toThrow(
+        'already consumed',
+      );
+      retained = await exerciseParent(retained);
+    }
+  } finally {
+    await archiveEntry(directory, sourceUrl);
+  }
+});
 
 it('should keep parent increments live in a later test in the same worker', async () => {
   const mode = readActiveOwner().project.mode;

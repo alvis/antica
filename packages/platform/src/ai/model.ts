@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import { editDraftResultSchema, researchDraftSchema } from '@antica/contracts';
 
 import { resolveModel } from './capability.js';
+import { editingPromptVersion, editingSchemaVersion } from './editing.js';
 import { validateGeneratedAnalysis } from './output.js';
 
 import type {
@@ -16,9 +18,13 @@ import type {
 } from '@antica/application/ports';
 import type {
   AnalysisOutput,
+  EditDraftRequest,
+  EditDraftResult,
   Finding,
   ModelCapabilities,
   ModelSelection,
+  ProposedChange,
+  RecordFields,
 } from '@antica/contracts';
 
 import type { ModelProfile } from './capability.js';
@@ -130,6 +136,7 @@ export function createDevelopmentModels(): ModelAdapters {
             ) {
               return [];
             }
+
             return [
               {
                 id: stableId(
@@ -159,6 +166,7 @@ export function createDevelopmentModels(): ModelAdapters {
               },
             ];
           }
+
           return [];
         });
         const output: AnalysisOutput = {
@@ -298,33 +306,13 @@ export function createDevelopmentModels(): ModelAdapters {
         if (!selected.success) {
           return { ...selected, audit: { invocation: null, rawOutput: null } };
         }
-        const description =
-          sourceText.length > 0
-            ? sourceText.join('\n')
-            : request.instructionZhHant;
-        const changed =
-          description !== '' && description !== context.fields.description;
         const value = editDraftResultSchema.parse({
           editDraftId: request.requestKey,
           recordId: request.recordId,
           baseVersions: context.versions,
           sourceTranscriptionIds: request.transcriptionIds,
           sourceObservationIds: request.observationIds,
-          replyZhHant: changed
-            ? '開發示範：已依你提供的文字整理描述，請確認是否套用。'
-            : '開發示範：描述沒有需要修改的地方。',
-          suggestedDescriptionZhHant: description,
-          proposedChanges: changed
-            ? [
-                {
-                  id: stableId(`${request.requestKey}:description`),
-                  field: 'description',
-                  before: context.fields.description,
-                  proposed: description,
-                  findingIds: [],
-                },
-              ]
-            : [],
+          ...draftDevelopmentEdit(request, sourceText, context.fields),
         });
 
         return {
@@ -334,8 +322,8 @@ export function createDevelopmentModels(): ModelAdapters {
             invocation: describeInvocation(
               selected.data,
               selection,
-              'editing-v1',
-              'editing-v1',
+              editingPromptVersion,
+              editingSchemaVersion,
               startedAt,
             ),
           },
@@ -363,6 +351,235 @@ export function createDevelopmentModels(): ModelAdapters {
         };
       },
     },
+  };
+}
+
+/** describes one proposal before the development adapter assigns its identity */
+type DevelopmentChange = ProposedChange extends infer Change
+  ? Change extends ProposedChange
+    ? Omit<Change, 'id' | 'findingIds'>
+    : never
+  : never;
+
+/** carries the reply and proposals the development adapter adds to a draft */
+type DevelopmentDraft = Pick<
+  EditDraftResult,
+  'replyZhHant' | 'suggestedDescriptionZhHant' | 'proposedChanges'
+>;
+
+/** names the targeted fields in development replies */
+const developmentFieldNames = { name: '名稱', period: '年代' } as const;
+
+/** maps allowlisted message labels to the field they name */
+const allowlistedFieldLabels = {
+  名稱: 'name',
+  名字: 'name',
+  描述: 'description',
+  材質: 'materialIds',
+  年代: 'period',
+  標籤: 'tags',
+  判斷: 'collectorJudgment',
+} as const satisfies Record<string, ProposedChange['field']>;
+/** explains why a restricted field gets no proposal */
+const restrictedReply = '這個欄位無法透過訊息修改';
+
+/** labels message fields outside the editing allowlist */
+const restrictedFieldLabels = [
+  '編號',
+  '地點',
+  '位置',
+  '尺寸',
+  '重量',
+  '價格',
+  '購入',
+  '來源',
+  '件數',
+  '分類',
+];
+
+/**
+ * checks whether a message names any of the supplied labels
+ * @param message collector message
+ * @param labels Traditional Chinese field labels
+ * @returns whether one label occurs
+ */
+function mentions(message: string, labels: readonly string[]): boolean {
+  return labels.some((label) => message.includes(label));
+}
+
+/**
+ * reads the first 「quoted」 value and the allowlisted label closest before it
+ * @param message collector message
+ * @returns trimmed quoted value and its targeted field, or undefined when none is closed
+ */
+function readQuoted(
+  message: string,
+):
+  | { readonly value: string; readonly field: ProposedChange['field'] | null }
+  | undefined {
+  const start = message.indexOf('「');
+  const end = message.indexOf('」', start + 1);
+  const value = message.slice(start + 1, end).trim();
+  if (start < 0 || end < 0 || value === '') {
+    return undefined;
+  }
+  let field: ProposedChange['field'] | null = null;
+  let closest = -1;
+  for (const [label, labelled] of Object.entries(allowlistedFieldLabels)) {
+    const position = message.lastIndexOf(label, start);
+    if (position > closest) {
+      closest = position;
+      field = labelled;
+    }
+  }
+
+  return { value, field };
+}
+
+/**
+ * drafts a deterministic reply and proposals that distinguish questions from edits
+ * @param request frozen edit request carrying the collector message
+ * @param sourceText selected source excerpts, such as transcribed voice
+ * @param fields frozen record fields that proposals must preserve as before values
+ * @returns reply, suggested description and proposals for the draft result
+ */
+function draftDevelopmentEdit(
+  request: EditDraftRequest,
+  sourceText: readonly string[],
+  fields: RecordFields,
+): DevelopmentDraft {
+  const message = (request.instructionZhHant || sourceText.join('\n')).trim();
+  const unchanged = {
+    suggestedDescriptionZhHant: fields.description,
+    proposedChanges: [],
+  };
+  if (/[？?]$/u.test(message)) {
+    return {
+      ...unchanged,
+      replyZhHant:
+        '開發示範：這是提問；開發模型不會回答內容，也沒有建議任何修改。',
+    };
+  }
+  const restricted = mentions(message, restrictedFieldLabels);
+  if (restricted && !mentions(message, Object.keys(allowlistedFieldLabels))) {
+    return {
+      ...unchanged,
+      replyZhHant: `開發示範：${restrictedReply}，沒有建議任何修改。`,
+    };
+  }
+  const draft = proposeAllowlisted(request.requestKey, fields, {
+    quoted: readQuoted(message),
+    description: sourceText.length > 0 ? sourceText.join('\n') : message,
+  });
+
+  return restricted
+    ? {
+        ...draft,
+        replyZhHant: `${draft.replyZhHant}另外，${restrictedReply}。`,
+      }
+    : draft;
+}
+
+/**
+ * proposes the quoted value for its closest named field, or the text as the description
+ * @param requestKey frozen request identity that seeds the proposal ID
+ * @param fields frozen record fields
+ * @param target quoted value with its field, and the fallback description text
+ * @param target.quoted first quoted value and its closest named field
+ * @param target.description text proposed when no name or period is quoted
+ * @returns reply and at most one proposal
+ */
+function proposeAllowlisted(
+  requestKey: string,
+  fields: RecordFields,
+  target: {
+    readonly quoted: ReturnType<typeof readQuoted>;
+    readonly description: string;
+  },
+): DevelopmentDraft {
+  const { quoted } = target;
+  if (quoted?.field === 'name') {
+    return proposeField(requestKey, fields, {
+      field: 'name',
+      before: fields.name,
+      proposed: quoted.value,
+    });
+  }
+  if (quoted?.field === 'period') {
+    return proposeField(requestKey, fields, {
+      field: 'period',
+      before: fields.period,
+      proposed: { label: quoted.value, status: 'collectorClaim' },
+    });
+  }
+
+  return proposeDescription(requestKey, target.description, fields);
+}
+
+/**
+ * proposes the supplied text as the description, as the adapter did before replies
+ * @param requestKey frozen request identity that seeds the proposal ID
+ * @param description proposed description text
+ * @param fields frozen record fields
+ * @returns reply and description proposal, or a no-change reply
+ */
+function proposeDescription(
+  requestKey: string,
+  description: string,
+  fields: RecordFields,
+): DevelopmentDraft {
+  const changed = description !== '' && description !== fields.description;
+
+  return {
+    replyZhHant: changed
+      ? '開發示範：已依你提供的文字整理描述，請確認是否套用。'
+      : '開發示範：描述沒有需要修改的地方。',
+    suggestedDescriptionZhHant: description,
+    proposedChanges: changed
+      ? [
+          {
+            id: stableId(`${requestKey}:description`),
+            field: 'description',
+            before: fields.description,
+            proposed: description,
+            findingIds: [],
+          },
+        ]
+      : [],
+  };
+}
+
+/**
+ * proposes one non-description field and names its waiting card in the reply
+ * @param requestKey frozen request identity that seeds the proposal ID
+ * @param fields frozen record fields
+ * @param change field, exact before value and proposed value
+ * @returns reply and proposal, or a no-change reply when the value is current
+ */
+function proposeField(
+  requestKey: string,
+  fields: RecordFields,
+  change: DevelopmentChange & { field: keyof typeof developmentFieldNames },
+): DevelopmentDraft {
+  const label = developmentFieldNames[change.field];
+  if (isDeepStrictEqual(change.before, change.proposed)) {
+    return {
+      replyZhHant: `開發示範：${label}沒有需要修改的地方。`,
+      suggestedDescriptionZhHant: fields.description,
+      proposedChanges: [],
+    };
+  }
+
+  return {
+    replyZhHant: `開發示範：已建議修改「${label}」，請在卡片確認是否套用。`,
+    suggestedDescriptionZhHant: fields.description,
+    proposedChanges: [
+      {
+        ...change,
+        id: stableId(`${requestKey}:${change.field}`),
+        findingIds: [],
+      },
+    ],
   };
 }
 

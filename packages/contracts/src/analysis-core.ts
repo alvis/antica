@@ -130,6 +130,10 @@ export const editDraftResultSchema = z.strictObject({
   proposedChanges: z.array(proposedChangeSchema),
 });
 export type EditDraftResult = z.infer<typeof editDraftResultSchema>;
+/** requires the reply from a model so the provider schema cannot omit it; stored results keep the empty default */
+export const editDraftGenerationSchema = editDraftResultSchema.safeExtend({
+  replyZhHant: z.string(),
+});
 
 export interface AnalysisReferenceSet {
   readonly evidenceIds: ReadonlySet<string>;

@@ -489,6 +489,214 @@ describe('fn:createDevelopmentModels', () => {
     },
   );
 
+  describe('when the collector message is a question or a targeted edit', () => {
+    const versions = {
+      recordRevision: 3,
+      analysisInputVersion: 2,
+      evidenceVersion: 1,
+    };
+    const fields = {
+      ...emptyPack.recordFields,
+      name: '青花碗',
+      description: '青花瓷碗',
+      period: { label: '明代', status: 'collectorClaim' as const },
+    };
+
+    /**
+     * drafts one development edit for a typed or transcribed message
+     * @param instruction typed collector message
+     * @param sourceText transcribed source text
+     * @returns development draft result
+     */
+    async function draftMessage(
+      instruction: string,
+      sourceText: readonly string[] = [],
+    ) {
+      return createDevelopmentModels().recordEditing.draft(
+        {
+          requestKey: '00000000-0000-4000-8000-000000000054',
+          recordId: emptyPack.input.recordId,
+          expectedRecordRevision: 3,
+          transcriptionIds: [],
+          observationIds: [],
+          instructionZhHant: instruction,
+        },
+        sourceText,
+        { fields, versions },
+        { ...selection, role: 'recordEditing' },
+      );
+    }
+
+    it.for([
+      ['a full-width question mark', '描述有提到款識嗎？', []],
+      ['an ASCII question mark', 'Is there a mark?', []],
+      ['a transcribed question', '', ['這件是什麼年代？']],
+    ] as const)(
+      'should reply without proposals for %s',
+      async ([, instruction, sourceText]) => {
+        const result = await draftMessage(instruction, sourceText);
+
+        expect(result).toMatchObject({
+          success: true,
+          data: {
+            value: {
+              replyZhHant:
+                '開發示範：這是提問；開發模型不會回答內容，也沒有建議任何修改。',
+              suggestedDescriptionZhHant: '青花瓷碗',
+              proposedChanges: [],
+            },
+            invocation: {
+              promptVersion: 'editing-v2',
+              schemaVersion: 'editing-v2',
+            },
+          },
+        });
+      },
+    );
+
+    it('should refuse a field outside the editing allowlist', async () => {
+      const result = await draftMessage('請把收藏地點改成「二樓書房」');
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant:
+              '開發示範：這個欄位無法透過訊息修改，沒有建議任何修改。',
+            proposedChanges: [],
+          },
+        },
+      });
+    });
+
+    it('should propose a quoted name and name the waiting card', async () => {
+      const result = await draftMessage('請把名稱改成「青花纏枝蓮紋碗」');
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant: '開發示範：已建議修改「名稱」，請在卡片確認是否套用。',
+            suggestedDescriptionZhHant: '青花瓷碗',
+            proposedChanges: [
+              {
+                field: 'name',
+                before: '青花碗',
+                proposed: '青花纏枝蓮紋碗',
+                findingIds: [],
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    it('should propose a quoted period as a collector claim', async () => {
+      const result = await draftMessage('請把年代改成「清代晚期」');
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant: '開發示範：已建議修改「年代」，請在卡片確認是否套用。',
+            proposedChanges: [
+              {
+                field: 'period',
+                before: fields.period,
+                proposed: { label: '清代晚期', status: 'collectorClaim' },
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    it.for([
+      ['an empty quotation', '請把名稱改成「 」'],
+      ['an unclosed quotation', '請把名稱改成「青花'],
+    ])(
+      'should fall back to a description proposal for %s',
+      async ([, instruction]) => {
+        const result = await draftMessage(instruction!);
+
+        expect(result).toMatchObject({
+          success: true,
+          data: {
+            value: {
+              proposedChanges: [
+                { field: 'description', proposed: instruction },
+              ],
+            },
+          },
+        });
+      },
+    );
+
+    it('should target the field named closest before the quoted value', async () => {
+      const result = await draftMessage('把年代改成「清代」，名稱不變');
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            proposedChanges: [
+              {
+                field: 'period',
+                proposed: { label: '清代', status: 'collectorClaim' },
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    it('should keep raw-description behaviour when no field precedes the quote', async () => {
+      const result = await draftMessage('「青花」兩字要寫進名稱');
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            proposedChanges: [
+              { field: 'description', proposed: '「青花」兩字要寫進名稱' },
+            ],
+          },
+        },
+      });
+    });
+
+    it('should propose the allowlisted change and refuse the restricted one', async () => {
+      const result = await draftMessage(
+        '請把名稱改成「青花纏枝蓮紋碗」，收藏地點也改成二樓',
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant:
+              '開發示範：已建議修改「名稱」，請在卡片確認是否套用。另外，這個欄位無法透過訊息修改。',
+            proposedChanges: [{ field: 'name', proposed: '青花纏枝蓮紋碗' }],
+          },
+        },
+      });
+    });
+
+    it('should propose nothing when the quoted name is already current', async () => {
+      const result = await draftMessage('名稱就是「青花碗」');
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            replyZhHant: '開發示範：名稱沒有需要修改的地方。',
+            proposedChanges: [],
+          },
+        },
+      });
+    });
+  });
+
   it('should reject an unknown analysis model without generating any output', async () => {
     const adapters = createDevelopmentModels();
 

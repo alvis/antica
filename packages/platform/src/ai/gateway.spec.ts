@@ -4,6 +4,7 @@ import { analysisOutputSchema } from '@antica/contracts';
 
 import { MockLanguageModelV4 } from 'ai/test';
 
+import { editingInstruction } from './editing.js';
 import { createAiSdkModels, generateStructured } from './gateway.js';
 
 import type { AnalysisEvidencePack } from '@antica/application/ports';
@@ -253,6 +254,7 @@ describe('fn:createAiSdkModels', () => {
       baseVersions: context.versions,
       sourceTranscriptionIds: request.transcriptionIds,
       sourceObservationIds: request.observationIds,
+      replyZhHant: '目前沒有需要修改的欄位。',
       suggestedDescriptionZhHant: '收藏家原文',
       proposedChanges: [],
     };
@@ -273,8 +275,72 @@ describe('fn:createAiSdkModels', () => {
       success: true,
       data: {
         value: draft,
-        invocation: { role: 'recordEditing', adapterKind: 'live' },
+        invocation: {
+          role: 'recordEditing',
+          adapterKind: 'live',
+          promptVersion: 'editing-v2',
+          schemaVersion: 'editing-v2',
+        },
       },
+    });
+    const user = model.doGenerateCalls[0]?.prompt.find(
+      (message) => message.role === 'user',
+    );
+    const sent = JSON.parse(
+      user?.content[0]?.type === 'text' ? user.content[0].text : '{}',
+    );
+    expect(sent).toEqual({
+      request,
+      sourceText: ['收藏家原文'],
+      context,
+      instruction: editingInstruction,
+    });
+  });
+
+  it('should reject a live edit draft that omits the collector reply', async () => {
+    const editingProfile: ModelProfile = {
+      ...profile,
+      roles: ['recordEditing'],
+    };
+    const request = {
+      requestKey: '00000000-0000-4000-8000-000000000034',
+      recordId: pack.input.recordId,
+      expectedRecordRevision: 1,
+      transcriptionIds: [],
+      observationIds: [],
+      instructionZhHant: '描述有提到款識嗎？',
+    };
+    const context = {
+      fields: pack.recordFields,
+      versions: {
+        recordRevision: 1,
+        analysisInputVersion: 1,
+        evidenceVersion: 1,
+      },
+    };
+    const models = createAiSdkModels({
+      profiles: [editingProfile],
+      languageModels: {
+        [profile.modelId]: createProvider({
+          editDraftId: request.requestKey,
+          recordId: request.recordId,
+          baseVersions: context.versions,
+          sourceTranscriptionIds: [],
+          sourceObservationIds: [],
+          suggestedDescriptionZhHant: '',
+          proposedChanges: [],
+        }),
+      },
+    });
+
+    const result = await models.recordEditing.draft(request, [], context, {
+      ...selection,
+      role: 'recordEditing',
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { code: 'MODEL_OUTPUT_INVALID', retryable: false },
     });
   });
 

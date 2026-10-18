@@ -25,7 +25,12 @@ let invocation: z.infer<typeof invocationSchema> | undefined;
 export function initialize(data: unknown): void {
   const parsed = invocationSchema.parse(data);
   const owner = readOwnerSnapshot(decodeOwnerWire(parsed.owner));
-  const entries = ['main.ts', 'retrieval-main.ts', 'sensitivity-main.ts'];
+  const entries = [
+    'main.ts',
+    'retrieval-main.ts',
+    'sensitivity-main.ts',
+    'editing-main.ts',
+  ];
   if (
     !entries.some(
       (name) =>
