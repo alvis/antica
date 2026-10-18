@@ -117,6 +117,23 @@ it.each([
   },
 );
 
+it('should select the image center when a browser click target has not been laid out yet', async () => {
+  jest.replaceProperty(Platform, 'OS', 'web');
+  const onCrop = jest.fn<(x: number, y: number) => void>();
+  await renderMobile(<SourcePagePreview {...base} onCrop={onCrop} />, {});
+  await fireEvent(
+    screen.getByRole('button', { name: 'Select region' }),
+    'press',
+    {
+      nativeEvent: { clientX: 100, clientY: 110, detail: 1 },
+      currentTarget: {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
+      },
+    },
+  );
+  expect(onCrop).toHaveBeenCalledWith(half, half);
+});
+
 it('should crop original coordinates before rotating the preview', async () => {
   await renderMobile(
     <SourcePagePreview

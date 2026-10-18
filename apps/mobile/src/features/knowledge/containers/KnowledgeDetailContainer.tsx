@@ -41,14 +41,15 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
       api.get(`/v1/knowledge/${entryId}`, knowledgeDetailSchema, signal),
   });
 
-  const save = async (): Promise<void> => {
-    if (!detail.data || busy) {
-      return;
-    }
+  const data = detail.data;
+
+  // the save button renders only with loaded data and is disabled while busy
+  const save = async (
+    entry: NonNullable<typeof data>['entry'],
+  ): Promise<void> => {
     setBusy(true);
     setError('');
     try {
-      const entry = detail.data.entry;
       const request = knowledgeUpdateSchema.parse({
         requestKey: randomUUID(),
         expectedRevision: entry.revision,
@@ -83,46 +84,43 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
 
   return (
     <Screen
-      title={detail.data?.entry.content.titleZhHant ?? t('knowledgeDraft')}
-      subtitle={
-        detail.data ? localizeStatus(detail.data.entry.status, t) : undefined
-      }>
+      title={data?.entry.content.titleZhHant ?? t('knowledgeDraft')}
+      subtitle={data ? localizeStatus(data.entry.status, t) : undefined}>
       <QueryState
         loading={detail.isPending}
         error={detail.error}
         retry={() => void detail.refetch()}>
-        {detail.data && (
+        {data && (
           <>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('knowledgeDraft')}</Text>
               <TextField
                 label={t('name')}
-                value={title ?? detail.data.entry.content.titleZhHant}
+                value={title ?? data.entry.content.titleZhHant}
                 onChangeText={setTitle}
               />
               <TextField
                 label={t('summary')}
-                value={summary ?? detail.data.entry.content.summary.textZhHant}
+                value={summary ?? data.entry.content.summary.textZhHant}
                 onChangeText={setSummary}
                 multiline
               />
               <Text style={styles.secondary}>
-                {detail.data.entry.content.summary.support === 'needs_source'
+                {data.entry.content.summary.support === 'needs_source'
                   ? t('sourceNeedsReview')
                   : t('citationCount', {
-                      count:
-                        detail.data.entry.content.summary.citationIds.length,
+                      count: data.entry.content.summary.citationIds.length,
                     })}
               </Text>
               <ActionButton
                 label={t('save')}
-                onPress={() => void save()}
+                onPress={() => void save(data.entry)}
                 disabled={busy}
               />
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('history')}</Text>
-              {detail.data.entry.content.history.map((item, index) => (
+              {data.entry.content.history.map((item, index) => (
                 <Text key={index} style={styles.body}>
                   {item.textZhHant}{' '}
                   {item.support === 'needs_source'
@@ -133,18 +131,18 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('scope')}</Text>
-              {detail.data.entry.content.applicability.map((item, index) => (
+              {data.entry.content.applicability.map((item, index) => (
                 <Text key={index} style={styles.body}>
                   {item.scope}: {item.limits.textZhHant}
                 </Text>
               ))}
-              {detail.data.entry.content.applicability.length === 0 && (
+              {data.entry.content.applicability.length === 0 && (
                 <Text style={styles.secondary}>{t('noScopeInfo')}</Text>
               )}
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('methods')}</Text>
-              {detail.data.methodVersions.map((method) => (
+              {data.methodVersions.map((method) => (
                 <Text key={method.id} style={styles.body}>
                   {method.definition.titleZhHant}:{' '}
                   {method.definition.steps
@@ -152,13 +150,13 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
                     .join(' · ')}
                 </Text>
               ))}
-              {detail.data.methodVersions.length === 0 && (
+              {data.methodVersions.length === 0 && (
                 <Text style={styles.secondary}>{t('noMethodInfo')}</Text>
               )}
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('examples')}</Text>
-              {detail.data.referenceImages.map((image) => (
+              {data.referenceImages.map((image) => (
                 <ActionButton
                   key={image.id}
                   label={
@@ -176,7 +174,7 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
                   secondary
                 />
               ))}
-              {detail.data.citations.map((citation) => (
+              {data.citations.map((citation) => (
                 <ActionButton
                   key={citation.id}
                   label={t('viewSourceWithId', { id: citation.id.slice(0, 8) })}

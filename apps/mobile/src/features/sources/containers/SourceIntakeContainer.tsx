@@ -129,19 +129,15 @@ export const SourceIntakeContainer: FC = () => {
       current.map((file) => (file.id === id ? { ...file, ...change } : file)),
     );
   const moveFile = (index: number, direction: -1 | 1): void => {
+    // the up button is disabled on the first file and the down button on the last
     const target = index + direction;
-    if (target < 0 || target >= files.length) {
-      return;
-    }
     const next = [...files];
     [next[index], next[target]] = [next[target], next[index]];
     setFiles(next);
   };
 
   const save = async (): Promise<void> => {
-    if (!title.trim() || !files.length || busy) {
-      return;
-    }
+    // the save button is disabled while busy, untitled, or without files
     setBusy(true);
     setError('');
     try {

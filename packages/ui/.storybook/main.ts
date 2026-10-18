@@ -84,6 +84,18 @@ const browserConfig: UserConfig = {
         ),
       },
       {
+        find: /^expo-camera$/,
+        replacement: fileURLToPath(
+          new URL('./expo-camera.ts', import.meta.url),
+        ),
+      },
+      {
+        find: /^expo-video-thumbnails$/,
+        replacement: fileURLToPath(
+          new URL('./expo-video-thumbnails.ts', import.meta.url),
+        ),
+      },
+      {
         find: /^expo-router$/,
         replacement: fileURLToPath(
           new URL('./expo-router.ts', import.meta.url),

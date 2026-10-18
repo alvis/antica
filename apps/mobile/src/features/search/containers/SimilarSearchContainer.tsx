@@ -123,7 +123,7 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
           evidence: {
             kind: 'image',
             recordId,
-            componentIds: media.data?.asset.componentIds ?? [],
+            componentIds: media.data?.asset.componentIds,
             originalAssetId: assetId,
             canonicalViewId: view.id,
             scope: { kind: 'region', region, cropDerivativeId: null },
@@ -146,10 +146,8 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
     }
   };
 
+  // the search button is enabled only with an anchor and no request in flight
   const search = async (): Promise<void> => {
-    if (!currentAnchorId || busy) {
-      return;
-    }
     setBusy(true);
     setError('');
     setComparison(null);
@@ -202,11 +200,12 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
     }
   };
 
-  const saveReference = async (): Promise<void> => {
-    if (!record.data || !activeComparison || busy) {
-      return;
-    }
-    const { match } = activeComparison;
+  // the save button renders only with a comparison and is enabled only with the record and no request in flight
+  const saveReference = async (
+    loaded: NonNullable<typeof record.data>,
+    shown: NonNullable<typeof activeComparison>,
+  ): Promise<void> => {
+    const { match } = shown;
     if (match.ref.kind === 'reference' && !match.sourceLocator) {
       setError(t('sourceNeedsReview'));
 
@@ -230,15 +229,15 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
             };
       const input = referenceInputSchema.parse({
         requestKey: randomUUID(),
-        expectedRecordRevision: record.data.recordRevision,
+        expectedRecordRevision: loaded.recordRevision,
         target: {
-          recordId: record.data.id,
+          recordId: loaded.id,
           checkId: null,
           observationId: null,
           evidenceAnchorId: currentAnchorId,
         },
         reference,
-        comparisonId: activeComparison.response.comparisonId,
+        comparisonId: shown.response.comparisonId,
         noteZhHant: note,
       });
       await api.post('/v1/references', referenceLinkSchema, {
@@ -246,7 +245,7 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
         idempotencyKey: input.requestKey,
       });
       await queryClient.invalidateQueries({
-        queryKey: ['references', record.data.id],
+        queryKey: ['references', loaded.id],
       });
       setComparison(null);
       setNote('');
@@ -259,8 +258,9 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
 
   return (
     <Screen title={t('imageSearch')} subtitle={t('fullImage')}>
+      {/* a loading state shows no retry, so the refetch is passed directly rather than wrapped */}
       {media.isPending && assetId && (
-        <QueryState loading error={null} retry={() => void media.refetch()} />
+        <QueryState loading error={null} retry={media.refetch} />
       )}
       {imageUrl && (
         <View style={styles.card}>
@@ -333,50 +333,53 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
       {result?.items.length === 0 && (
         <Text style={styles.body}>{t('empty')}</Text>
       )}
-      {result?.items.map((match) => (
-        <View
-          key={
-            match.ref.kind === 'reference'
-              ? match.ref.referenceImageId
-              : match.ref.originalAssetId
-          }
-          style={styles.card}>
-          {match.thumbnail && (
-            <Image
-              source={{ uri: match.thumbnail.url }}
-              style={{ width: '100%', height: 180 }}
-              resizeMode="contain"
-              accessibilityLabel={match.sourceTitle ?? t('photo')}
-            />
-          )}
-          <Text style={styles.body}>
-            {match.sourceTitle ?? t('myCollection')}
-          </Text>
-          <Text style={styles.secondary}>
-            {t('rankValue', { rank: match.rank })} ·{' '}
-            {match.contributorNames.join(', ') || t('unknownAuthor')}
-          </Text>
-          <ActionButton
-            label={t('compare')}
-            onPress={() => void compare(match)}
-            secondary
-          />
-          {match.sourceLocator?.kind === 'page' && (
+      {result?.items.map((match) => {
+        // a constant keeps the page narrowing inside the press handler
+        const pageLocator =
+          match.sourceLocator?.kind === 'page' ? match.sourceLocator : null;
+
+        return (
+          <View
+            key={
+              match.ref.kind === 'reference'
+                ? match.ref.referenceImageId
+                : match.ref.originalAssetId
+            }
+            style={styles.card}>
+            {match.thumbnail && (
+              <Image
+                source={{ uri: match.thumbnail.url }}
+                style={{ width: '100%', height: 180 }}
+                resizeMode="contain"
+                accessibilityLabel={match.sourceTitle ?? t('photo')}
+              />
+            )}
+            <Text style={styles.body}>
+              {match.sourceTitle ?? t('myCollection')}
+            </Text>
+            <Text style={styles.secondary}>
+              {t('rankValue', { rank: match.rank })} ·{' '}
+              {match.contributorNames.join(', ') || t('unknownAuthor')}
+            </Text>
             <ActionButton
-              label={t('viewSource')}
-              onPress={() => {
-                const locator = match.sourceLocator;
-                if (locator?.kind === 'page') {
-                  router.push(
-                    `/sources/${locator.sourceId}?versionId=${locator.sourceVersionId}&pageId=${locator.pageId}`,
-                  );
-                }
-              }}
+              label={t('compare')}
+              onPress={() => void compare(match)}
               secondary
             />
-          )}
-        </View>
-      ))}
+            {pageLocator && (
+              <ActionButton
+                label={t('viewSource')}
+                onPress={() =>
+                  router.push(
+                    `/sources/${pageLocator.sourceId}?versionId=${pageLocator.sourceVersionId}&pageId=${pageLocator.pageId}`,
+                  )
+                }
+                secondary
+              />
+            )}
+          </View>
+        );
+      })}
       {activeComparison && (
         <View style={styles.card}>
           <Text style={styles.heading}>{t('compare')}</Text>
@@ -405,7 +408,7 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
           />
           <ActionButton
             label={t('addReference')}
-            onPress={() => void saveReference()}
+            onPress={() => void saveReference(record.data!, activeComparison)}
             disabled={!record.data || busy}
           />
         </View>

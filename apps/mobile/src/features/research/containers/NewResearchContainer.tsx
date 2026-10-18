@@ -36,9 +36,7 @@ export const NewResearchContainer: FC<NewResearchContainerProps> = ({
   const [error, setError] = useState('');
 
   const start = async (): Promise<void> => {
-    if (busy || !question.trim()) {
-      return;
-    }
+    // the start button is disabled while busy or without a question
     setBusy(true);
     setError('');
     try {

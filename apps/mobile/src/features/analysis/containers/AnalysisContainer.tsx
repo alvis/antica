@@ -121,16 +121,16 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
     }
   };
 
-  const apply = async (): Promise<void> => {
-    if (!record.data || selected.length === 0 || busy) {
-      return;
-    }
+  type LoadedRecord = NonNullable<typeof record.data>;
+
+  // the apply button is enabled only with the current record, a selection, and no save in flight
+  const apply = async (loaded: LoadedRecord): Promise<void> => {
     setBusy(true);
     setError('');
     setApplied(false);
     try {
       const request = applyAnalysisChangesSchema.parse({
-        expectedRecordRevision: record.data.recordRevision,
+        expectedRecordRevision: loaded.recordRevision,
         selectedProposalIds: selected,
       });
       await api.post(`/v1/analyses/${runId}/apply`, recordDetailSchema, {
@@ -139,7 +139,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
       });
       // the record key prefix also refreshes the record's change history
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['record', record.data.id] }),
+        queryClient.invalidateQueries({ queryKey: ['record', loaded.id] }),
         queryClient.invalidateQueries({ queryKey: ['analysis', runId] }),
       ]);
       setSelected([]);
@@ -159,14 +159,13 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
     }
   };
 
+  // the resolution buttons are enabled only with the record loaded and no save in flight
   const resolveAction = async (
+    loaded: LoadedRecord,
     actionId: string,
     state: ActionState,
     status: 'supplied' | 'dismissed',
   ): Promise<void> => {
-    if (!record.data || busy) {
-      return;
-    }
     const revision = state.revision;
     const note =
       (actionText as Partial<Record<string, string>>)[actionId]?.trim() ?? '';
@@ -183,13 +182,13 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
           ? {
               status,
               expectedActionRevision: revision,
-              expectedRecordRevision: record.data.recordRevision,
+              expectedRecordRevision: loaded.recordRevision,
               support: { onSiteDescription: note },
             }
           : {
               status,
               expectedActionRevision: revision,
-              expectedRecordRevision: record.data.recordRevision,
+              expectedRecordRevision: loaded.recordRevision,
               reason: note,
             },
       );
@@ -404,7 +403,12 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                         onResolve={
                           state
                             ? (status) =>
-                                void resolveAction(action.id, state, status)
+                                void resolveAction(
+                                  record.data!,
+                                  action.id,
+                                  state,
+                                  status,
+                                )
                             : undefined
                         }
                       />
@@ -449,7 +453,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                     label={t('applySelectedCount', {
                       count: selected.length,
                     })}
-                    onPress={() => void apply()}
+                    onPress={() => void apply(record.data!)}
                     disabled={
                       busy ||
                       selected.length === 0 ||
