@@ -124,6 +124,8 @@ export const editDraftResultSchema = z.strictObject({
   baseVersions: recordVersionsSchema,
   sourceTranscriptionIds: z.array(entityIdSchema),
   sourceObservationIds: z.array(entityIdSchema),
+  /** the assistant's text answer to the instruction; results stored before replies existed read as empty */
+  replyZhHant: z.string().default(''),
   suggestedDescriptionZhHant: z.string(),
   proposedChanges: z.array(proposedChangeSchema),
 });

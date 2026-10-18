@@ -7,6 +7,7 @@ import {
   createKnowledgeService,
   createLocationService,
   createMediaService,
+  createRecordMessageService,
   createRecordService,
   createResearchService,
   createSourceService,
@@ -135,6 +136,7 @@ function createRecordServices(
 ): Pick<
   ApplicationParams,
   | 'records'
+  | 'recordMessages'
   | 'locations'
   | 'media'
   | 'evidence'
@@ -148,6 +150,12 @@ function createRecordServices(
 
   return {
     records: createRecordService(transaction, clock, ids, storage),
+    recordMessages: createRecordMessageService(
+      transaction,
+      selections.recordEditing,
+      clock,
+      ids,
+    ),
     locations: createLocationService(transaction, ids),
     media: createMediaService(transaction, storage, clock, ids),
     evidence: createEvidenceService(transaction, clock, ids),

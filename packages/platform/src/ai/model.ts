@@ -298,26 +298,33 @@ export function createDevelopmentModels(): ModelAdapters {
         if (!selected.success) {
           return { ...selected, audit: { invocation: null, rawOutput: null } };
         }
-        const description = sourceText.join('\n');
+        const description =
+          sourceText.length > 0
+            ? sourceText.join('\n')
+            : request.instructionZhHant;
+        const changed =
+          description !== '' && description !== context.fields.description;
         const value = editDraftResultSchema.parse({
           editDraftId: request.requestKey,
           recordId: request.recordId,
           baseVersions: context.versions,
           sourceTranscriptionIds: request.transcriptionIds,
           sourceObservationIds: request.observationIds,
+          replyZhHant: changed
+            ? '開發示範：已依你提供的文字整理描述，請確認是否套用。'
+            : '開發示範：描述沒有需要修改的地方。',
           suggestedDescriptionZhHant: description,
-          proposedChanges:
-            description && description !== context.fields.description
-              ? [
-                  {
-                    id: stableId(`${request.requestKey}:description`),
-                    field: 'description',
-                    before: context.fields.description,
-                    proposed: description,
-                    findingIds: [],
-                  },
-                ]
-              : [],
+          proposedChanges: changed
+            ? [
+                {
+                  id: stableId(`${request.requestKey}:description`),
+                  field: 'description',
+                  before: context.fields.description,
+                  proposed: description,
+                  findingIds: [],
+                },
+              ]
+            : [],
         });
 
         return {

@@ -286,6 +286,7 @@ describe('Persistent selective edit adoption', () => {
               baseVersions: context.versions,
               sourceTranscriptionIds: request.transcriptionIds,
               sourceObservationIds: request.observationIds,
+              replyZhHant: 'Reply',
               suggestedDescriptionZhHant: sourceText.join('\n'),
               proposedChanges: [
                 {
@@ -358,6 +359,7 @@ describe('Persistent selective edit adoption', () => {
           { draft },
           models.catalog,
           clock,
+          ids,
         );
         expect(await handler(ownerId, accepted.data.jobId)).toEqual({
           success: true,

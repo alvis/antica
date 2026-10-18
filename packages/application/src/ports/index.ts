@@ -1,5 +1,7 @@
 export { InvalidCursorError } from './cursor.js';
 export { ComponentInUseError } from './repository.js';
+export { RecordMessageCursorError } from './message-cursor.js';
+export { RecordMessageReplayConflictError } from './message-replay-conflict.js';
 
 export type {
   AnalysisRepository,
@@ -28,6 +30,15 @@ export type {
   SourceRegistrationAsset,
   SourceRepository,
 } from './storage.js';
+export type {
+  AssistantReplyInput,
+  CollectorMessageInput,
+  ListedRecordMessage,
+  ListRecordMessagesInput,
+  RecordMessageDraftFacts,
+  RecordMessageRepository,
+  StoredRecordMessage,
+} from './messages.js';
 export type { OperationResult } from './result.js';
 export type { ClockPort, IdPort } from './clock.js';
 export type { CallbackVerificationPort, JobDispatchPort } from './jobs.js';

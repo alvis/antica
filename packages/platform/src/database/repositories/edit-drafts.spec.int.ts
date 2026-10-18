@@ -142,6 +142,7 @@ describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
         baseVersions: versions,
         sourceTranscriptionIds: [transcriptionId],
         sourceObservationIds: [observationId],
+        replyZhHant: '已整理描述',
         suggestedDescriptionZhHant: '表面粗糙',
         proposedChanges: [
           {

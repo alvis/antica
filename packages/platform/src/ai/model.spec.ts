@@ -143,6 +143,7 @@ describe('fn:createDevelopmentModels', () => {
           editDraftId: request.requestKey,
           recordId: request.recordId,
           sourceObservationIds: request.observationIds,
+          replyZhHant: '開發示範：已依你提供的文字整理描述，請確認是否套用。',
           proposedChanges: [
             {
               field: 'description',
@@ -434,12 +435,59 @@ describe('fn:createDevelopmentModels', () => {
       success: true,
       data: {
         value: {
+          replyZhHant: '開發示範：描述沒有需要修改的地方。',
           proposedChanges: [],
           suggestedDescriptionZhHant: currentDescription,
         },
       },
     });
   });
+
+  it.for([
+    ['a typed message', '請把描述改成青瓷', '請把描述改成青瓷'],
+    ['an empty instruction', '', ''],
+  ])(
+    'should use the instruction as the description when %s has no source text',
+    async ([, instruction, expected]) => {
+      const adapters = createDevelopmentModels();
+
+      const result = await adapters.recordEditing.draft(
+        {
+          requestKey: '00000000-0000-4000-8000-000000000053',
+          recordId: emptyPack.input.recordId,
+          expectedRecordRevision: 3,
+          transcriptionIds: [],
+          observationIds: [],
+          instructionZhHant: instruction!,
+        },
+        [],
+        {
+          fields: emptyPack.recordFields,
+          versions: {
+            recordRevision: 3,
+            analysisInputVersion: 2,
+            evidenceVersion: 1,
+          },
+        },
+        { ...selection, role: 'recordEditing' },
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        data: {
+          value: {
+            suggestedDescriptionZhHant: expected,
+            proposedChanges: expected
+              ? [{ field: 'description', proposed: expected }]
+              : [],
+            replyZhHant: expected
+              ? '開發示範：已依你提供的文字整理描述，請確認是否套用。'
+              : '開發示範：描述沒有需要修改的地方。',
+          },
+        },
+      });
+    },
+  );
 
   it('should reject an unknown analysis model without generating any output', async () => {
     const adapters = createDevelopmentModels();

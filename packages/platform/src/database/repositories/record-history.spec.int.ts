@@ -249,6 +249,7 @@ async function createReadyDraft(
       baseVersions: versions,
       sourceTranscriptionIds: [],
       sourceObservationIds: [observationId],
+      replyZhHant: '',
       suggestedDescriptionZhHant: 'Text',
       proposedChanges,
     },

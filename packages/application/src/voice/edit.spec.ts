@@ -137,6 +137,7 @@ function readyRun(
       },
       sourceTranscriptionIds: [],
       sourceObservationIds: [observationId],
+      replyZhHant: '已整理描述',
       suggestedDescriptionZhHant: '青瓷瓶',
       proposedChanges: changes,
     },

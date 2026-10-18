@@ -312,6 +312,7 @@ describe('fn:createAiSdkModels', () => {
       baseVersions: context.versions,
       sourceTranscriptionIds: request.transcriptionIds,
       sourceObservationIds: request.observationIds,
+      replyZhHant: '已修訂',
       suggestedDescriptionZhHant: '修訂',
       proposedChanges: [change],
     };

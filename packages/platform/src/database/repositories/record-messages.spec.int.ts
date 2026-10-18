@@ -1,8 +1,21 @@
 import { randomUUID } from 'node:crypto';
+
 import { describe, expect, inject } from 'vitest';
+
+import {
+  RecordMessageCursorError,
+  RecordMessageReplayConflictError,
+} from '@antica/application/ports';
+
+import { createDatabase } from '../connection.js';
+
 import { Prisma } from '../generated/client.js';
 import { createDatabaseTest } from '../spec/fixtures/runner.js';
+
+import { createRecordMessageRepository } from './record-messages.js';
+
 import type { RunnerDatabase } from '../spec/fixtures/runner.js';
+
 const resources = inject('platformDatabases');
 const it = createDatabaseTest(resources['record-messages']!);
 
@@ -10,6 +23,10 @@ const baseTime = Date.parse('2026-10-16T00:00:00.000Z');
 
 function at(seconds: number): string {
   return new Date(baseTime + seconds * 1000).toISOString();
+}
+
+function encode(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
 
 /**
@@ -83,7 +100,767 @@ async function seed(
   };
 }
 
-describe('database message constraints', { timeout: 30_000 }, () => {
+/**
+ * runs one committed transaction against the owner-scoped repository
+ * @param connection database of the running suite
+ * @param ownerId collector the repository is scoped to
+ * @param operation work performed inside the transaction
+ * @returns the operation result
+ */
+async function withRepository<T>(
+  connection: RunnerDatabase,
+  ownerId: string,
+  operation: (
+    repository: ReturnType<typeof createRecordMessageRepository>,
+  ) => Promise<T>,
+): Promise<T> {
+  return connection.db.$transaction(async (tx) =>
+    operation(createRecordMessageRepository(tx, ownerId)),
+  );
+}
+
+async function countMessages(
+  { db }: RunnerDatabase,
+  recordId: string,
+): Promise<number> {
+  return (await db.recordMessages.findMany({ where: { recordId } })).length;
+}
+
+describe('fn:createRecordMessageRepository', { timeout: 30_000 }, () => {
+  describe('insertCollectorMessage', () => {
+    it('should store a trimmed collector message linked to its edit draft', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const id = randomUUID();
+
+      const stored = await withRepository(
+        connection,
+        ownerId,
+        async (repository) =>
+          repository.insertCollectorMessage({
+            id,
+            recordId,
+            requestKey: randomUUID(),
+            body: '  Please tidy the description  ',
+            editDraftId,
+            createdAt: '2026-10-16T00:00:01Z',
+          }),
+      );
+
+      expect(stored).toEqual({
+        created: true,
+        message: {
+          id,
+          recordId,
+          author: 'collector',
+          body: 'Please tidy the description',
+          editDraftId,
+          createdAt: '2026-10-16T00:00:01.000Z',
+        },
+      });
+    });
+
+    it('should return the stored message and write nothing when the same post is replayed', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const requestKey = randomUUID();
+      const store = async (id: string, body: string, createdAt: string) =>
+        withRepository(connection, ownerId, async (repository) =>
+          repository.insertCollectorMessage({
+            id,
+            recordId,
+            requestKey,
+            body,
+            editDraftId,
+            createdAt,
+          }),
+        );
+      const first = await store(randomUUID(), 'First', at(1));
+
+      const replay = await store(randomUUID(), '  First  ', at(9));
+
+      expect(replay).toEqual({ created: false, message: first.message });
+      expect(await countMessages(connection, recordId)).toBe(1);
+    });
+
+    it('should reject a replayed request key that carries a different body', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const requestKey = randomUUID();
+      const store = async (body: string) =>
+        withRepository(connection, ownerId, async (repository) =>
+          repository.insertCollectorMessage({
+            id: randomUUID(),
+            recordId,
+            requestKey,
+            body,
+            editDraftId,
+            createdAt: at(1),
+          }),
+        );
+      await store('First');
+
+      await expect(store('Replayed with other text')).rejects.toThrow(
+        RecordMessageReplayConflictError,
+      );
+      expect(await countMessages(connection, recordId)).toBe(1);
+    });
+
+    it('should reject a replayed request key that points at another record or edit draft', async ({
+      connection,
+    }) => {
+      const first = await seed(connection);
+      const second = await seed(connection, first.ownerId);
+      const sibling = {
+        editDraftId: await seedDraft(connection, first.ownerId, first.recordId),
+      };
+      const requestKey = randomUUID();
+      const store = async (recordId: string, editDraftId: string) =>
+        withRepository(connection, first.ownerId, async (repository) =>
+          repository.insertCollectorMessage({
+            id: randomUUID(),
+            recordId,
+            requestKey,
+            body: 'Same body',
+            editDraftId,
+            createdAt: at(1),
+          }),
+        );
+      await store(first.recordId, first.editDraftId);
+
+      await expect(store(second.recordId, second.editDraftId)).rejects.toThrow(
+        RecordMessageReplayConflictError,
+      );
+      await expect(store(first.recordId, sibling.editDraftId)).rejects.toThrow(
+        RecordMessageReplayConflictError,
+      );
+      expect(await countMessages(connection, first.recordId)).toBe(1);
+      expect(await countMessages(connection, second.recordId)).toBe(0);
+    });
+
+    it('should reject a blank collector body before touching the database', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+
+      await expect(
+        withRepository(connection, ownerId, async (repository) =>
+          repository.insertCollectorMessage({
+            id: randomUUID(),
+            recordId,
+            requestKey: randomUUID(),
+            body: ' \n\t ',
+            editDraftId,
+            createdAt: at(1),
+          }),
+        ),
+      ).rejects.toThrow('Collector message body must not be blank');
+      expect(await countMessages(connection, recordId)).toBe(0);
+    });
+
+    it('should keep one message when the same request key arrives concurrently', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const requestKey = randomUUID();
+      const racing = createDatabase({ url: connection.url, maxConnections: 2 });
+      try {
+        const results = await Promise.all(
+          [1, 2].map(async () =>
+            racing.db.$transaction(async (tx) =>
+              createRecordMessageRepository(tx, ownerId).insertCollectorMessage(
+                {
+                  id: randomUUID(),
+                  recordId,
+                  requestKey,
+                  body: 'Same post',
+                  editDraftId,
+                  createdAt: at(1),
+                },
+              ),
+            ),
+          ),
+        );
+
+        expect(results.filter((result) => result.created)).toHaveLength(1);
+        expect(new Set(results.map((result) => result.message.id)).size).toBe(
+          1,
+        );
+        expect(await countMessages(connection, recordId)).toBe(1);
+      } finally {
+        await racing.close();
+      }
+    });
+
+    it('should scope request keys to their owner', async ({ connection }) => {
+      const first = await seed(connection);
+      const second = await seed(connection);
+      const requestKey = randomUUID();
+      const store = async (seeded: typeof first) =>
+        withRepository(connection, seeded.ownerId, async (repository) =>
+          repository.insertCollectorMessage({
+            id: randomUUID(),
+            recordId: seeded.recordId,
+            requestKey,
+            body: 'Same key',
+            editDraftId: seeded.editDraftId,
+            createdAt: at(1),
+          }),
+        );
+
+      const results = [await store(first), await store(second)];
+
+      expect(results.map((result) => result.created)).toEqual([true, true]);
+      expect(results[0]!.message.recordId).toBe(first.recordId);
+      expect(results[1]!.message.recordId).toBe(second.recordId);
+    });
+
+    it('should reject a record or edit draft the collector cannot access', async ({
+      connection,
+    }) => {
+      const mine = await seed(connection);
+      const theirs = await seed(connection);
+      const other = await seed(connection, mine.ownerId);
+      const attempt = async (recordId: string, editDraftId: string) =>
+        withRepository(connection, mine.ownerId, async (repository) =>
+          repository.insertCollectorMessage({
+            id: randomUUID(),
+            recordId,
+            requestKey: randomUUID(),
+            body: 'Hello',
+            editDraftId,
+            createdAt: at(1),
+          }),
+        );
+      const inaccessible = 'Record message dependencies are inaccessible';
+
+      await expect(
+        attempt(theirs.recordId, theirs.editDraftId),
+      ).rejects.toThrow(inaccessible);
+      await expect(attempt(randomUUID(), mine.editDraftId)).rejects.toThrow(
+        inaccessible,
+      );
+      await expect(attempt(mine.recordId, theirs.editDraftId)).rejects.toThrow(
+        inaccessible,
+      );
+      await expect(attempt(mine.recordId, randomUUID())).rejects.toThrow(
+        inaccessible,
+      );
+      await expect(attempt(mine.recordId, other.editDraftId)).rejects.toThrow(
+        inaccessible,
+      );
+      expect(await countMessages(connection, mine.recordId)).toBe(0);
+    });
+  });
+
+  describe('insertAssistantReply', () => {
+    it('should store a trimmed assistant reply for the edit draft', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const id = randomUUID();
+
+      const stored = await withRepository(
+        connection,
+        ownerId,
+        async (repository) =>
+          repository.insertAssistantReply({
+            id,
+            recordId,
+            editDraftId,
+            body: ' I suggest two changes. ',
+            createdAt: at(2),
+          }),
+      );
+
+      expect(stored).toEqual({
+        created: true,
+        message: {
+          id,
+          recordId,
+          author: 'assistant',
+          body: 'I suggest two changes.',
+          editDraftId,
+          createdAt: at(2),
+        },
+      });
+    });
+
+    it('should return the first reply and write nothing when the edit draft already has one', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const reply = async (body: string) =>
+        withRepository(connection, ownerId, async (repository) =>
+          repository.insertAssistantReply({
+            id: randomUUID(),
+            recordId,
+            editDraftId,
+            body,
+            createdAt: at(2),
+          }),
+        );
+      const first = await reply('First reply');
+
+      const second = await reply('Second reply');
+
+      expect(second).toEqual({ created: false, message: first.message });
+      expect(await countMessages(connection, recordId)).toBe(1);
+    });
+
+    it('should reject a blank assistant reply before touching the database', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+
+      await expect(
+        withRepository(connection, ownerId, async (repository) =>
+          repository.insertAssistantReply({
+            id: randomUUID(),
+            recordId,
+            editDraftId,
+            body: '   ',
+            createdAt: at(2),
+          }),
+        ),
+      ).rejects.toThrow('Assistant reply body must not be blank');
+      expect(await countMessages(connection, recordId)).toBe(0);
+    });
+
+    it('should allow a collector message and an assistant reply on the same edit draft', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+
+      const [collector, assistant] = await withRepository(
+        connection,
+        ownerId,
+        async (repository) => [
+          await repository.insertCollectorMessage({
+            id: randomUUID(),
+            recordId,
+            requestKey: randomUUID(),
+            body: 'Question',
+            editDraftId,
+            createdAt: at(1),
+          }),
+          await repository.insertAssistantReply({
+            id: randomUUID(),
+            recordId,
+            editDraftId,
+            body: 'Answer',
+            createdAt: at(2),
+          }),
+        ],
+      );
+
+      expect([collector.created, assistant.created]).toEqual([true, true]);
+    });
+
+    it('should reject a record or edit draft the collector cannot access', async ({
+      connection,
+    }) => {
+      const mine = await seed(connection);
+      const theirs = await seed(connection);
+      const other = await seed(connection, mine.ownerId);
+      const attempt = async (recordId: string, editDraftId: string) =>
+        withRepository(connection, mine.ownerId, async (repository) =>
+          repository.insertAssistantReply({
+            id: randomUUID(),
+            recordId,
+            editDraftId,
+            body: 'Reply',
+            createdAt: at(2),
+          }),
+        );
+      const inaccessible = 'Record message dependencies are inaccessible';
+
+      await expect(
+        attempt(theirs.recordId, theirs.editDraftId),
+      ).rejects.toThrow(inaccessible);
+      await expect(attempt(mine.recordId, other.editDraftId)).rejects.toThrow(
+        inaccessible,
+      );
+      await expect(attempt(mine.recordId, randomUUID())).rejects.toThrow(
+        inaccessible,
+      );
+      expect(await countMessages(connection, mine.recordId)).toBe(0);
+    });
+  });
+
+  describe('findCollectorMessage', () => {
+    it('should find the collector message that started the edit draft', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const stored = await withRepository(
+        connection,
+        ownerId,
+        async (repository) => {
+          const collector = await repository.insertCollectorMessage({
+            id: randomUUID(),
+            recordId,
+            requestKey: randomUUID(),
+            body: 'Question',
+            editDraftId,
+            createdAt: at(1),
+          });
+          await repository.insertAssistantReply({
+            id: randomUUID(),
+            recordId,
+            editDraftId,
+            body: 'Answer',
+            createdAt: at(2),
+          });
+
+          return collector.message;
+        },
+      );
+
+      const found = await withRepository(
+        connection,
+        ownerId,
+        async (repository) => repository.findCollectorMessage(editDraftId),
+      );
+
+      expect(found).toEqual(stored);
+    });
+
+    it('should return null for a draft without a collector message, another owner or an unknown draft', async ({
+      connection,
+    }) => {
+      const mine = await seed(connection);
+      const theirs = await seed(connection);
+      await connection.db.recordMessages.createMany({
+        data: {
+          id: randomUUID(),
+          ownerId: theirs.ownerId,
+          recordId: theirs.recordId,
+          editDraftId: theirs.editDraftId,
+          author: 'collector',
+          body: 'Not yours',
+          requestKey: randomUUID(),
+          createdAt: at(1),
+        },
+      });
+      const find = async (editDraftId: string) =>
+        withRepository(connection, mine.ownerId, async (repository) =>
+          repository.findCollectorMessage(editDraftId),
+        );
+
+      expect(await find(mine.editDraftId)).toBeNull();
+      expect(await find(theirs.editDraftId)).toBeNull();
+      expect(await find(randomUUID())).toBeNull();
+    });
+  });
+
+  describe('listByRecord', () => {
+    async function seedConversation(
+      connection: RunnerDatabase,
+      count: number,
+    ): Promise<{ ownerId: string; recordId: string; draftIds: string[] }> {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const draftIds = [editDraftId];
+      for (let pair = 1; pair < Math.ceil(count / 2); pair += 1) {
+        draftIds.push(await seedDraft(connection, ownerId, recordId));
+      }
+      await connection.db.recordMessages.createMany({
+        data: Array.from({ length: count }, (_, index) => ({
+          id: randomUUID(),
+          ownerId,
+          recordId,
+          editDraftId: draftIds[Math.floor(index / 2)]!,
+          author: index % 2 === 0 ? 'collector' : 'assistant',
+          body: `Message ${index}`,
+          requestKey: index % 2 === 0 ? randomUUID() : null,
+          createdAt: at(index),
+        })),
+      });
+
+      return { ownerId, recordId, draftIds };
+    }
+
+    const list = async (
+      connection: RunnerDatabase,
+      ownerId: string,
+      input: Parameters<
+        ReturnType<typeof createRecordMessageRepository>['listByRecord']
+      >[0],
+    ) =>
+      withRepository(connection, ownerId, async (repository) =>
+        repository.listByRecord(input),
+      );
+
+    it('should return an empty page for a record without messages', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId } = await seed(connection);
+
+      expect(await list(connection, ownerId, { recordId })).toEqual({
+        items: [],
+        nextCursor: null,
+      });
+    });
+
+    it('should return the newest messages first page in chronological order', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId } = await seedConversation(connection, 5);
+
+      const page = await list(connection, ownerId, { recordId, limit: 2 });
+
+      expect(page.items.map((item) => item.message.body)).toEqual([
+        'Message 3',
+        'Message 4',
+      ]);
+      expect(page.nextCursor).not.toBeNull();
+    });
+
+    it('should break equal instants by identifier', async ({ connection }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const [low, high] = [randomUUID(), randomUUID()].sort() as [
+        string,
+        string,
+      ];
+      await connection.db.recordMessages.createMany({
+        data: [
+          [randomUUID(), 'late', 5],
+          [high, 'tie high', 1],
+          [low, 'tie low', 1],
+        ].map(([id, body, second]) => ({
+          id: id as string,
+          ownerId,
+          recordId,
+          editDraftId,
+          author: 'collector',
+          requestKey: randomUUID(),
+          body: body as string,
+          createdAt: at(second as number),
+        })),
+      });
+
+      const page = await list(connection, ownerId, { recordId });
+
+      expect(page.items.map((item) => item.message.body)).toEqual([
+        'tie low',
+        'tie high',
+        'late',
+      ]);
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it('should page back through the conversation without gaps or repeats', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId } = await seedConversation(connection, 5);
+      const pages: string[][] = [];
+      const cursors: Array<string | null> = [];
+      let cursor: string | null = null;
+
+      do {
+        const page: Awaited<ReturnType<typeof list>> = await list(
+          connection,
+          ownerId,
+          { recordId, cursor, limit: 2 },
+        );
+        pages.push(page.items.map((item) => item.message.body));
+        cursors.push(page.nextCursor);
+        cursor = page.nextCursor;
+      } while (cursor);
+
+      expect(pages).toEqual([
+        ['Message 3', 'Message 4'],
+        ['Message 1', 'Message 2'],
+        ['Message 0'],
+      ]);
+      expect(cursors.map((value) => value === null)).toEqual([
+        false,
+        false,
+        true,
+      ]);
+    });
+
+    it('should continue past a tie of equal instants', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      const ids = [randomUUID(), randomUUID(), randomUUID()].sort();
+      await connection.db.recordMessages.createMany({
+        data: ids.map((id, index) => ({
+          id,
+          ownerId,
+          recordId,
+          editDraftId,
+          author: 'collector',
+          requestKey: randomUUID(),
+          body: `Tie ${index}`,
+          createdAt: at(1),
+        })),
+      });
+
+      const first = await list(connection, ownerId, { recordId, limit: 2 });
+      const second = await list(connection, ownerId, {
+        recordId,
+        cursor: first.nextCursor,
+        limit: 2,
+      });
+
+      expect(first.items.map((item) => item.message.body)).toEqual([
+        'Tie 1',
+        'Tie 2',
+      ]);
+      expect(second.items.map((item) => item.message.body)).toEqual(['Tie 0']);
+      expect(second.nextCursor).toBeNull();
+    });
+
+    it('should end the last page exactly at the limit without a cursor', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId } = await seedConversation(connection, 4);
+
+      const page = await list(connection, ownerId, { recordId, limit: 4 });
+
+      expect(page.items).toHaveLength(4);
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it('should default to 50 messages and cap a page at the shared maximum', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId } = await seedConversation(connection, 101);
+
+      const [defaulted, capped, floored] = [
+        await list(connection, ownerId, { recordId }),
+        await list(connection, ownerId, { recordId, limit: 1000 }),
+        await list(connection, ownerId, { recordId, limit: 0 }),
+      ];
+
+      expect(defaulted.items).toHaveLength(50);
+      expect(defaulted.items.at(-1)?.message.body).toBe('Message 100');
+      expect(defaulted.nextCursor).not.toBeNull();
+      expect(capped.items).toHaveLength(100);
+      expect(capped.nextCursor).not.toBeNull();
+      expect(floored.items.map((item) => item.message.body)).toEqual([
+        'Message 100',
+      ]);
+    });
+
+    it('should return nothing for a record owned by another collector', async ({
+      connection,
+    }) => {
+      const { recordId } = await seedConversation(connection, 3);
+
+      expect(await list(connection, randomUUID(), { recordId })).toEqual({
+        items: [],
+        nextCursor: null,
+      });
+    });
+
+    it('should reject a malformed cursor', async ({ connection }) => {
+      const { ownerId, recordId } = await seed(connection);
+      const attempt = async (cursor: string) =>
+        list(connection, ownerId, { recordId, cursor });
+
+      await expect(attempt('%%%')).rejects.toThrow(RecordMessageCursorError);
+      await expect(
+        attempt(encode({ createdAt: 'later', id: 'x' })),
+      ).rejects.toThrow(RecordMessageCursorError);
+      await expect(attempt(encode({ id: randomUUID() }))).rejects.toThrow(
+        'Record message cursor is invalid',
+      );
+    });
+
+    it('should carry the draft facts of a waiting draft', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, draftIds } = await seedConversation(
+        connection,
+        2,
+      );
+
+      const page = await list(connection, ownerId, { recordId });
+
+      expect(page.items.map((item) => item.draft)).toEqual(
+        Array.from({ length: 2 }, () => ({
+          status: 'pending',
+          revision: 1,
+          proposedChanges: [],
+          appliedProposalIds: [],
+          jobFailed: false,
+        })),
+      );
+      expect(page.items.map((item) => item.message.editDraftId)).toEqual(
+        Array.from({ length: 2 }, () => draftIds[0]),
+      );
+    });
+
+    it('should carry the proposals, applied proposals and revision of a saved result', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, draftIds } = await seedConversation(
+        connection,
+        2,
+      );
+      const proposal = (id: string, proposed: string) => ({
+        id,
+        field: 'description',
+        before: '',
+        proposed,
+        findingIds: [],
+      });
+      const [first, second] = [randomUUID(), randomUUID()];
+      await connection.db.editDraftRuns.updateMany({
+        data: {
+          status: 'partially_applied',
+          revision: 3,
+          appliedProposalIds: [first],
+          result: {
+            editDraftId: draftIds[0],
+            recordId,
+            baseVersions: {
+              recordRevision: 1,
+              analysisInputVersion: 1,
+              evidenceVersion: 1,
+            },
+            sourceTranscriptionIds: [],
+            sourceObservationIds: [],
+            suggestedDescriptionZhHant: 'text',
+            proposedChanges: [proposal(first, 'one'), proposal(second, 'two')],
+          },
+        },
+        where: { id: draftIds[0]! },
+      });
+      const page = await list(connection, ownerId, { recordId });
+
+      expect(page.items[1]!.draft).toEqual({
+        status: 'partially_applied',
+        revision: 3,
+        proposedChanges: [proposal(first, 'one'), proposal(second, 'two')],
+        appliedProposalIds: [first],
+        jobFailed: false,
+      });
+    });
+
+    it('should report a failed job of the draft', async ({ connection }) => {
+      const { ownerId, recordId } = await seedConversation(connection, 2);
+      await connection.db.jobs.updateMany({
+        data: { state: 'failed', error: { code: 'PROVIDER_UNAVAILABLE' } },
+        where: { ownerId },
+      });
+
+      const page = await list(connection, ownerId, { recordId });
+
+      expect(page.items.map((item) => item.draft.jobFailed)).toEqual([
+        true,
+        true,
+      ]);
+      expect(page.items[0]!.draft.status).toBe('pending');
+    });
+  });
+
   describe('table constraints', () => {
     type Seeded = { ownerId: string; recordId: string; editDraftId: string };
     type NewRow = Prisma.recordMessagesCreateManyInput;
