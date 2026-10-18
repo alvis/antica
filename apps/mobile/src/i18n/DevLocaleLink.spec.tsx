@@ -57,7 +57,7 @@ afterEach(() => {
 describe('fn:devLocaleFromUrl', () => {
   it.each([
     { url: 'antica://?devLocale=zh-Hant', expected: 'zh-Hant' },
-    { url: 'antica://login?devLocale=zh-Hans', expected: 'zh-Hans' },
+    { url: 'antica://login?devLocale=en', expected: 'en' },
     { url: 'antica://?devLocale=system', expected: 'system' },
     { url: 'antica://?devLocale=fr', expected: undefined },
     { url: 'antica://?other=1&devLocale=en#top', expected: 'en' },

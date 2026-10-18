@@ -2,6 +2,8 @@ import { describe, expect, it, jest } from '@jest/globals';
 
 import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 
+import { readLocalPreferences } from '../i18n/preferences';
+
 import { devicePreferences } from './preferences';
 
 jest.mock('expo-secure-store', () => {
@@ -52,6 +54,26 @@ describe('cp:devicePreferences', () => {
     expect(await devicePreferences.read()).toBeNull();
   });
 
+  it.each([
+    {
+      key: 'antica.preferences.v1',
+      value: '{"schemaVersion":1,"interfaceLanguage":"zh-Hans"}',
+    },
+    { key: 'antica.locale', value: 'zh-Hans' },
+  ])(
+    'should read a retired language from $key as Traditional Chinese',
+    async ({ key, value }) => {
+      await deleteItemAsync('antica.preferences.v1');
+      await deleteItemAsync('antica.locale');
+      await setItemAsync(key, value);
+
+      expect(await readLocalPreferences(devicePreferences)).toEqual({
+        schemaVersion: 1,
+        interfaceLanguage: 'zh-Hant',
+      });
+    },
+  );
+
   it('should report a new installation as having no saved choice', async () => {
     jest.mocked(getItemAsync).mockResolvedValueOnce(null);
 
@@ -74,16 +96,16 @@ describe('cp:devicePreferences', () => {
 
   it('should keep an earlier language and its key when the migrated copy cannot be written', async () => {
     jest.mocked(getItemAsync).mockResolvedValueOnce(null);
-    await setItemAsync('antica.locale', 'zh-Hans');
+    await setItemAsync('antica.locale', 'zh-Hant');
     jest
       .mocked(setItemAsync)
       .mockRejectedValueOnce(new Error('Keychain locked.'));
 
     expect(await devicePreferences.read()).toEqual({
       schemaVersion: 1,
-      interfaceLanguage: 'zh-Hans',
+      interfaceLanguage: 'zh-Hant',
     });
-    expect(await getItemAsync('antica.locale')).toBe('zh-Hans');
+    expect(await getItemAsync('antica.locale')).toBe('zh-Hant');
     expect(deleteItemAsync).not.toHaveBeenCalled();
   });
 

@@ -358,7 +358,6 @@ export function createDomQueryStateInteractions(
 const languageLabels = {
   'en': 'Language: English',
   'zh-Hant': '語言：繁體中文',
-  'zh-Hans': '语言：简体中文',
 } as const satisfies Record<Locale, string>;
 
 const LocaleControls: FC = () => {

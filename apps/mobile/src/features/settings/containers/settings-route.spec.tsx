@@ -118,7 +118,7 @@ describe('rc:SettingsRoute', () => {
       readLanguageTags: () => ['zh-CN'],
     });
 
-    expect(screen.getByText('语言 · 跟随系统 · 简体中文')).toBeTruthy();
+    expect(screen.getByText('語言 · 跟隨系統 · 繁體中文')).toBeTruthy();
   });
 
   it('should open the language selector from the Language row', async () => {

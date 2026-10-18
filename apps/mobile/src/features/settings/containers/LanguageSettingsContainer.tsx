@@ -41,7 +41,7 @@ function useHoldHardwareBack(held: boolean): void {
   }, [held]);
 }
 
-/** properties of the four language choices */
+/** properties of the language choices */
 interface LanguageChoicesProps {
   /** selected draft choice */
   draft: InterfaceLanguagePreference;
@@ -54,7 +54,7 @@ interface LanguageChoicesProps {
 }
 
 /**
- * lists the four choices, each language in its own script, as one radio group
+ * lists the choices, each language in its own script, as one radio group
  * @param props choice properties
  * @param props.draft selected draft choice
  * @param props.saving locks the choices while a save runs

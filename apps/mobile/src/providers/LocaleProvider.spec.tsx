@@ -50,7 +50,6 @@ describe('cp:LocaleProvider', () => {
 
   it.each([
     { stored: 'zh-Hant', settings: '設定', messages: '訊息' },
-    { stored: 'zh-Hans', settings: '设置', messages: '消息' },
     { stored: 'en', settings: 'Settings', messages: 'Messages' },
   ] as const)(
     'should restore the saved $stored language on launch',
@@ -71,10 +70,10 @@ describe('cp:LocaleProvider', () => {
 
     expect(view.result.current.resolved).toEqual({
       preference: 'system',
-      locale: 'zh-Hans',
+      locale: 'zh-Hant',
       usedSystemFallback: false,
     });
-    expect(view.result.current.t('settings')).toBe('设置');
+    expect(view.result.current.t('settings')).toBe('設定');
   });
 
   it('should save a choice and switch every message without remounting the screen', async () => {
@@ -90,7 +89,7 @@ describe('cp:LocaleProvider', () => {
     const Switch = (): ReactElement => {
       const { save } = useInterfaceLanguage();
 
-      return <Text onPress={() => void save('zh-Hans')}>switch</Text>;
+      return <Text onPress={() => void save('en')}>switch</Text>;
     };
     await render(
       <LocaleProvider preferences={preferences}>
@@ -102,8 +101,8 @@ describe('cp:LocaleProvider', () => {
 
     await fireEvent.press(screen.getByText('switch'));
 
-    expect(preferences.write.mock.calls).toEqual([[saved('zh-Hans')]]);
-    expect(screen.getByText('使用 WhatsApp 登录')).toBeTruthy();
+    expect(preferences.write.mock.calls).toEqual([[saved('en')]]);
+    expect(screen.getByText('Sign in with WhatsApp')).toBeTruthy();
     expect(mounts).toBe(1);
   });
 
@@ -167,7 +166,7 @@ describe('cp:LocaleProvider', () => {
 
     await act(async () => view.result.current.save('en'));
     await act(async () => {
-      read.resolve(saved('zh-Hans'));
+      read.resolve(saved('zh-Hant'));
       await retry;
     });
 

@@ -10,7 +10,7 @@ import {
 import type { LocalPreferencesPort } from './preferences';
 
 describe('fn:resolveInterfaceLocale', () => {
-  it.each(['zh-Hant', 'zh-Hans', 'en'] as const)(
+  it.each(['zh-Hant', 'en'] as const)(
     'should keep the explicit %s choice whatever the device reports',
     (choice) => {
       expect(resolveInterfaceLocale(choice, ['ja-JP', 'zh-CN'])).toEqual({
@@ -24,23 +24,23 @@ describe('fn:resolveInterfaceLocale', () => {
   it.each([
     { tags: ['zh-Hant-TW'], expected: 'zh-Hant' },
     { tags: ['zh-Hant-CN'], expected: 'zh-Hant' },
-    { tags: ['zh-Hans-HK'], expected: 'zh-Hans' },
-    { tags: ['zh-Hans'], expected: 'zh-Hans' },
+    { tags: ['zh-Hans-HK'], expected: 'zh-Hant' },
+    { tags: ['zh-Hans'], expected: 'zh-Hant' },
     { tags: ['zh-TW'], expected: 'zh-Hant' },
     { tags: ['zh-HK'], expected: 'zh-Hant' },
     { tags: ['zh-MO'], expected: 'zh-Hant' },
-    { tags: ['zh-CN'], expected: 'zh-Hans' },
-    { tags: ['zh-SG'], expected: 'zh-Hans' },
-    { tags: ['zh_cn'], expected: 'zh-Hans' },
+    { tags: ['zh-CN'], expected: 'zh-Hant' },
+    { tags: ['zh-SG'], expected: 'zh-Hant' },
+    { tags: ['zh_cn'], expected: 'zh-Hant' },
     { tags: ['zh'], expected: 'zh-Hant' },
     { tags: ['zh-u-nu-hans'], expected: 'zh-Hant' },
     { tags: ['zh-x-cn'], expected: 'zh-Hant' },
     { tags: ['zh-TW-u-ca-roc'], expected: 'zh-Hant' },
-    { tags: ['zh-Hans-u-sg'], expected: 'zh-Hans' },
+    { tags: ['zh-Hans-u-sg'], expected: 'zh-Hant' },
     { tags: ['en'], expected: 'en' },
     { tags: ['en-GB'], expected: 'en' },
     { tags: ['EN-us'], expected: 'en' },
-    { tags: ['fr-FR', 'yue-HK', 'zh-SG', 'en-US'], expected: 'zh-Hans' },
+    { tags: ['fr-FR', 'yue-HK', 'zh-SG', 'en-US'], expected: 'zh-Hant' },
     { tags: ['ja-JP', 'en-AU', 'zh-TW'], expected: 'en' },
   ])(
     'should follow the first supported device language in $tags',
@@ -66,7 +66,7 @@ describe('fn:resolveInterfaceLocale', () => {
 });
 
 describe('fn:parseLocalPreferences', () => {
-  it.each(['zh-Hant', 'zh-Hans', 'en', 'system'] as const)(
+  it.each(['zh-Hant', 'en', 'system'] as const)(
     'should accept a version-1 %s choice',
     (interfaceLanguage) => {
       expect(
@@ -121,12 +121,12 @@ describe('op:setInterfaceLanguage', () => {
       write: jest.fn<LocalPreferencesPort['write']>(async () => undefined),
     };
 
-    const result = await setInterfaceLanguage(port, 'zh-Hans');
+    const result = await setInterfaceLanguage(port, 'en');
 
     expect(port.write.mock.calls).toEqual([
-      [{ schemaVersion: 1, interfaceLanguage: 'zh-Hans' }],
+      [{ schemaVersion: 1, interfaceLanguage: 'en' }],
     ]);
-    expect(result).toEqual({ schemaVersion: 1, interfaceLanguage: 'zh-Hans' });
+    expect(result).toEqual({ schemaVersion: 1, interfaceLanguage: 'en' });
   });
 
   it('should report a failed write instead of success', async () => {

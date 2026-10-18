@@ -143,13 +143,13 @@ void describe('fn:journeyLocale', () => {
   void it('should run in Traditional Chinese unless another language is requested', () => {
     assert.equal(journeyLocale(undefined), 'zh-Hant');
     assert.equal(journeyLocale('en'), 'en');
-    assert.equal(journeyLocale('zh-Hans'), 'zh-Hans');
+    assert.equal(journeyLocale('zh-Hant'), 'zh-Hant');
   });
 
   void it('should reject a language the app does not offer', () => {
     assert.throws(
       () => journeyLocale('fr'),
-      /Unsupported journey locale fr; use one of en, zh-Hant, zh-Hans\./,
+      /Unsupported journey locale fr; use one of en, zh-Hant\./,
     );
   });
 });
