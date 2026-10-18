@@ -1,9 +1,8 @@
-import { spawnSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import type { SpawnSyncReturns } from 'node:child_process';
+import { processIO } from './maestro-process.ts';
 
 /** interface languages a journey run can select through the app's development link */
 export const journeyLocales = ['en', 'zh-Hant', 'zh-Hans'] as const;
@@ -289,16 +288,17 @@ export function runLanguageSettingsJourney(
 }
 
 /**
- * runs journeys 01–05 and 07–09 in one interface language: request a code, sign in, import and reopen, camera capture, record messages, manual record editing, a labelled set from the in-app camera, then an upload resumed after the app closed; a run in the default language then adds flow 06
+ * requests and verifies the collector code before the media journeys
  * @param run journey settings
- * @param io side effects
+ * @param io journey side effects
+ * @param requestedAt earliest accepted OTP instant
  */
-export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
+function authenticateJourneys(
+  run: MaestroRun,
+  io: RunnerIO,
+  requestedAt: Date,
+): void {
   const flow = (name: string): string => resolve(run.flowDirectory, name);
-  const requestedAt = io.now();
-  const stamp = requestedAt.toISOString().slice(0, secondsTimestampLength);
-  // the name 05 gives the camera record, by which 07 opens it
-  const renamed = `青瓷碗 ${stamp}`;
   io.run(
     maestroStep(run.deviceId, flow('01-request-code.yaml'), {
       APP_ID: run.appId,
@@ -317,102 +317,65 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
       OTP_CODE: otpCode,
     }),
   );
+}
+
+/**
+ * runs journeys 01–05 and 07–09 in one interface language: request a code, sign in, import and reopen, camera capture, record messages, manual record editing, a labelled set from the in-app camera, then an upload resumed after the app closed; a run in the default language then adds flow 06
+ * @param run journey settings
+ * @param io side effects
+ */
+export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
+  const flow = (name: string): string => resolve(run.flowDirectory, name);
+  const requestedAt = io.now();
+  const stamp = requestedAt.toISOString().slice(0, secondsTimestampLength);
+  // the name 05 gives the camera record, by which 07 opens it
+  const renamed = `青瓷碗 ${stamp}`;
+  authenticateJourneys(run, io, requestedAt);
   seedGallerySteps(run.deviceId, run.sampleImagePath).forEach(io.run);
   waitForGalleryIndex(io, run.deviceId, basename(run.sampleImagePath));
-  io.run(
-    maestroStep(run.deviceId, flow('03-capture-reopen.yaml'), {
-      APP_ID: run.appId,
-      MEDIA_PICKER_ITEM: run.mediaPickerItem,
-      ORIGINAL_WORDS: 'Celadon glaze with fine crackle',
-      RECORD_NAME: `E2E ${stamp}`,
-    }),
-  );
-  io.run(
-    maestroStep(run.deviceId, flow('04-camera-capture.yaml'), {
-      APP_ID: run.appId,
-      RECORD_NAME: `Camera ${stamp}`,
-    }),
-  );
-  // talks to the assistant about the camera record from 04 and edits it through a card
-  io.run(
-    maestroStep(run.deviceId, flow('05-record-messages.yaml'), {
-      APP_ID: run.appId,
-      APP_LOCALE: run.locale,
-      RECORD_NAME: `Camera ${stamp}`,
-      NEW_NAME: renamed,
-      NEW_PERIOD: '清代',
-    }),
-  );
-  // edits the same record by hand, now named by 05, and reopens the editor
-  io.run(
-    maestroStep(run.deviceId, flow('07-record-edit.yaml'), {
-      APP_ID: run.appId,
-      RECORD_NAME: renamed,
-      ...recordEditValues(run.locale, stamp),
-    }),
-  );
-  // photographs a set six times in the in-app camera and labels its components (PT-3)
-  io.run(
-    maestroStep(run.deviceId, flow('08-capture-set.yaml'), {
-      APP_ID: run.appId,
-      RECORD_NAME: `Set ${stamp}`,
-    }),
-  );
-  // closes the app with photos unsaved, resumes from the restart prompt, and counts no duplicate (PT-5)
-  io.run(
-    maestroStep(run.deviceId, flow('09-upload-resume.yaml'), {
-      APP_ID: run.appId,
-    }),
-  );
+  const steps: Array<[string, Record<string, string>]> = [
+    [
+      '03-capture-reopen.yaml',
+      {
+        APP_ID: run.appId,
+        MEDIA_PICKER_ITEM: run.mediaPickerItem,
+        ORIGINAL_WORDS: 'Celadon glaze with fine crackle',
+        RECORD_NAME: `E2E ${stamp}`,
+      },
+    ],
+    [
+      '04-camera-capture.yaml',
+      { APP_ID: run.appId, RECORD_NAME: `Camera ${stamp}` },
+    ],
+    [
+      '05-record-messages.yaml',
+      {
+        APP_ID: run.appId,
+        APP_LOCALE: run.locale,
+        RECORD_NAME: `Camera ${stamp}`,
+        NEW_NAME: renamed,
+        NEW_PERIOD: '清代',
+      },
+    ],
+    [
+      '07-record-edit.yaml',
+      {
+        APP_ID: run.appId,
+        RECORD_NAME: renamed,
+        ...recordEditValues(run.locale, stamp),
+      },
+    ],
+    ['08-capture-set.yaml', { APP_ID: run.appId, RECORD_NAME: `Set ${stamp}` }],
+    ['09-upload-resume.yaml', { APP_ID: run.appId }],
+  ];
+  for (const [name, values] of steps) {
+    io.run(maestroStep(run.deviceId, flow(name), values));
+  }
   // flow 06 clears state, so a fresh install starts in the default language
   if (run.locale === defaultJourneyLocale) {
     runLanguageSettingsJourney(run, io);
   }
 }
-
-/**
- * spawns a step synchronously and surfaces spawn errors and non-zero exits
- * @param step command to execute
- * @param stdio inherit output for visibility or pipe it back to the caller
- * @returns the completed process result
- */
-function spawnStep(
-  step: RunStep,
-  stdio: 'inherit' | 'pipe',
-): SpawnSyncReturns<string> {
-  const result = spawnSync(step.command, step.args, {
-    stdio,
-    encoding: 'utf8',
-  });
-  const command = `${step.command} ${step.args.join(' ')}`;
-  if (result.error) {
-    throw new Error(`${command} could not start.`, { cause: result.error });
-  }
-  if (result.status !== 0) {
-    // piped stderr explains the failure; inherited output is already on screen
-    const detail = stdio === 'pipe' ? `: ${result.stderr.trim()}` : '';
-    throw new Error(
-      `${command} exited with ${result.status ?? result.signal}${detail}`,
-    );
-  }
-
-  return result;
-}
-
-/** process-backed side effects for command-line use */
-const processIO: RunnerIO = {
-  run: (step) => void spawnStep(step, 'inherit'),
-  capture: (step) => spawnStep(step, 'pipe').stdout,
-  readText: (path) => readFileSync(path, 'utf8'),
-  now: () => new Date(),
-  pause: (milliseconds) =>
-    void Atomics.wait(
-      new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)),
-      0,
-      0,
-      milliseconds,
-    ),
-};
 
 if (
   process.argv[1] &&
