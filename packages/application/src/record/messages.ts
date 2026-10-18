@@ -111,7 +111,13 @@ export function createRecordMessageService(
             observationIds: [],
             instructionZhHant: input.body,
           },
-          { selection, clock, ids, allowInstructionOnly: true },
+          {
+            selection,
+            clock,
+            ids,
+            allowInstructionOnly: true,
+            allowReadyTranscriptions: true,
+          },
         );
         if (!accepted.success) {
           return accepted;
@@ -176,7 +182,7 @@ export function createRecordMessageService(
           return {
             success: false,
             error: {
-              code: 'REVISION_CONFLICT',
+              code: 'REQUEST_IN_PROGRESS',
               message: 'Another request with this key is in progress',
               retryable: true,
             },

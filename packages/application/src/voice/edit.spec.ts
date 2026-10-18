@@ -392,6 +392,68 @@ describe('fn:createEditDraftService', () => {
     ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
   });
 
+  it('should keep requiring a confirmed transcription for voice edits even when one is ready', async () => {
+    const transcriptionId = '00000000-0000-4000-8000-000000000008';
+    const ready: TranscriptionRunRecord = {
+      detail: {
+        transcriptionId,
+        jobId: '00000000-0000-4000-8000-000000000009',
+        revision: 2,
+        status: 'ready',
+        snapshot: {
+          recordId,
+          recordRevision: 1,
+          audioAssetId: '00000000-0000-4000-8000-000000000010',
+          audioSha256: 'a'.repeat(64),
+          createdAt: now,
+        },
+        result: {
+          transcriptionId,
+          recordId,
+          audioAssetId: '00000000-0000-4000-8000-000000000010',
+          originalText: 'raw',
+          readingTextZhHant: 'reading',
+          detectedLanguages: [],
+          uncertainTerms: [],
+          segments: [],
+        },
+        invocation: null,
+        confirmedObservationId: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      request: {
+        requestKey: transcriptionId,
+        recordId,
+        audioAssetId: '00000000-0000-4000-8000-000000000010',
+        expectedRecordRevision: 1,
+        vocabularyHints: [],
+      },
+      modelSelection: {
+        role: 'transcription',
+        modelId: 'development',
+        profileVersion: '1',
+      },
+    };
+    const ports = fixture({ transcription: ready });
+
+    const result = await ports.service.submit(ownerId, {
+      ...request,
+      transcriptionIds: [transcriptionId],
+      observationIds: [],
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'EVIDENCE_INVALID',
+        message: 'Confirmed transcription does not belong to record',
+        retryable: false,
+      },
+    });
+    expect(ports.current.run).toBeNull();
+  });
+
   it('should apply only the selected proposal with record and draft compare-and-swap', async () => {
     const ports = fixture({ run: readyRun() });
     const first = await ports.service.apply(ownerId, draftId, apply);

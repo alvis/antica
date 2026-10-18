@@ -108,6 +108,30 @@ function confirmed(id: string) {
   };
 }
 
+interface ReadyTranscription {
+  readonly status?: 'pending' | 'ready' | 'confirmed';
+  readonly recordId?: string;
+  readonly reading: string;
+  readonly original?: string;
+}
+
+/** a transcription that has not been confirmed, so no observation exists for it */
+function unconfirmed(id: string, facts: ReadyTranscription) {
+  return {
+    detail: {
+      transcriptionId: id,
+      snapshot: { recordId: facts.recordId ?? recordId },
+      status: facts.status ?? 'ready',
+      confirmedObservationId: null,
+      revision: 4,
+      result: {
+        readingTextZhHant: facts.reading,
+        originalText: facts.original ?? 'original',
+      },
+    },
+  };
+}
+
 interface Stored {
   receipts: Map<string, CommandReceipt>;
   drafts: Map<string, EditDraftRunRecord>;
@@ -125,6 +149,7 @@ function fixture(
   options: {
     readonly record?: RecordDetail | null;
     readonly texts?: Readonly<Record<string, string>>;
+    readonly unconfirmed?: Readonly<Record<string, ReadyTranscription>>;
     readonly draftVanishes?: boolean;
     readonly listed?: readonly ListedRecordMessage[];
     readonly listFailure?: Error;
@@ -139,6 +164,10 @@ function fixture(
     events: 0,
   };
   const texts = options.texts ?? {};
+  const pending = options.unconfirmed ?? {};
+  const getObservation = vi.fn(async (id: string) =>
+    observation(id, texts[id] ?? ''),
+  );
   const insertCollectorMessage = vi.fn(
     async (input: {
       id: string;
@@ -188,10 +217,16 @@ function fixture(
         'record' in options ? (options.record ?? null) : record(),
     },
     transcriptions: {
-      get: async (id: string) => (id in texts ? confirmed(id) : null),
+      get: async (id: string) => {
+        if (id in pending) {
+          return unconfirmed(id, pending[id]!);
+        }
+
+        return id in texts ? confirmed(id) : null;
+      },
     },
     evidence: {
-      getObservation: async (id: string) => observation(id, texts[id] ?? ''),
+      getObservation,
     },
     jobs: {
       create: async () => {
@@ -252,7 +287,13 @@ function fixture(
     { create: () => generatedId },
   );
 
-  return { service, state, insertCollectorMessage, listByRecord };
+  return {
+    service,
+    state,
+    insertCollectorMessage,
+    listByRecord,
+    getObservation,
+  };
 }
 
 describe('fn:createRecordMessageService', () => {
@@ -409,7 +450,7 @@ describe('fn:createRecordMessageService', () => {
         expect(result).toEqual({
           success: false,
           error: {
-            code: 'REVISION_CONFLICT',
+            code: 'REQUEST_IN_PROGRESS',
             message: 'Another request with this key is in progress',
             retryable: true,
           },
@@ -546,6 +587,132 @@ describe('fn:createRecordMessageService', () => {
         error: { code: 'VALIDATION_FAILED' },
       });
       expect(ports.state.messages).toEqual([]);
+    });
+
+    describe('ready transcriptions', () => {
+      const spoken = { reading: '  請改成青瓷瓶 ', original: 'raw words' };
+
+      it('should accept a ready transcription that is not confirmed and freeze its text without creating an observation', async () => {
+        const ports = fixture({
+          unconfirmed: { [firstTranscriptionId]: spoken },
+        });
+
+        const result = await ports.service.post(ownerId, recordId, {
+          ...post,
+          transcriptionIds: [firstTranscriptionId],
+        });
+
+        expect(result).toMatchObject({
+          success: true,
+          data: { message: { body: 'Please tidy the description' } },
+        });
+        const stored = ports.state.drafts.get(requestKey)!;
+        expect(stored.detail.snapshot).toMatchObject({
+          transcriptionVersions: [{ id: firstTranscriptionId, revision: 4 }],
+          observationIds: [],
+          sourceText: [
+            {
+              kind: 'transcription',
+              id: firstTranscriptionId,
+              text: spoken.reading,
+            },
+          ],
+        });
+        expect(stored.request).toMatchObject({
+          instructionZhHant: 'Please tidy the description',
+          transcriptionIds: [firstTranscriptionId],
+          observationIds: [],
+        });
+        expect(ports.getObservation).not.toHaveBeenCalled();
+        expect(ports.state.jobs).toBe(1);
+      });
+
+      it('should build the body from the ready text when the body is empty, preferring the reading text', async () => {
+        const ports = fixture({
+          unconfirmed: {
+            [firstTranscriptionId]: spoken,
+            [secondTranscriptionId]: { reading: '', original: 'fallback' },
+          },
+        });
+
+        const result = await ports.service.post(ownerId, recordId, {
+          ...post,
+          body: '',
+          transcriptionIds: [firstTranscriptionId, secondTranscriptionId],
+        });
+
+        expect(result).toMatchObject({
+          success: true,
+          data: { message: { body: '請改成青瓷瓶\nfallback' } },
+        });
+      });
+
+      it('should still accept a confirmed transcription next to a ready one', async () => {
+        const ports = fixture({
+          texts: { [firstTranscriptionId]: 'Confirmed' },
+          unconfirmed: { [secondTranscriptionId]: spoken },
+        });
+
+        const result = await ports.service.post(ownerId, recordId, {
+          ...post,
+          body: '',
+          transcriptionIds: [firstTranscriptionId, secondTranscriptionId],
+        });
+
+        expect(result).toMatchObject({
+          success: true,
+          data: { message: { body: 'Confirmed\n請改成青瓷瓶' } },
+        });
+        expect(ports.getObservation).toHaveBeenCalledOnce();
+      });
+
+      it.for<[string, ReadyTranscription]>([
+        ['is still pending', { ...spoken, status: 'pending' }],
+        [
+          'belongs to another record',
+          { ...spoken, recordId: '00000000-0000-4000-8000-0000000000aa' },
+        ],
+      ])(
+        'should reject a transcription that %s and start nothing',
+        async ([, facts]) => {
+          const ports = fixture({
+            unconfirmed: { [firstTranscriptionId]: facts },
+          });
+
+          const result = await ports.service.post(ownerId, recordId, {
+            ...post,
+            transcriptionIds: [firstTranscriptionId],
+          });
+
+          expect(result).toEqual({
+            success: false,
+            error: {
+              code: 'EVIDENCE_INVALID',
+              message: 'Ready transcription does not belong to record',
+              retryable: false,
+            },
+          });
+          expect(ports.state.drafts.size).toBe(0);
+          expect(ports.state.jobs).toBe(0);
+          expect(ports.state.messages).toEqual([]);
+        },
+      );
+
+      it('should reject a duplicated transcription ID', async () => {
+        const ports = fixture({
+          unconfirmed: { [firstTranscriptionId]: spoken },
+        });
+
+        const result = await ports.service.post(ownerId, recordId, {
+          ...post,
+          transcriptionIds: [firstTranscriptionId, firstTranscriptionId],
+        });
+
+        expect(result).toMatchObject({
+          success: false,
+          error: { code: 'VALIDATION_FAILED' },
+        });
+      });
     });
 
     it('should reject a transcription that is not confirmed for the record', async () => {

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { describe, expect, inject } from 'vitest';
 
@@ -9,12 +9,20 @@ import {
   recordDetailSchema,
   recordMessagePageSchema,
   recordMessagePostedSchema,
+  transcriptionAcceptedSchema,
+  transcriptionDetailSchema,
+  uploadSessionSchema,
 } from '@antica/contracts';
 
 import { createHttpTest } from '../fixtures/http/test.js';
 import { createLocalSettings } from '../fixtures/runtime.js';
 
-import type { RecordEditingPort } from '@antica/application/ports';
+import type { ModelInvocation } from '@antica/contracts';
+
+import type {
+  RecordEditingPort,
+  TranscriptionPort,
+} from '@antica/application/ports';
 
 import type { ApplicationSettings } from '../configuration.js';
 import type { HttpFixture } from '../fixtures/http.js';
@@ -75,6 +83,53 @@ function scripted(inner: RecordEditingPort): RecordEditingPort {
   };
 }
 
+const SPOKEN_ORIGINAL = '呢個瓶有啲鞋';
+const SPOKEN_READING = '這個瓶子有點粗糙';
+
+const scriptedInvocation: ModelInvocation = {
+  requestedModelId: 'development:transcription',
+  effectiveModelId: 'development:transcription',
+  provider: 'development',
+  providerModelVersion: null,
+  adapterKind: 'development',
+  capabilities: {
+    textInput: false,
+    imageInput: false,
+    audioInput: true,
+    structuredOutput: true,
+    toolCalling: false,
+  },
+  role: 'transcription',
+  profileVersion: '1',
+  promptVersion: '1',
+  schemaVersion: '1',
+  effectiveOptions: {},
+  latencyMs: 0,
+  usage: { inputTokens: null, outputTokens: null },
+  finishReason: 'stop',
+  citationCheck: { valid: true, rejectedReferenceIds: [] },
+};
+
+/** gives every audio note a fixed transcript, which the development adapter refuses to do */
+const transcribing: TranscriptionPort = {
+  transcribe: async (request) => ({
+    success: true,
+    data: {
+      value: {
+        transcriptionId: request.requestKey,
+        recordId: request.recordId,
+        audioAssetId: request.audioAssetId,
+        originalText: SPOKEN_ORIGINAL,
+        readingTextZhHant: SPOKEN_READING,
+        detectedLanguages: ['yue'],
+        uncertainTerms: [],
+        segments: [],
+      },
+      invocation: scriptedInvocation,
+    },
+  }),
+};
+
 const base = createLocalSettings();
 const settings: ApplicationSettings = {
   ...base,
@@ -83,6 +138,7 @@ const settings: ApplicationSettings = {
     models: {
       ...base.models.models,
       recordEditing: scripted(base.models.models.recordEditing),
+      transcription: transcribing,
     },
   },
 };
@@ -98,6 +154,78 @@ async function createRecord(fixture: HttpFixture, name = 'Plain vase') {
   );
 
   return recordDetailSchema.parse(await created.json());
+}
+
+/**
+ * records a short voice note on a record and runs its transcription job
+ * @param fixture authenticated API under test
+ * @param recordId record the note belongs to
+ * @param drain whether the transcription job runs, which makes the transcription ready
+ * @returns the transcription ID and its state
+ */
+async function transcribe(
+  fixture: HttpFixture,
+  recordId: string,
+  drain = true,
+) {
+  const bytes = Buffer.alloc(46);
+  bytes.write('RIFF');
+  bytes.writeUInt32LE(38, 4);
+  bytes.write('WAVEfmt ', 8);
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(8000, 24);
+  bytes.writeUInt32LE(16000, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write('data', 36);
+  bytes.writeUInt32LE(2, 40);
+  const started = await fixture.request('/v1/media/uploads', 'POST', {
+    requestKey: randomUUID(),
+    target: { kind: 'record', recordId },
+    kind: 'audio',
+    purpose: 'voice_note',
+    componentIds: [],
+    fileName: 'voice.wav',
+    mimeType: 'audio/wav',
+    byteLength: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  });
+  const upload = uploadSessionSchema.parse(await started.json());
+  if (upload.mode !== 'single') {
+    throw new Error('Expected local single upload');
+  }
+  await fixture.runtime.app.request(upload.putUrl, {
+    method: 'PUT',
+    headers: upload.headers,
+    body: bytes,
+  });
+  await fixture.request(`/v1/media/${upload.assetId}/complete`, 'POST', {
+    requestKey: randomUUID(),
+  });
+  await fixture.runtime.drain();
+  const record = recordDetailSchema.parse(
+    await (await fixture.request(`/v1/records/${recordId}`)).json(),
+  );
+  const submitted = await fixture.request('/v1/transcriptions', 'POST', {
+    requestKey: randomUUID(),
+    recordId,
+    audioAssetId: upload.assetId,
+    expectedRecordRevision: record.recordRevision,
+    vocabularyHints: [],
+  });
+  const accepted = transcriptionAcceptedSchema.parse(await submitted.json());
+  if (drain) {
+    await fixture.runtime.drain();
+  }
+  const detail = transcriptionDetailSchema.parse(
+    await (
+      await fixture.request(`/v1/transcriptions/${accepted.transcriptionId}`)
+    ).json(),
+  );
+
+  return { id: accepted.transcriptionId, detail };
 }
 
 function post(body: string, extra: Record<string, unknown> = {}) {
@@ -369,7 +497,7 @@ describe('fn:createRecordMessageRoutes', () => {
     for (const response of responses.filter(({ status }) => status !== 202)) {
       expect(response.status).toBe(409);
       expect(await response.json()).toMatchObject({
-        code: 'REVISION_CONFLICT',
+        code: 'REQUEST_IN_PROGRESS',
         retryable: true,
       });
     }
@@ -379,6 +507,149 @@ describe('fn:createRecordMessageRoutes', () => {
     expect(await retried.json()).toEqual(await winner.clone().json());
     expect((await conversation(fixture, record.id)).items).toHaveLength(1);
     expect(await fixture.runtime.drain()).toMatchObject({ settled: 1 });
+  });
+
+  describe('with ready transcriptions', () => {
+    it('should accept a ready transcription that was never confirmed, create no observation, and leave the record revision alone', async ({
+      fixture,
+    }) => {
+      const record = await createRecord(fixture);
+      const voice = await transcribe(fixture, record.id);
+      expect(voice.detail).toMatchObject({
+        status: 'ready',
+        confirmedObservationId: null,
+      });
+      const before = recordDetailSchema.parse(
+        await (await fixture.request(`/v1/records/${record.id}`)).json(),
+      );
+      const edited = '請把描述改成：青瓷瓶，表面粗糙';
+
+      const posted = await fixture.request(
+        `/v1/records/${record.id}/messages`,
+        'POST',
+        post(edited, {
+          transcriptionIds: [voice.id],
+          expectedRecordRevision: before.recordRevision,
+        }),
+      );
+
+      expect(posted.status).toBe(202);
+      const accepted = recordMessagePostedSchema.parse(await posted.json());
+      expect(accepted.message.body).toBe(edited);
+      const after = recordDetailSchema.parse(
+        await (await fixture.request(`/v1/records/${record.id}`)).json(),
+      );
+      expect(after.recordRevision).toBe(before.recordRevision);
+      const observations = await fixture.request(
+        `/v1/records/${record.id}/observations`,
+      );
+      expect(await observations.json()).toMatchObject({ items: [] });
+      expect(
+        transcriptionDetailSchema.parse(
+          await (
+            await fixture.request(`/v1/transcriptions/${voice.id}`)
+          ).json(),
+        ),
+      ).toMatchObject({ status: 'ready', confirmedObservationId: null });
+      expect(await fixture.runtime.drain()).toMatchObject({
+        settled: 1,
+        failures: [],
+      });
+      const draft = await (
+        await fixture.request(`/v1/edit-drafts/${accepted.editDraftId}`)
+      ).json();
+      expect(draft).toMatchObject({
+        status: 'ready',
+        snapshot: {
+          observationIds: [],
+          transcriptionVersions: [{ id: voice.id, revision: 2 }],
+          sourceText: [
+            { kind: 'transcription', id: voice.id, text: SPOKEN_READING },
+          ],
+        },
+      });
+      const page = await conversation(fixture, record.id);
+      expect(page.items.map((item) => item.author)).toEqual([
+        'collector',
+        'assistant',
+      ]);
+    });
+
+    it('should store the spoken reading text when the body is empty', async ({
+      fixture,
+    }) => {
+      const record = await createRecord(fixture);
+      const voice = await transcribe(fixture, record.id);
+      const current = recordDetailSchema.parse(
+        await (await fixture.request(`/v1/records/${record.id}`)).json(),
+      );
+
+      const posted = await fixture.request(
+        `/v1/records/${record.id}/messages`,
+        'POST',
+        post('', {
+          transcriptionIds: [voice.id],
+          expectedRecordRevision: current.recordRevision,
+        }),
+      );
+
+      expect(posted.status).toBe(202);
+      expect(
+        recordMessagePostedSchema.parse(await posted.json()),
+      ).toMatchObject({ message: { body: SPOKEN_READING } });
+    });
+
+    it('should reject a transcription whose job has not run and start nothing', async ({
+      fixture,
+    }) => {
+      const record = await createRecord(fixture);
+      const voice = await transcribe(fixture, record.id, false);
+      expect(voice.detail.status).toBe('pending');
+      const current = recordDetailSchema.parse(
+        await (await fixture.request(`/v1/records/${record.id}`)).json(),
+      );
+
+      const posted = await fixture.request(
+        `/v1/records/${record.id}/messages`,
+        'POST',
+        post('Pending', {
+          transcriptionIds: [voice.id],
+          expectedRecordRevision: current.recordRevision,
+        }),
+      );
+
+      expect(posted.status).toBe(422);
+      expect(await posted.json()).toMatchObject({ code: 'EVIDENCE_INVALID' });
+      expect((await conversation(fixture, record.id)).items).toEqual([]);
+    });
+
+    it('should reject a ready transcription that belongs to another record', async ({
+      fixture,
+    }) => {
+      const record = await createRecord(fixture);
+      const other = await createRecord(fixture, 'Other vase');
+      const voice = await transcribe(fixture, other.id);
+      const current = recordDetailSchema.parse(
+        await (await fixture.request(`/v1/records/${record.id}`)).json(),
+      );
+
+      const posted = await fixture.request(
+        `/v1/records/${record.id}/messages`,
+        'POST',
+        post('Wrong record', {
+          transcriptionIds: [voice.id],
+          expectedRecordRevision: current.recordRevision,
+        }),
+      );
+
+      expect(posted.status).toBe(422);
+      expect(await posted.json()).toMatchObject({
+        code: 'EVIDENCE_INVALID',
+        message: 'Ready transcription does not belong to record',
+      });
+      expect((await conversation(fixture, record.id)).items).toEqual([]);
+      expect((await conversation(fixture, other.id)).items).toEqual([]);
+    });
   });
 
   it('should answer 404 for a record that belongs to another collector and write nothing', async ({

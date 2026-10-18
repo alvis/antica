@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from './api-error.js';
 import { ApiTransport } from './transport';
 
 const session = {
@@ -102,6 +103,78 @@ describe('cl:ApiTransport', () => {
       code: 'REQUEST_FAILED',
     });
     expect(session.onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('should keep the code and the retry hint of an in-progress failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        Response.json(
+          {
+            code: 'REQUEST_IN_PROGRESS',
+            message: 'Another request with this key is in progress',
+            retryable: true,
+            requestId: 'request-1',
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    const error = await transport.get('/records', schema).catch((e) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: 'REQUEST_IN_PROGRESS',
+      retryable: true,
+    });
+  });
+
+  it.for([
+    ['a failure the server did not mark retryable', { retryable: false }],
+    ['a failure without a retry hint', {}],
+    ['a retry hint that is not a boolean', { retryable: 'yes' }],
+  ] as const)('should not retry %s', async ([, hint]) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        Response.json(
+          { code: 'REVISION_CONFLICT', message: 'Reload', ...hint },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await expect(transport.get('/records', schema)).rejects.toMatchObject({
+      code: 'REVISION_CONFLICT',
+      retryable: false,
+    });
+  });
+
+  it('should not retry a malformed error body or a failed signed upload', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(new Response('bad gateway', { status: 502 }))
+        .mockResolvedValueOnce(new Response(null, { status: 503 })),
+    );
+
+    await expect(transport.get('/records', schema)).rejects.toMatchObject({
+      code: 'REQUEST_FAILED',
+      retryable: false,
+    });
+    await expect(
+      transport.putSigned('https://upload.test', new Blob(['x']), {}),
+    ).rejects.toMatchObject({ code: 'UPLOAD_FAILED', retryable: false });
+  });
+
+  it('should default the retry hint of a hand-built error to false', () => {
+    const base = { status: 500, code: 'X', message: 'm' };
+
+    expect(new ApiError(base).retryable).toBe(false);
+    expect(new ApiError({ ...base, retryable: true }).retryable).toBe(true);
   });
 
   it('should upload private bytes without session cookies and return the part receipt', async () => {

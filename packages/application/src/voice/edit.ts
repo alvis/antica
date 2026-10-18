@@ -231,6 +231,8 @@ export interface EditDraftSubmitParams {
   readonly ids: IdPort;
   /** accept a request whose only input is its instruction, as a typed conversation message is */
   readonly allowInstructionOnly?: boolean;
+  /** accept transcriptions that are ready but not yet confirmed, as a spoken conversation message is; their text is frozen as source text and no observation exists */
+  readonly allowReadyTranscriptions?: boolean;
 }
 
 /**
@@ -238,7 +240,7 @@ export interface EditDraftSubmitParams {
  * @param unit owner-scoped repositories of the caller's transaction
  * @param ownerId collector submitting the request
  * @param input frozen edit request, whose request key is also the draft ID
- * @param params model selection, clock, ID source, and whether an instruction alone is enough input
+ * @param params model selection, clock, ID source, and whether an instruction alone or ready transcriptions are enough input
  * @returns the draft and job IDs, the earlier ones on an identical replay, or a typed failure that rolls the caller's transaction back
  */
 export async function submitEditDraft(
@@ -250,6 +252,7 @@ export async function submitEditDraft(
     clock,
     ids,
     allowInstructionOnly = false,
+    allowReadyTranscriptions = false,
   }: EditDraftSubmitParams,
 ): Promise<OperationResult<EditDraftAccepted>> {
   const fingerprint = digest(input);
@@ -286,6 +289,21 @@ export async function submitEditDraft(
   > = [];
   for (const id of input.transcriptionIds) {
     const run = await unit.transcriptions.get(id);
+    const ready =
+      allowReadyTranscriptions &&
+      run?.detail.snapshot.recordId === record.id &&
+      run.detail.status === 'ready'
+        ? run.detail.result
+        : null;
+    if (run && ready) {
+      transcriptionVersions.push({ id, revision: run.detail.revision });
+      sourceText.push({
+        kind: 'transcription',
+        id,
+        text: ready.readingTextZhHant || ready.originalText,
+      });
+      continue;
+    }
     if (
       !run ||
       run.detail.snapshot.recordId !== record.id ||
@@ -294,7 +312,9 @@ export async function submitEditDraft(
     ) {
       return failure(
         'EVIDENCE_INVALID',
-        'Confirmed transcription does not belong to record',
+        allowReadyTranscriptions
+          ? 'Ready transcription does not belong to record'
+          : 'Confirmed transcription does not belong to record',
       );
     }
     const observation = await unit.evidence.getObservation(
