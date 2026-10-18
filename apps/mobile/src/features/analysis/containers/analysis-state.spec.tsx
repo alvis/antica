@@ -49,7 +49,7 @@ it('should expose failed analysis recovery without automatically launching anoth
     ),
   );
   expect(screen.queryByText('Processing')).toBeNull();
-  await fireEvent.press(screen.getByRole('button', { name: 'Review item' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Open record' }));
   expect(view.router.push).toHaveBeenCalledWith(
     `/collection/${collectionRecord.id}`,
   );

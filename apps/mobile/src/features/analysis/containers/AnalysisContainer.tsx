@@ -18,7 +18,7 @@ import {
   recordCheckSchema,
   recordDetailSchema,
 } from '@antica/contracts';
-import { ActionButton, TextField, styles } from '@antica/ui';
+import { ActionButton, TextField, colors, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
@@ -26,14 +26,25 @@ import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
 
+import { useProposalFocus } from '../hooks/useProposalFocus';
+
 import type { FC } from 'react';
+
+import type { LayoutChangeEvent } from 'react-native';
 
 import type { Finding, ProposedChange } from '@antica/contracts';
 
-export type AnalysisContainerProps = { runId: string };
+export type AnalysisContainerProps = {
+  runId: string;
+  /** proposal to scroll to and mark, when opened from a record's change history */
+  proposalId?: string;
+};
 type ReferenceKind = 'evidence' | 'observation' | 'citation';
 
-export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
+export const AnalysisContainer: FC<AnalysisContainerProps> = ({
+  runId,
+  proposalId,
+}) => {
   const router = useRouter();
   const { api } = useAuth();
   const { t } = useLocale();
@@ -42,6 +53,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
   const [actionText, setActionText] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [applied, setApplied] = useState(false);
   const checkRequestKeys = useRef(new Map<string, string>());
   const run = useQuery({
     queryKey: ['analysis', runId],
@@ -58,6 +70,8 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
     queryFn: async ({ signal }) =>
       api.get(`/v1/records/${run.data?.recordId}`, recordDetailSchema, signal),
   });
+  // the record's arrival moves the proposals, so the scroll waits for it
+  const focus = useProposalFocus(Boolean(record.data));
   const media = useQueries({
     queries: (run.data?.snapshot.assetIds ?? []).map((id) => ({
       queryKey: ['media', id],
@@ -109,6 +123,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
     }
     setBusy(true);
     setError('');
+    setApplied(false);
     try {
       const request = applyAnalysisChangesSchema.parse({
         expectedRecordRevision: record.data.recordRevision,
@@ -118,11 +133,13 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
         body: request,
         idempotencyKey: randomUUID(),
       });
+      // the record key prefix also refreshes the record's change history
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record', record.data.id] }),
         queryClient.invalidateQueries({ queryKey: ['analysis', runId] }),
       ]);
       setSelected([]);
+      setApplied(true);
     } catch (cause) {
       const failure = cause as Error;
       setError(
@@ -224,6 +241,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
   return (
     <Screen
       title={t('results')}
+      scrollRef={focus.scrollRef}
       subtitle={
         run.data
           ? `${localizeStatus(run.data.status, t)} · ${t('version')} ${run.data.snapshot.analysisInputVersion}`
@@ -249,19 +267,16 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
                 <Text style={styles.body}>{t('jobResumes')}</Text>
               )}
               {run.data.status === 'failed' && (
-                <>
-                  <Text accessibilityRole="alert" style={styles.error}>
-                    {t('analysisFailed')}
-                  </Text>
-                  <ActionButton
-                    label={t('reviewItem')}
-                    onPress={() =>
-                      router.push(`/collection/${run.data.recordId}`)
-                    }
-                    secondary
-                  />
-                </>
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {t('analysisFailed')}
+                </Text>
               )}
+              <ActionButton
+                secondary
+                testID="analysis-open-record"
+                label={t('openRecord')}
+                onPress={() => router.push(`/collection/${run.data.recordId}`)}
+              />
               {record.data?.analysisInputVersion !==
                 run.data.snapshot.analysisInputVersion && (
                 <Text style={styles.error}>{t('newEvidence')}</Text>
@@ -409,7 +424,10 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
                     );
                   })}
                 </View>
-                <View style={styles.card}>
+                <View
+                  testID="analysis-proposals"
+                  style={styles.card}
+                  onLayout={proposalId ? focus.onSectionLayout : undefined}>
                   <Text style={styles.heading}>{t('proposal')}</Text>
                   {output.proposedChanges.map((change) => (
                     <ProposalRow
@@ -426,6 +444,11 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
                         )
                         .map((finding) => finding.text)}
                       checked={selected.includes(change.id)}
+                      onFocusLayout={
+                        change.id === proposalId
+                          ? focus.onProposalLayout
+                          : undefined
+                      }
                       onToggle={() =>
                         setSelected((current) =>
                           current.includes(change.id)
@@ -445,6 +468,26 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({ runId }) => {
                         run.data.snapshot.analysisInputVersion
                     }
                   />
+                  {applied && (
+                    <>
+                      <Text
+                        accessibilityRole="alert"
+                        accessibilityLiveRegion="polite"
+                        style={styles.body}>
+                        {t('appliedToRecord')}
+                      </Text>
+                      <ActionButton
+                        secondary
+                        testID="analysis-applied-history"
+                        label={t('viewChangeHistory')}
+                        onPress={() =>
+                          router.push(
+                            `/collection/${run.data.recordId}/history`,
+                          )
+                        }
+                      />
+                    </>
+                  )}
                 </View>
               </>
             )}
@@ -514,6 +557,8 @@ type ProposalRowProps = {
   status: 'pending' | 'accepted' | 'skipped';
   evidence: string[];
   checked: boolean;
+  /** present only on the proposal opened from a record's change history */
+  onFocusLayout?: (event: LayoutChangeEvent) => void;
   onToggle: () => void;
 };
 const ProposalRow: FC<ProposalRowProps> = ({
@@ -521,17 +566,28 @@ const ProposalRow: FC<ProposalRowProps> = ({
   status,
   evidence,
   checked,
+  onFocusLayout,
   onToggle,
 }) => {
   const { t } = useLocale();
+  const focused = Boolean(onFocusLayout);
 
   return (
     <Pressable
+      testID={`analysis-proposal-${change.id}`}
       accessibilityRole="checkbox"
       accessibilityState={{ checked, disabled: status !== 'pending' }}
+      // the marker is a hint, not a selected state, so it never reads as a preselection
+      accessibilityHint={focused ? t('openedFromHistory') : undefined}
       disabled={status !== 'pending'}
       onPress={onToggle}
-      style={styles.card}>
+      onLayout={onFocusLayout}
+      style={
+        focused
+          ? [styles.card, { borderColor: colors.jade, borderWidth: 2 }]
+          : styles.card
+      }>
+      {focused && <Text style={styles.label}>{t('openedFromHistory')}</Text>}
       <Text style={styles.heading}>
         {checked ? '☑' : '☐'} {localizeProposalField(change.field, t)} ·{' '}
         {localizeStatus(status, t)}

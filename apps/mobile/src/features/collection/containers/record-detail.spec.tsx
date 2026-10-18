@@ -586,3 +586,13 @@ it('should report a saved web reference that cannot be opened', async () => {
   );
   expect(view.router.push).not.toHaveBeenCalled();
 });
+
+it('should open the record’s change history', async () => {
+  const view = await renderMobile(<RecordRoute />, responses);
+
+  await fireEvent.press(await screen.findByTestId('record-open-history'));
+
+  expect(view.router.push).toHaveBeenCalledWith(
+    `/collection/${record.id}/history`,
+  );
+});

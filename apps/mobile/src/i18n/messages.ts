@@ -173,7 +173,6 @@ export const messages = {
     'Analysis could not finish. Review this item and choose Analyze again when ready.',
     '分析未能完成。請檢視此藏品，準備好後再選擇「再次分析」。',
   ],
-  reviewItem: ['Review item', '檢視藏品'],
   version: ['Input version', '輸入版本'],
   jobResumes: [
     'This job continues if you close the app. Return here for its saved result.',
@@ -280,6 +279,29 @@ export const messages = {
   kindRestoration: ['Restoration', '修復'],
   kindInspection: ['Inspection', '檢查'],
   kindOther: ['Other', '其他'],
+  changeHistory: ['Change history', '變更紀錄'],
+  changeHistoryEmpty: [
+    'No suggestions have been accepted or skipped yet.',
+    '尚未採納或略過任何建議。',
+  ],
+  olderChanges: ['Show older changes', '顯示較早的變更'],
+  changeBefore: ['Before', '變更前'],
+  changeAfter: ['After', '變更後'],
+  noValue: ['(empty)', '（空白）'],
+  fromAnalysis: ['Suggested by an analysis', '由分析建議'],
+  openSuggestion: ['Open the suggestion', '開啟這項建議'],
+  editedByVoiceOrMessage: ['Edited by voice or message', '透過語音或訊息編輯'],
+  openRecord: ['Open record', '開啟藏品'],
+  appliedToRecord: [
+    'Applied to the record. The change is in its history.',
+    '已套用至藏品，變更已記入變更紀錄。',
+  ],
+  viewChangeHistory: ['View change history', '查看變更紀錄'],
+  openedFromHistory: ['Opened from change history', '從變更紀錄開啟'],
+  unknownYear: ['unknown', '不詳'],
+  periodCollectorClaim: ['collector’s claim', '藏家判斷'],
+  periodUnconfirmed: ['unconfirmed', '未確認'],
+  refreshFailed: ['Couldn’t refresh.', '無法重新整理。'],
 } as const;
 
 /** key for a localized mobile message */

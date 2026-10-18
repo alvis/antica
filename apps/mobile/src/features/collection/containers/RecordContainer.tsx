@@ -260,6 +260,12 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                 onPress={() => router.push(`/capture?recordId=${recordId}`)}
                 secondary
               />
+              <ActionButton
+                secondary
+                testID="record-open-history"
+                label={t('viewChangeHistory')}
+                onPress={() => router.push(`/collection/${recordId}/history`)}
+              />
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>

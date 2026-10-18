@@ -5,7 +5,7 @@ import { AnalysisContainer } from '../../../features/analysis/containers/Analysi
 import type { AnalysisContainerProps } from '../../../features/analysis/containers/AnalysisContainer';
 
 export default function AnalysisRoute() {
-  const { runId } = useLocalSearchParams<AnalysisContainerProps>();
+  const { runId, proposalId } = useLocalSearchParams<AnalysisContainerProps>();
 
-  return <AnalysisContainer runId={runId} />;
+  return <AnalysisContainer runId={runId} proposalId={proposalId} />;
 }

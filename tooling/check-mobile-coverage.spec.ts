@@ -23,6 +23,10 @@ const runtimeSources = [
   { name: 'mobile.stories.spec.dom.helpers.tsx', runner: 'dom' },
   { name: 'components/QueryState.stories.tsx', runner: 'dom' },
   { name: 'components/Screen.stories.tsx', runner: 'dom' },
+  {
+    name: 'features/collection/containers/RecordHistoryContainer.stories.tsx',
+    runner: 'dom',
+  },
 ];
 
 const covered = {

@@ -21,6 +21,7 @@ module.exports = {
     '!src/mobile.stories.fixtures.tsx',
     '!src/features/analysis/containers/AnalysisContainer.stories.tsx',
     '!src/features/collection/containers/RecordContainer.stories.tsx',
+    '!src/features/collection/containers/RecordHistoryContainer.stories.tsx',
     '!src/features/capture/containers/CaptureContainer.stories.tsx',
     '!src/components/QueryState.stories.tsx',
     '!src/components/Screen.stories.tsx',
