@@ -2626,5 +2626,7 @@ model KnowledgeSearchDocument {
   @@index([ownerId, entryId, revision], map: "knowledge_search_documents_entry_idx")
   @@index([ownerId, language, entryId, revision], map: "knowledge_search_documents_language_idx")
   @@index([searchVector], type: Gin, map: "knowledge_search_documents_vector_idx")
+  /// limits trigram acceleration to compact title, alias and mark text
+  @@index([normalizedTitleAliasesMarks(ops: raw("gin_trgm_ops"))], type: Gin, map: "knowledge_search_documents_compact_trigram_idx")
   @@map("knowledge_search_documents")
 }
