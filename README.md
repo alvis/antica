@@ -20,7 +20,7 @@ The example `.env` contains synthetic local secrets and a test E.164 number; rep
 
 ## Architecture
 
-The pnpm workspace has an Expo app in `apps/mobile`, a Hono API in `apps/api`, portable domain/contracts/application/client/UI packages, and server-only PostgreSQL, media, AI, parsing, and retrieval adapters in `packages/platform`. `tools/evaluation` compares fixed snapshots; `tools/storage-benchmark` measures seeded collection queries. Mobile uses portable contracts; the API composes application use cases with platform adapters. See [architecture decisions](docs/architecture-decisions.md) for the runtime, index, and evidence boundaries.
+The pnpm workspace has an Expo app in `apps/mobile`, a Hono API in `apps/api`, portable domain/contracts/application/client/UI packages, and server-only PostgreSQL, media, AI, parsing, and retrieval adapters in `packages/platform`. `tools/evaluation` compares fixed snapshots. The storage benchmark was retired in the first trial; its recorded PT-20 outcome remains Partial, with the frozen 5,000-record/100,000-media service benchmark passing 16 scenarios at p95 180.10–610.55 ms and four SELECTs per request. Mobile uses portable contracts; the API composes application use cases with platform adapters. See [architecture decisions](docs/architecture-decisions.md) for the runtime, index, and evidence boundaries.
 
 ## Local setup
 
