@@ -5,10 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { expect as expectDom } from 'storybook/test';
 
-import { useAuth } from './auth';
-import * as analysisStories from './features/analysis/AnalysisContainer.stories';
-import * as captureStories from './features/capture/CaptureContainer.stories';
-import * as recordStories from './features/collection/RecordContainer.stories';
+import * as analysisStories from './features/analysis/containers/AnalysisContainer.stories';
+import * as captureStories from './features/capture/containers/CaptureContainer.stories';
+import * as recordStories from './features/collection/containers/RecordContainer.stories';
 import {
   MobileStoryShell,
   storyRecord,
@@ -16,6 +15,7 @@ import {
 } from './mobile.stories.fixtures';
 import { findStoryElement, findStoryText } from './mobile.stories.helpers';
 import { withCanvas } from './mobile.stories.spec.dom.helpers';
+import { useAuth } from './providers/AuthProvider';
 
 import type { ReactElement } from 'react';
 

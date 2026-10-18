@@ -14,9 +14,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export const domCoverageSources = [
   'mobile.stories.helpers.ts',
   'mobile.stories.fixtures.tsx',
-  'features/analysis/AnalysisContainer.stories.tsx',
-  'features/collection/RecordContainer.stories.tsx',
-  'features/capture/CaptureContainer.stories.tsx',
+  'features/analysis/containers/AnalysisContainer.stories.tsx',
+  'features/collection/containers/RecordContainer.stories.tsx',
+  'features/capture/containers/CaptureContainer.stories.tsx',
   'components/QueryState.stories.tsx',
   'components/Screen.stories.tsx',
   'mobile.stories.spec.dom.helpers.tsx',

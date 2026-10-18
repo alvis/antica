@@ -2,6 +2,10 @@ appId: ${APP_ID}
 ---
 - launchApp:
     clearState: true
+# A cold start on a loaded host can take well over a minute in dev builds.
+- extendedWaitUntil:
+    visible: Sign in with WhatsApp
+    timeout: 120000
 - tapOn: Sign in with WhatsApp
 - tapOn: Authorized phone number
 - inputText: ${PHONE_NUMBER}

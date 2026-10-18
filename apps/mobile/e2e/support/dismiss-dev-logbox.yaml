@@ -1,8 +1,10 @@
 # Development builds show React Native LogBox for console errors and warnings;
 # it covers the bottom actions. Close it when present. Release builds never
-# show it (I9). Limits: each check runs once per call, so a LogBox that appears
-# afterwards stays until the next call; the warning-toast close button is
-# unlabelled and tapped by position, tuned for the Pixel 7 test AVD.
+# show it. The state-update check guards against I9, which no longer appears
+# now that the root navigator mounts while the session restores. Limits: each
+# check runs once per call, so a LogBox that appears afterwards stays until the
+# next call; the warning-toast close button is unlabelled and tapped by
+# position, tuned for the Pixel 7 test AVD.
 appId: ${APP_ID}
 ---
 - runFlow:

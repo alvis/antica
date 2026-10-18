@@ -5,6 +5,10 @@
 appId: ${APP_ID}
 ---
 - launchApp
+# A cold start on a loaded host can take well over a minute in dev builds.
+- extendedWaitUntil:
+    visible: Add item
+    timeout: 120000
 - runFlow: support/dismiss-dev-logbox.yaml
 - tapOn: Add item
 - tapOn: Single item

@@ -90,7 +90,7 @@ export default preset('@antica/mobile', {
             include: [
               'src/mobile.stories.helpers.ts',
               'src/mobile.stories.fixtures.tsx',
-              'src/features/{analysis,collection,capture}/*.stories.tsx',
+              'src/features/{analysis,collection,capture}/containers/*.stories.tsx',
               'src/components/QueryState.stories.tsx',
               'src/components/Screen.stories.tsx',
               'src/mobile.stories.spec.dom.helpers.tsx',

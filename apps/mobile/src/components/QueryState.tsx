@@ -2,7 +2,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 
 import { ActionButton, styles } from '@antica/ui';
 
-import { useLocale } from '../locale';
+import { useLocale } from '../i18n/LocaleProvider';
 
 import type { FC, PropsWithChildren } from 'react';
 

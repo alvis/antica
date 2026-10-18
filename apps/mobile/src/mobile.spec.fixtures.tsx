@@ -7,8 +7,8 @@ import { useRouter } from 'expo-router';
 import { ApiTransport } from '@antica/client';
 import { recordDetailSchema } from '@antica/contracts';
 
-import { useAuth } from './auth';
-import { LocaleProvider } from './locale';
+import { LocaleProvider } from './i18n/LocaleProvider';
+import { useAuth } from './providers/AuthProvider';
 
 import type { ReactNode } from 'react';
 
