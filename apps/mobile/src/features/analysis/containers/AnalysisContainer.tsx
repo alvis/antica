@@ -19,6 +19,7 @@ import {
 } from '@antica/contracts';
 import { ActionButton, colors, styles } from '@antica/ui';
 
+import { ProposalValues } from '../../../components/ProposalValues';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
 import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
@@ -580,12 +581,7 @@ const ProposalRow: FC<ProposalRowProps> = ({
         {checked ? '☑' : '☐'} {localizeProposalField(change.field, t)} ·{' '}
         {localizeStatus(status, t)}
       </Text>
-      <Text style={styles.body}>
-        {t('previousValue', { value: JSON.stringify(change.before) })}
-      </Text>
-      <Text style={styles.body}>
-        {t('proposedValue', { value: JSON.stringify(change.proposed) })}
-      </Text>
+      <ProposalValues change={change} />
       {evidence.map((value, index) => (
         <Text key={index} style={styles.secondary}>
           {value}

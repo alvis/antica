@@ -265,6 +265,7 @@ void describe('fn:runMaestroJourneys', () => {
         'maestro /e2e/03-capture-reopen.yaml',
         'maestro /e2e/04-camera-capture.yaml',
         'maestro /e2e/05-record-messages.yaml',
+        'maestro /e2e/07-record-edit.yaml',
       ],
     );
     assert.ok(ran[0]?.args.includes('APP_LOCALE=en'));
@@ -275,6 +276,11 @@ void describe('fn:runMaestroJourneys', () => {
     assert.ok(ran[7]?.args.includes('NEW_NAME=青瓷碗 2026-10-16T10:00:00'));
     assert.ok(ran[7]?.args.includes('NEW_PERIOD=清代'));
     assert.ok(ran[7]?.args.includes('APP_LOCALE=en'));
+    assert.ok(ran[8]?.args.includes('RECORD_NAME=青瓷碗 2026-10-16T10:00:00'));
+    assert.ok(
+      ran[8]?.args.includes('EDITED_NAME=Celadon bowl 2026-10-16T10:00:00'),
+    );
+    assert.ok(ran[8]?.args.includes('LOCATION=Main display-room cabinet'));
   });
 
   void it('should add the language-settings flow around a second code in the default language', () => {
@@ -305,6 +311,21 @@ void describe('fn:runMaestroJourneys', () => {
           '-e',
           'NEW_PERIOD=清代',
           '/e2e/05-record-messages.yaml',
+        ],
+        [
+          '-e',
+          'APP_ID=app.id',
+          '-e',
+          'RECORD_NAME=青瓷碗 2026-10-16T10:00:00',
+          '-e',
+          'EDITED_NAME=清代青瓷碗 2026-10-16T10:00:00',
+          '-e',
+          'HEIGHT=125',
+          '-e',
+          'LOCATION=主陳列室玻璃櫃',
+          '-e',
+          'LOCATION_DETAIL=第二層右上角',
+          '/e2e/07-record-edit.yaml',
         ],
         [
           '-e',

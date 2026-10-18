@@ -1,4 +1,4 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 import { randomUUID } from 'expo-crypto';
 
@@ -11,13 +11,10 @@ import { Image, Linking, Text, View } from 'react-native';
 import {
   cursorPageSchema,
   evidenceCreationSchema,
-  mediaDetailSchema,
   observationSchema,
-  recordDetailSchema,
-  recordPatchSchema,
   referencePageSchema,
 } from '@antica/contracts';
-import { ActionButton, TextField, styles } from '@antica/ui';
+import { ActionButton, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
@@ -30,6 +27,9 @@ import { useStartAnalysis } from '../../analysis/hooks/useStartAnalysis';
 
 import { recordQuery } from '../api/record-query';
 import { RecordAnalysisStatus } from '../components/RecordAnalysisStatus';
+import { RecordEditNotice } from '../components/RecordEditNotice';
+import { RecordFieldSummary } from '../components/RecordFieldSummary';
+import { useRecordFieldLabels } from '../hooks/useRecordFieldLabels';
 import { RecordMessagesEntryContainer } from '../messages/containers/RecordMessagesEntryContainer';
 import { recordAnalysisState } from '../record-analysis-state';
 
@@ -49,7 +49,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   }>();
   const { api } = useAuth();
   const { t } = useLocale();
-  const queryClient = useQueryClient();
   const scrollViewRef = useRef<ScrollView>(null);
   const observationsSectionLayout = useRef<{
     recordId: string;
@@ -57,12 +56,15 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   } | null>(null);
   const observationLayouts = useRef(new Map<string, number>());
   const scrolledObservation = useRef<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const record = useQuery(recordQuery(api, recordId));
+  const fieldLabels = useRecordFieldLabels({
+    knowledgeIds: [
+      ...(record.data?.categoryIds ?? []),
+      ...(record.data?.materialIds ?? []),
+    ],
+    mediaIds: record.data?.mediaIds ?? [],
+  });
   const latestRunId = record.data?.latestRunId;
   const latestRun = useQuery({
     ...analysisRunQuery(api, latestRunId ?? ''),
@@ -87,13 +89,8 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
         signal,
       ),
   });
-  const media = useQueries({
-    queries: (record.data?.mediaIds ?? []).map((id) => ({
-      queryKey: ['media', id],
-      queryFn: async ({ signal }: { signal: AbortSignal }) =>
-        api.get(`/v1/media/${id}`, mediaDetailSchema, signal),
-    })),
-  });
+  // the labels hook reads the record's media once for both uses
+  const media = fieldLabels.mediaQueries;
 
   const scrollToReferencedObservation = useCallback((): void => {
     if (!observationId) {
@@ -121,31 +118,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   useEffect(() => {
     scrollToReferencedObservation();
   }, [scrollToReferencedObservation]);
-
-  const saveEdit = async (): Promise<void> => {
-    if (!record.data || busy) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const request = recordPatchSchema.parse({
-        expectedRevision: record.data.recordRevision,
-        fields: { name: name.trim() || null, description },
-      });
-      await api.patch(`/v1/records/${recordId}`, recordDetailSchema, {
-        body: request,
-        idempotencyKey: randomUUID(),
-      });
-      await queryClient.invalidateQueries({ queryKey: ['record', recordId] });
-      await queryClient.invalidateQueries({ queryKey: ['records'] });
-      setEditing(false);
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const searchImage = async (detail: MediaDetail): Promise<void> => {
     const view = detail.asset.views[0];
@@ -211,6 +183,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
         {record.data && (
           <>
             <View style={styles.card}>
+              <RecordEditNotice recordId={recordId} />
               <RecordAnalysisStatus
                 state={recordAnalysisState(
                   record.data,
@@ -229,14 +202,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                     : undefined
                 }
               />
-              <Text style={styles.secondary}>
-                {t('locationValue', {
-                  location: record.data.location.detail || t('unknown'),
-                })}
-              </Text>
-              <Text style={styles.body}>
-                {record.data.description || t('empty')}
-              </Text>
               <ActionButton
                 label={t('addEvidence')}
                 onPress={() => router.push(`/capture?recordId=${recordId}`)}
@@ -248,8 +213,22 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                 label={t('viewChangeHistory')}
                 onPress={() => router.push(`/collection/${recordId}/history`)}
               />
+              <ActionButton
+                secondary
+                testID="record-edit"
+                label={t('editDetails')}
+                onPress={() =>
+                  router.push(
+                    `/collection/${encodeURIComponent(recordId)}/edit`,
+                  )
+                }
+              />
             </View>
             <RecordMessagesEntryContainer recordId={recordId} />
+            <RecordFieldSummary
+              record={record.data}
+              labels={fieldLabels.labels}
+            />
             <View style={styles.card}>
               <Text style={styles.heading}>
                 {t('photo')} / {t('video')}
@@ -295,39 +274,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                   </View>
                 );
               })}
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.heading}>{t('description')}</Text>
-              {editing ? (
-                <>
-                  <TextField
-                    label={t('name')}
-                    value={name}
-                    onChangeText={setName}
-                  />
-                  <TextField
-                    label={t('description')}
-                    value={description}
-                    onChangeText={setDescription}
-                    multiline
-                  />
-                  <ActionButton
-                    label={t('save')}
-                    onPress={() => void saveEdit()}
-                    disabled={busy}
-                  />
-                </>
-              ) : (
-                <ActionButton
-                  label={t('edit')}
-                  onPress={() => {
-                    setName(record.data.name ?? '');
-                    setDescription(record.data.description);
-                    setEditing(true);
-                  }}
-                  secondary
-                />
-              )}
             </View>
             <View
               style={styles.card}

@@ -235,6 +235,28 @@ export function waitForGalleryIndex(
 }
 
 /**
+ * chooses the values flow 07 types, in the run's interface language
+ * @param locale interface language of the run
+ * @param stamp run timestamp that keeps the edited name unique
+ * @returns the name, height in millimetres, and both location fields to enter
+ */
+export function recordEditValues(
+  locale: JourneyLocale,
+  stamp: string,
+): Record<string, string> {
+  const english = locale === 'en';
+
+  return {
+    EDITED_NAME: english ? `Celadon bowl ${stamp}` : `清代青瓷碗 ${stamp}`,
+    HEIGHT: '125',
+    LOCATION: english ? 'Main display-room cabinet' : '主陳列室玻璃櫃',
+    LOCATION_DETAIL: english
+      ? 'Upper-right corner of the second shelf'
+      : '第二層右上角',
+  };
+}
+
+/**
  * runs flow 06 in two stages around a newly issued code: language choices before sign-in, then after it
  * @param run app, phone, inbox and flow locations of this run
  * @param io process, file and clock effects
@@ -267,7 +289,7 @@ export function runLanguageSettingsJourney(
 }
 
 /**
- * runs journeys 01–05 in one interface language: request a code, sign in, import and reopen, camera capture, then record messages; a run in the default language then adds flow 06
+ * runs journeys 01–05 and 07 in one interface language: request a code, sign in, import and reopen, camera capture, record messages, then manual record editing; a run in the default language then adds flow 06
  * @param run journey settings
  * @param io side effects
  */
@@ -275,6 +297,8 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
   const flow = (name: string): string => resolve(run.flowDirectory, name);
   const requestedAt = io.now();
   const stamp = requestedAt.toISOString().slice(0, secondsTimestampLength);
+  // the name 05 gives the camera record, by which 07 opens it
+  const renamed = `青瓷碗 ${stamp}`;
   io.run(
     maestroStep(run.deviceId, flow('01-request-code.yaml'), {
       APP_ID: run.appId,
@@ -315,8 +339,16 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
       APP_ID: run.appId,
       APP_LOCALE: run.locale,
       RECORD_NAME: `Camera ${stamp}`,
-      NEW_NAME: `青瓷碗 ${stamp}`,
+      NEW_NAME: renamed,
       NEW_PERIOD: '清代',
+    }),
+  );
+  // edits the same record by hand, now named by 05, and reopens the editor
+  io.run(
+    maestroStep(run.deviceId, flow('07-record-edit.yaml'), {
+      APP_ID: run.appId,
+      RECORD_NAME: renamed,
+      ...recordEditValues(run.locale, stamp),
     }),
   );
   // flow 06 clears state, so a fresh install starts in the default language

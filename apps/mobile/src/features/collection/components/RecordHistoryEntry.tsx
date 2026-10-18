@@ -2,7 +2,9 @@ import { Text, View } from 'react-native';
 
 import { ActionButton, styles } from '@antica/ui';
 
+import { FieldValue } from '../../../components/FieldValue';
 import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
+import { formatFieldValue } from '../../../utils/field-value';
 
 import { proposalFieldTestId } from '../proposal-field-test-id';
 
@@ -10,11 +12,7 @@ import type { FC } from 'react';
 
 import type { RecordHistoryEntry as HistoryEntry } from '@antica/contracts';
 
-import type {
-  Locale,
-  PlainMessageKey,
-  Translate,
-} from '../../../i18n/messages';
+import type { Locale, Translate } from '../../../i18n/messages';
 
 /** properties for one adopted or skipped suggestion in a record's history */
 export type RecordHistoryEntryProps = {
@@ -24,52 +22,6 @@ export type RecordHistoryEntryProps = {
   /** opens the suggestion behind the change; absent when it cannot be opened */
   onOpenSource?: () => void;
 };
-
-const periodStatusKeys = {
-  collectorClaim: 'periodCollectorClaim',
-  unconfirmed: 'periodUnconfirmed',
-} as const satisfies Record<string, PlainMessageKey>;
-
-/**
- * renders a field value from a history entry as readable text
- * @param value the before or after value of any record field
- * @param locale active interface locale, which decides the list separator
- * @param t translation function for message keys
- * @returns the value, or a localized placeholder when it is empty
- */
-export function formatHistoryValue(
-  value: HistoryEntry['before'],
-  locale: Locale,
-  t: Translate,
-): string {
-  if (
-    value === null ||
-    value === '' ||
-    (Array.isArray(value) && !value.length)
-  ) {
-    return t('noValue');
-  }
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.join(locale === 'en' ? ', ' : '、');
-  }
-  const period =
-    value.fromYear === undefined && value.toYear === undefined
-      ? value.label
-      : t('periodWithYears', {
-          label: value.label,
-          from: value.fromYear ?? t('unknownYear'),
-          to: value.toYear ?? t('unknownYear'),
-        });
-
-  // the status is shown so a change of status alone is visible
-  return t('periodWithStatus', {
-    period,
-    status: t(periodStatusKeys[value.status]),
-  });
-}
 
 /**
  * formats when a change was decided in the collector's language
@@ -106,8 +58,8 @@ export const RecordHistoryEntry: FC<RecordHistoryEntryProps> = ({
   });
   const fieldId = proposalFieldTestId(entry.field);
   const time = formatHistoryTime(entry.occurredAt, locale);
-  const before = formatHistoryValue(entry.before, locale, t);
-  const after = formatHistoryValue(entry.after, locale, t);
+  const before = formatFieldValue(entry.before, locale, t);
+  const after = formatFieldValue(entry.after, locale, t);
   const source = t(
     entry.source.kind === 'analysis'
       ? 'fromAnalysis'
@@ -130,10 +82,8 @@ export const RecordHistoryEntry: FC<RecordHistoryEntryProps> = ({
         style={{ gap: 12 }}>
         <Text style={styles.heading}>{heading}</Text>
         <Text style={styles.secondary}>{time}</Text>
-        <Text style={styles.label}>{t('changeBefore')}</Text>
-        <Text style={styles.body}>{before}</Text>
-        <Text style={styles.label}>{t('changeAfter')}</Text>
-        <Text style={styles.body}>{after}</Text>
+        <FieldValue label={t('changeBefore')} value={entry.before} />
+        <FieldValue label={t('changeAfter')} value={entry.after} />
         <Text style={styles.secondary}>{source}</Text>
       </View>
       {onOpenSource && (

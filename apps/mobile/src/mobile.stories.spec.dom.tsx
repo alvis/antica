@@ -56,7 +56,7 @@ describe('Mobile container story interactions', () => {
     });
   });
 
-  it('should save an edited record through its rendered form', async () => {
+  it('should show the saved details beside the way into the editor', async () => {
     await withCanvas(<record.SavedRecord />, async (canvas) => {
       const play = record.SavedRecord.play;
       if (!play) {
@@ -64,10 +64,11 @@ describe('Mobile container story interactions', () => {
       }
 
       await play({ canvasElement: canvas });
-      await findStoryText(canvas, 'Blue-and-white bowl, edited');
 
+      expect(
+        canvas.querySelector('[data-testid="record-fields"]')?.textContent,
+      ).toContain('Study cabinet, shelf 2');
       expect(canvas.querySelector('input[aria-label="Name"]')).toBeNull();
-      expect(canvas.textContent).toContain('Blue-and-white bowl, edited');
     });
   });
 

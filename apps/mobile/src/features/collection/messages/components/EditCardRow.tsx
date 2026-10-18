@@ -2,6 +2,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { colors, styles } from '@antica/ui';
 
+import { FieldValue } from '../../../../components/FieldValue';
 import { localizeProposalField } from '../../../../i18n/messages';
 import { useLocale } from '../../../../providers/LocaleProvider';
 
@@ -10,8 +11,6 @@ import { proposalFieldTestId } from '../../proposal-field-test-id';
 import type { FC } from 'react';
 
 import type { ProposedChange } from '@antica/contracts';
-
-import type { Translate } from '../../../../i18n/messages';
 
 import type { ProposalDecision } from '../hooks/useEditCardStates';
 
@@ -27,32 +26,6 @@ export type EditCardRowProps = {
   /** records the collector's choice; absent while the card is applying */
   onDecide?: (decision: ProposalDecision) => void;
 };
-
-/**
- * formats a proposed field value for reading
- * @param value field value before or after the change
- * @param t translation function for message keys
- * @returns readable text, or the translated empty marker
- */
-export function formatProposalValue(
-  value: ProposedChange['before'],
-  t: Translate,
-): string {
-  const text = Array.isArray(value)
-    ? value.join(', ')
-    : typeof value === 'object' && value !== null
-      ? [
-          value.label,
-          [value.fromYear, value.toYear]
-            .filter((year) => year !== undefined)
-            .join('–'),
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      : (value ?? '');
-
-  return text.trim() === '' ? t('noValue') : text;
-}
 
 /**
  * renders one field's previous and proposed value with its confirm and reject choices
@@ -98,22 +71,8 @@ export const EditCardRow: FC<EditCardRowProps> = ({
         paddingTop: 12,
       }}>
       <Text style={styles.label}>{field}</Text>
-      <View style={{ gap: 2 }}>
-        <Text style={styles.secondary}>{t('previous')}</Text>
-        <Text
-          style={[
-            styles.body,
-            { color: colors.muted, textDecorationLine: 'line-through' },
-          ]}>
-          {formatProposalValue(change.before, t)}
-        </Text>
-      </View>
-      <View style={{ gap: 2 }}>
-        <Text style={styles.secondary}>{t('proposed')}</Text>
-        <Text style={styles.body}>
-          {formatProposalValue(change.proposed, t)}
-        </Text>
-      </View>
+      <FieldValue label={t('previous')} value={change.before} superseded />
+      <FieldValue label={t('proposed')} value={change.proposed} />
       {outcome === 'applied' ? (
         <Text
           testID={`record-message-card-applied-${fieldId}-${change.id}`}

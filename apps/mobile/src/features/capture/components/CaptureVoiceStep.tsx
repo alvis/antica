@@ -2,6 +2,7 @@ import { Text, View } from 'react-native';
 
 import { ActionButton, TextField, styles } from '@antica/ui';
 
+import { ProposalValues } from '../../../components/ProposalValues';
 import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -163,12 +164,7 @@ export const CaptureVoiceStep: FC<CaptureVoiceStepProps> = ({
           <Text style={styles.heading}>
             {localizeProposalField(change.field, t)}
           </Text>
-          <Text style={styles.secondary}>
-            {t('previousValue', { value: JSON.stringify(change.before) })}
-          </Text>
-          <Text style={styles.body}>
-            {t('proposedValue', { value: JSON.stringify(change.proposed) })}
-          </Text>
+          <ProposalValues change={change} />
           <ActionButton
             label={
               selectedProposalIds.includes(change.id)

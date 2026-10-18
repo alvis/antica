@@ -66,7 +66,7 @@ const storedRecord = {
   analysisFreshness: 'current' as const,
 };
 /**
- * finds stored content, alone or inside an app-owned label such as the location line
+ * finds stored content, alone or inside an app-owned label
  * @param text stored content
  * @returns every element showing it unchanged
  */
@@ -129,7 +129,7 @@ it('should change only app-owned copy, leaving stored content untouched and send
   for (const text of storedText) {
     expect(stored(text)).not.toHaveLength(0);
   }
-  expect(screen.getByText('位置: 書房櫃第二層')).toBeTruthy();
+  expect(screen.getByText('詳細位置')).toBeTruthy();
   const readsBefore = view.reads.mock.calls.length;
   const cachedBefore = view.client
     .getQueryCache()
@@ -140,7 +140,11 @@ it('should change only app-owned copy, leaving stored content untouched and send
   await fireEvent.press(screen.getByRole('button', { name: '儲存' }));
 
   expect(screen.getByRole('header', { name: 'Language / 語言' })).toBeTruthy();
-  expect(screen.getByText('Location: 書房櫃第二層')).toBeTruthy();
+  // the stored location detail keeps its value beside a translated label
+  expect(screen.getByText('Detailed location')).toBeTruthy();
+  expect(screen.getByTestId('record-field-location-detail')).toHaveTextContent(
+    '書房櫃第二層',
+  );
   for (const text of storedText) {
     expect(stored(text)).not.toHaveLength(0);
   }

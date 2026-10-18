@@ -44,6 +44,12 @@ appId: ${APP_ID}
 # Submit the field to close the keyboard, which otherwise covers Continue.
 - pressKey: Enter
 - waitForAnimationToEnd
+# The collector's general locations are listed above Continue, and an account
+# that already holds several pushes it below the fold.
+- scrollUntilVisible:
+    element:
+      id: capture-details-continue
+    direction: DOWN
 - tapOn:
     id: capture-details-continue
 - runFlow: support/dismiss-dev-logbox.yaml

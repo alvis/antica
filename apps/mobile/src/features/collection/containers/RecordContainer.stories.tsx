@@ -1,11 +1,4 @@
-import { useMemo, useRef } from 'react';
-
-import {
-  analysisRunDetailSchema,
-  mediaDetailSchema,
-  recordDetailSchema,
-  recordPatchSchema,
-} from '@antica/contracts';
+import { analysisRunDetailSchema, mediaDetailSchema } from '@antica/contracts';
 
 import {
   MobileStoryShell,
@@ -16,18 +9,13 @@ import {
   findStoryButton,
   findStoryElement,
   findStoryText,
-  setStoryInputValue,
 } from '../../../mobile.stories.helpers';
 
 import { RecordContainer } from './RecordContainer';
 
 import type { Meta, StoryObj } from '@storybook/react-native-web-vite';
 
-import type { ReactElement } from 'react';
-
 import type { StoryResponses } from '../../../mobile.stories.fixtures';
-
-import type { RecordContainerProps } from './RecordContainer';
 
 const emptyPage = { items: [], nextCursor: null };
 const storyMediaId = '00000000-0000-4000-8000-000000000020';
@@ -108,45 +96,8 @@ const readyResponses = {
   [`GET /v1/records/${storyRecord.id}`]: storyRecord,
   [`GET /v1/records/${storyRecord.id}/observations`]: emptyPage,
   [`GET /v1/records/${storyRecord.id}/references`]: emptyPage,
-  [`PATCH /v1/records/${storyRecord.id}`]: {
-    ...storyRecord,
-    name: 'Blue-and-white bowl, edited',
-    recordRevision: storyRecord.recordRevision + 1,
-  },
+  'GET /v1/locations': [],
 };
-
-/**
- * renders a record story whose fixture persists submitted edits
- * @param args record container properties.
- * @returns stateful record story surface
- */
-function SavedRecordStory(args: Readonly<RecordContainerProps>): ReactElement {
-  const currentRecord = useRef(storyRecord);
-  const responses = useMemo<StoryResponses>(
-    () => ({
-      [`GET /v1/records/${storyRecord.id}`]: () => currentRecord.current,
-      [`GET /v1/records/${storyRecord.id}/observations`]: emptyPage,
-      [`GET /v1/records/${storyRecord.id}/references`]: emptyPage,
-      [`PATCH /v1/records/${storyRecord.id}`]: async (request) => {
-        const patch = recordPatchSchema.parse(await request.json());
-        currentRecord.current = recordDetailSchema.parse({
-          ...currentRecord.current,
-          ...patch.fields,
-          recordRevision: currentRecord.current.recordRevision + 1,
-        });
-
-        return currentRecord.current;
-      },
-    }),
-    [],
-  );
-
-  return (
-    <MobileStoryShell responses={responses}>
-      <RecordContainer {...args} />
-    </MobileStoryShell>
-  );
-}
 
 const meta = {
   title: 'Mobile/Features/Collection/RecordContainer',
@@ -165,21 +116,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** the saved details, both location fields, and the way into the manual editor */
 export const SavedRecord = {
-  render: (args) => <SavedRecordStory {...args} />,
+  render: (args) => (
+    <MobileStoryShell responses={readyResponses}>
+      <RecordContainer {...args} />
+    </MobileStoryShell>
+  ),
   play: async ({ canvasElement }) => {
-    const edit = await findStoryButton(canvasElement, 'Edit');
-    edit.click();
-    const name = await findStoryElement(
-      canvasElement,
-      'input[aria-label="Name"]',
-    );
-    name.focus();
-    setStoryInputValue(name, 'Blue-and-white bowl, edited');
-    const save = await findStoryButton(canvasElement, 'Save');
-    save.click();
-    await findStoryText(canvasElement, `PATCH /v1/records/${storyRecord.id}`);
-    await findStoryText(canvasElement, 'Blue-and-white bowl, edited');
+    await findStoryElement(canvasElement, '[data-testid="record-fields"]');
+    await findStoryText(canvasElement, 'Study cabinet, shelf 2');
+    await findStoryText(canvasElement, '8.4 cm');
+    (await findStoryButton(canvasElement, 'Edit details')).click();
   },
 } satisfies Story;
 

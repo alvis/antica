@@ -17,6 +17,7 @@ export const domCoverageSources = [
   'features/analysis/containers/AnalysisContainer.stories.tsx',
   'features/collection/containers/RecordContainer.stories.tsx',
   'features/collection/containers/RecordHistoryContainer.stories.tsx',
+  'features/collection/containers/RecordEditContainer.stories.tsx',
   'features/capture/containers/CaptureContainer.stories.tsx',
   'features/collection/messages/containers/RecordMessagesContainer.stories.tsx',
   'components/QueryState.stories.tsx',

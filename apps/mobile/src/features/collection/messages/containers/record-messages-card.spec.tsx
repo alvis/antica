@@ -134,7 +134,9 @@ it('should show every proposed field with nothing preselected, apply confirmed f
     within(card).getByText('Nothing changes until you tap “Apply decisions”.'),
   ).toBeTruthy();
   expect(within(card).getByText('Blue vase')).toBeTruthy();
-  expect(within(card).getByText('Kangxi · 1662–1722')).toBeTruthy();
+  expect(
+    within(card).getByText('Kangxi (1662–1722) · unconfirmed'),
+  ).toBeTruthy();
   expect(within(card).getByText('porcelain, blue-and-white')).toBeTruthy();
   expect(within(card).getByText('Old words')).toBeTruthy();
   expect(within(card).getAllByText('(empty)')).toHaveLength(3);
