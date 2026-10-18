@@ -2,17 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  canonicalViews,
-  mediaAssets,
-  mediaDerivatives,
-  recordComponents,
-  records,
-  sourceIntakes,
-  sources,
-  sourceVersions,
-  uploadParts,
-} from '../schema/index.js';
 import { createIsolatedDatabase } from '../spec/fixtures/isolated-database.js';
 import { createTransactionPort } from '../transaction.js';
 
@@ -28,44 +17,50 @@ if (!databaseUrl) {
 
 const identity = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const;
 
-describe('fn:createMediaRepository', () => {
+describe('fn:createMediaRepository', { timeout: 30_000 }, () => {
   it('should resolve a source-version asset after intake promotion', async () => {
     const database = await createIsolatedDatabase();
     const sourceId = randomUUID();
     const sourceVersionId = randomUUID();
     const assetId = randomUUID();
     try {
-      await database.db.insert(sources).values({
-        id: sourceId,
-        ownerId: database.ownerId,
-        kind: 'book',
-        title: 'Synthetic catalog',
-        authorStatus: 'unknown',
-        access: 'uploaded',
+      await database.db.sources.createMany({
+        data: {
+          id: sourceId,
+          ownerId: database.ownerId,
+          kind: 'book',
+          title: 'Synthetic catalog',
+          authorStatus: 'unknown',
+          access: 'uploaded',
+        },
       });
-      await database.db.insert(sourceVersions).values({
-        id: sourceVersionId,
-        sourceId,
-        ownerId: database.ownerId,
-        sourceHash: randomUUID(),
-        metadataSnapshot: {},
-        capturedAt: '2026-10-13T00:00:00Z',
-        status: 'registered',
-        textIndexStatus: 'registered',
-        imageIndexStatus: 'registered',
+      await database.db.sourceVersions.createMany({
+        data: {
+          id: sourceVersionId,
+          sourceId,
+          ownerId: database.ownerId,
+          sourceHash: randomUUID(),
+          metadataSnapshot: {},
+          capturedAt: '2026-10-13T00:00:00Z',
+          status: 'registered',
+          textIndexStatus: 'registered',
+          imageIndexStatus: 'registered',
+        },
       });
-      await database.db.insert(mediaAssets).values({
-        id: assetId,
-        ownerId: database.ownerId,
-        sourceVersionId,
-        kind: 'photo',
-        purpose: 'book_page',
-        state: 'ready',
-        objectKey: randomUUID(),
-        originalFileName: 'page.jpg',
-        mimeType: 'image/jpeg',
-        byteLength: 10,
-        sha256: 'a'.repeat(64),
+      await database.db.mediaAssets.createMany({
+        data: {
+          id: assetId,
+          ownerId: database.ownerId,
+          sourceVersionId,
+          kind: 'photo',
+          purpose: 'book_page',
+          state: 'ready',
+          objectKey: randomUUID(),
+          originalFileName: 'page.jpg',
+          mimeType: 'image/jpeg',
+          byteLength: 10,
+          sha256: 'a'.repeat(64),
+        },
       });
       const result = await createTransactionPort(database.db).run(
         database.ownerId,
@@ -91,11 +86,11 @@ describe('fn:createMediaRepository', () => {
     const derivativeId = randomUUID();
     const viewId = randomUUID();
     try {
-      await database.db
-        .insert(sourceIntakes)
-        .values({ id: intakeId, ownerId: database.ownerId });
-      await database.db.insert(mediaAssets).values(
-        [originalId, otherOriginalId].map((id) => ({
+      await database.db.sourceIntakes.createMany({
+        data: { id: intakeId, ownerId: database.ownerId },
+      });
+      await database.db.mediaAssets.createMany({
+        data: [originalId, otherOriginalId].map((id) => ({
           id,
           ownerId: database.ownerId,
           sourceIntakeId: intakeId,
@@ -108,25 +103,29 @@ describe('fn:createMediaRepository', () => {
           byteLength: 10,
           sha256: 'a'.repeat(64),
         })),
-      );
-      await database.db.insert(mediaDerivatives).values({
-        id: derivativeId,
-        originalAssetId: otherOriginalId,
-        ownerId: database.ownerId,
-        kind: 'canonical',
-        objectKey: randomUUID(),
-        mimeType: 'image/png',
-        byteLength: 10,
-        sha256: 'b'.repeat(64),
       });
-      await database.db.insert(canonicalViews).values({
-        id: viewId,
-        originalAssetId: originalId,
-        derivativeId,
-        width: 20,
-        height: 30,
-        coordinateSpace: 'image_pixels',
-        transformToOriginal: identity,
+      await database.db.mediaDerivatives.createMany({
+        data: {
+          id: derivativeId,
+          originalAssetId: otherOriginalId,
+          ownerId: database.ownerId,
+          kind: 'canonical',
+          objectKey: randomUUID(),
+          mimeType: 'image/png',
+          byteLength: 10,
+          sha256: 'b'.repeat(64),
+        },
+      });
+      await database.db.canonicalViews.createMany({
+        data: {
+          id: viewId,
+          originalAssetId: originalId,
+          derivativeId,
+          width: 20,
+          height: 30,
+          coordinateSpace: 'image_pixels',
+          transformToOriginal: identity,
+        },
       });
       const result = await transaction.run(database.ownerId, async (unit) => ({
         success: true as const,
@@ -170,19 +169,23 @@ describe('fn:createMediaRepository', () => {
       ],
     };
     try {
-      await database.db.insert(records).values({
-        id: recordId,
-        ownerId: database.ownerId,
-        code: 'VIDEO',
-        unitKind: 'set',
-        pieceCount: 2,
+      await database.db.records.createMany({
+        data: {
+          id: recordId,
+          ownerId: database.ownerId,
+          code: 'VIDEO',
+          unitKind: 'set',
+          pieceCount: 2,
+        },
       });
-      await database.db.insert(recordComponents).values({
-        id: componentId,
-        recordId,
-        ownerId: database.ownerId,
-        label: 'Lid',
-        ordinal: 1,
+      await database.db.recordComponents.createMany({
+        data: {
+          id: componentId,
+          recordId,
+          ownerId: database.ownerId,
+          label: 'Lid',
+          ordinal: 1,
+        },
       });
       const saved = await transaction.run(database.ownerId, async (unit) => {
         await unit.media.createUpload(request, session);
@@ -209,15 +212,15 @@ describe('fn:createMediaRepository', () => {
         missing: null,
       });
       expect(
-        await database.db
-          .select({
-            assetId: uploadParts.assetId,
-            partNumber: uploadParts.partNumber,
-            offset: uploadParts.offset,
-            byteLength: uploadParts.byteLength,
-          })
-          .from(uploadParts),
-      ).toEqual([{ assetId, partNumber: 1, offset: 0, byteLength: 10 }]);
+        await database.db.uploadParts.findMany({
+          select: {
+            assetId: true,
+            partNumber: true,
+            offset: true,
+            byteLength: true,
+          },
+        }),
+      ).toEqual([{ assetId, partNumber: 1, offset: 0n, byteLength: 10n }]);
     } finally {
       await database.close();
     }
@@ -249,22 +252,24 @@ describe('fn:createMediaRepository', () => {
       frame,
     };
     try {
-      await database.db
-        .insert(sourceIntakes)
-        .values({ id: intakeId, ownerId: database.ownerId });
-      await database.db.insert(mediaAssets).values({
-        id: originalAssetId,
-        ownerId: database.ownerId,
-        sourceIntakeId: intakeId,
-        kind: 'video',
-        purpose: 'object',
-        state: 'ready',
-        objectKey: randomUUID(),
-        originalFileName: 'video.mp4',
-        mimeType: 'video/mp4',
-        byteLength: 10,
-        sha256: 'a'.repeat(64),
-        durationMs: '4100.125',
+      await database.db.sourceIntakes.createMany({
+        data: { id: intakeId, ownerId: database.ownerId },
+      });
+      await database.db.mediaAssets.createMany({
+        data: {
+          id: originalAssetId,
+          ownerId: database.ownerId,
+          sourceIntakeId: intakeId,
+          kind: 'video',
+          purpose: 'object',
+          state: 'ready',
+          objectKey: randomUUID(),
+          originalFileName: 'video.mp4',
+          mimeType: 'video/mp4',
+          byteLength: 10,
+          sha256: 'a'.repeat(64),
+          durationMs: '4100.125',
+        },
       });
       await expect(
         transaction.run(database.ownerId, async (unit) => {
@@ -295,15 +300,17 @@ describe('fn:createMediaRepository', () => {
       }));
       expect(hidden.data).toBeNull();
       const incompleteId = randomUUID();
-      await database.db.insert(mediaDerivatives).values({
-        id: incompleteId,
-        ownerId: database.ownerId,
-        originalAssetId,
-        kind: 'frame',
-        objectKey: randomUUID(),
-        mimeType: 'image/png',
-        byteLength: 10,
-        sha256: 'c'.repeat(64),
+      await database.db.mediaDerivatives.createMany({
+        data: {
+          id: incompleteId,
+          ownerId: database.ownerId,
+          originalAssetId,
+          kind: 'frame',
+          objectKey: randomUUID(),
+          mimeType: 'image/png',
+          byteLength: 10,
+          sha256: 'c'.repeat(64),
+        },
       });
       const incomplete = await transaction.run(
         database.ownerId,

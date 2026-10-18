@@ -10,7 +10,7 @@ import { provisionHttpResources } from './resources.js';
 import type { DatabaseConnection } from '@antica/platform/database';
 
 const boundary = vi.hoisted(() => ({
-  execute: vi.fn<DatabaseConnection['db']['execute']>(),
+  execute: vi.fn<DatabaseConnection['db']['$executeRawUnsafe']>(),
   close: vi.fn<DatabaseConnection['close']>(async () => {}),
 }));
 
@@ -30,7 +30,8 @@ vi.mock(
     ({
       createDatabase: vi.fn<typeof createDatabase>(() => {
         const db = {
-          execute: boundary.execute as DatabaseConnection['db']['execute'],
+          $executeRawUnsafe:
+            boundary.execute as DatabaseConnection['db']['$executeRawUnsafe'],
         } satisfies Partial<DatabaseConnection['db']>;
 
         return {
@@ -116,7 +117,7 @@ describe('fn:provisionHttpResources', () => {
     const closeFailure = new Error('Admin close unavailable');
     vi.mocked(migrateDatabase).mockRejectedValueOnce(acquisitionFailure);
     boundary.execute.mockImplementationOnce(
-      vi.fn<DatabaseConnection['db']['execute']>(),
+      vi.fn<DatabaseConnection['db']['$executeRawUnsafe']>(),
     );
     boundary.execute.mockRejectedValueOnce(dropFailure);
     boundary.close.mockRejectedValueOnce(closeFailure);
@@ -235,7 +236,7 @@ describe('fn:provisionHttpResources', () => {
     ).rejects.toBe(failure);
 
     const databaseNames = boundary.execute.mock.calls
-      .map(([query]) => query as string)
+      .map(([query]) => query)
       .filter((query) => query.startsWith('CREATE'))
       .map((query) => query.slice('CREATE DATABASE '.length));
     expect(boundary.execute.mock.calls).toEqual([

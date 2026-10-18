@@ -57,9 +57,9 @@ export async function provisionHttpResources(
     const resources: Record<string, HttpResource> = {};
     for (const slot of slots) {
       const databaseName = `antica_api_${randomUUID().replaceAll('-', '')}`;
-      await admin.db.execute(`CREATE DATABASE "${databaseName}"`);
+      await admin.db.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
       disposals.defer(async () => {
-        await admin.db.execute(`DROP DATABASE "${databaseName}"`);
+        await admin.db.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`);
       });
       const databaseUrl = new URL(baseUrl);
       databaseUrl.pathname = `/${databaseName}`;

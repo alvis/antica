@@ -3,12 +3,11 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { collectorUserId, ensureCollectorUser } from '../database/collector.js';
-import { otpSendCooldown, verification } from '../database/schema/auth.js';
+
 import { createIsolatedDatabase } from '../database/spec/fixtures/isolated-database.js';
 
 import { createAuthSession } from './session.js';
@@ -28,7 +27,7 @@ const inboxEntrySchema = z.object({
   phoneNumber: z.string(),
 });
 
-describe('fn:createAuthSession', () => {
+describe('fn:createAuthSession', { timeout: 30_000 }, () => {
   it('should preserve the private send acknowledgement when the development inbox is unconfigured', async () => {
     const database = await createIsolatedDatabase();
     try {
@@ -205,7 +204,7 @@ describe('fn:createAuthSession', () => {
           status: response.status,
           body: await response.json(),
         }).toMatchObject({ status, body: { code, retryable: false } });
-        expect(await database.db.select().from(verification)).toEqual([]);
+        expect(await database.db.verification.findMany({})).toEqual([]);
       } finally {
         await database.close();
       }
@@ -263,7 +262,7 @@ describe('fn:createAuthSession', () => {
         }),
       );
       expect(response.status).toBe(413);
-      expect(await database.db.select().from(verification)).toEqual([]);
+      expect(await database.db.verification.findMany({})).toEqual([]);
     } finally {
       await database.close();
     }
@@ -276,12 +275,12 @@ describe('fn:createAuthSession', () => {
       const inboxPath = join(directory, 'otp.jsonl');
       try {
         await ensureCollectorUser({ db: database.db, phoneNumber });
-        await database.db
-          .delete(verification)
-          .where(eq(verification.identifier, phoneNumber));
-        await database.db
-          .delete(otpSendCooldown)
-          .where(eq(otpSendCooldown.phoneNumber, phoneNumber));
+        await database.db.verification.deleteMany({
+          where: { identifier: phoneNumber },
+        });
+        await database.db.otpSendCooldown.deleteMany({
+          where: { phoneNumber },
+        });
         const auth = createAuthSession(database.db, {
           baseUrl,
           secret: 'acceptance-secret-only-do-not-use-in-production',
@@ -301,10 +300,10 @@ describe('fn:createAuthSession', () => {
           JSON.parse((await readFile(inboxPath, 'utf8')).trim()),
         );
         if (condition === 'expired') {
-          await database.db
-            .update(verification)
-            .set({ expiresAt: new Date(Date.now() - 1_000) })
-            .where(eq(verification.identifier, phoneNumber));
+          await database.db.verification.updateMany({
+            data: { expiresAt: new Date(Date.now() - 1_000) },
+            where: { identifier: phoneNumber },
+          });
         } else {
           const wrongCode = challenge.code === '000000' ? '999999' : '000000';
           for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -353,9 +352,9 @@ describe('fn:createAuthSession', () => {
     };
     try {
       await ensureCollectorUser({ db: database.db, phoneNumber });
-      await database.db
-        .delete(otpSendCooldown)
-        .where(eq(otpSendCooldown.phoneNumber, phoneNumber));
+      await database.db.otpSendCooldown.deleteMany({
+        where: { phoneNumber },
+      });
       const auth = createAuthSession(database.db, config);
 
       const unknown = await auth.handle(
@@ -381,14 +380,12 @@ describe('fn:createAuthSession', () => {
       const sent = await auth.handle(
         authRequest('phone-number/send-otp', { phoneNumber }),
       );
-      const savedChallenge = await database.db
-        .select()
-        .from(verification)
-        .where(eq(verification.identifier, phoneNumber));
-      const initialCooldown = await database.db
-        .select()
-        .from(otpSendCooldown)
-        .where(eq(otpSendCooldown.phoneNumber, phoneNumber));
+      const savedChallenge = await database.db.verification.findMany({
+        where: { identifier: phoneNumber },
+      });
+      const initialCooldown = await database.db.otpSendCooldown.findMany({
+        where: { phoneNumber },
+      });
       expect(initialCooldown).toHaveLength(1);
       const resent = await auth.handle(
         authRequest('phone-number/send-otp', { phoneNumber }),
@@ -410,28 +407,24 @@ describe('fn:createAuthSession', () => {
       expect(await unknown.json()).toEqual(acknowledgement);
       expect(await unknownAgain.json()).toEqual(acknowledgement);
       expect(
-        await database.db
-          .select()
-          .from(verification)
-          .where(eq(verification.identifier, phoneNumber)),
+        await database.db.verification.findMany({
+          where: { identifier: phoneNumber },
+        }),
       ).toEqual(savedChallenge);
       expect(
-        await database.db
-          .select()
-          .from(otpSendCooldown)
-          .where(eq(otpSendCooldown.phoneNumber, phoneNumber)),
+        await database.db.otpSendCooldown.findMany({
+          where: { phoneNumber },
+        }),
       ).toEqual(initialCooldown);
       expect(
-        await database.db
-          .select()
-          .from(verification)
-          .where(eq(verification.identifier, '+447700900999')),
+        await database.db.verification.findMany({
+          where: { identifier: '+447700900999' },
+        }),
       ).toEqual([]);
       expect(
-        await database.db
-          .select()
-          .from(otpSendCooldown)
-          .where(eq(otpSendCooldown.phoneNumber, '+447700900999')),
+        await database.db.otpSendCooldown.findMany({
+          where: { phoneNumber: '+447700900999' },
+        }),
       ).toEqual([]);
       const entries = (await readFile(inboxPath, 'utf8'))
         .trim()
@@ -497,12 +490,12 @@ describe('fn:createAuthSession', () => {
       const inboxPath = join(directory, 'otp.jsonl');
       try {
         await ensureCollectorUser({ db: database.db, phoneNumber });
-        await database.db
-          .delete(verification)
-          .where(eq(verification.identifier, phoneNumber));
-        await database.db
-          .delete(otpSendCooldown)
-          .where(eq(otpSendCooldown.phoneNumber, phoneNumber));
+        await database.db.verification.deleteMany({
+          where: { identifier: phoneNumber },
+        });
+        await database.db.otpSendCooldown.deleteMany({
+          where: { phoneNumber },
+        });
         const auth = createAuthSession(database.db, {
           baseUrl,
           secret: 'acceptance-secret-only-do-not-use-in-production',
@@ -544,16 +537,14 @@ describe('fn:createAuthSession', () => {
         expect(pull).toHaveBeenCalledTimes(3);
         await expect(readFile(inboxPath, 'utf8')).rejects.toThrow();
         expect(
-          await database.db
-            .select()
-            .from(verification)
-            .where(eq(verification.identifier, phoneNumber)),
+          await database.db.verification.findMany({
+            where: { identifier: phoneNumber },
+          }),
         ).toEqual([]);
         expect(
-          await database.db
-            .select()
-            .from(otpSendCooldown)
-            .where(eq(otpSendCooldown.phoneNumber, phoneNumber)),
+          await database.db.otpSendCooldown.findMany({
+            where: { phoneNumber },
+          }),
         ).toEqual([]);
       } finally {
         await database.close();

@@ -1,0 +1,103 @@
+# PostgreSQL persistence
+
+The platform uses Prisma ORM **7.10.1** (`prisma`, `@prisma/client`, and
+`@prisma/adapter-pg`, pinned together). This is the newest matched stable release
+verified for this migration. At implementation time the registry's Prisma CLI
+`latest` tag pointed to an 8.0.0 release candidate without matching client or
+adapter packages. PostgreSQL connections use the driver adapter and the
+TypeScript `prisma-client` generator with ESM output.
+
+`schema.prisma` describes all 102 tables. Field and model mappings preserve the
+existing PostgreSQL names. `prisma.config.ts` in the package selects the schema,
+migrations, seed command, and `DATABASE_URL`. The generated client lives in
+`generated/`, is ignored by Git, and is regenerated during installation and the
+platform typecheck. Do not commit generated client files. Presetter excludes this
+generated directory from source linting. Targeted pnpm overrides omit Better
+Auth's optional Drizzle ORM/CLI peers; authentication uses only its Prisma adapter.
+
+From the repository root, with `DATABASE_URL` exported:
+
+```sh
+pnpm --filter @antica/platform db:generate # regenerate the TypeScript client
+pnpm --filter @antica/platform db:dev --name describe_change # develop a migration
+pnpm --filter @antica/platform db:migrate # deploy committed migrations
+ANTICA_COLLECTOR_PHONE='+447700900123' pnpm --filter @antica/platform db:seed
+```
+
+The seed is development-only. Prisma generation does not require a running
+database or a configured connection URL.
+
+## Native SQL and baseline
+
+`migrations/0_init/migration.sql` is the main schema from migrations 0000–0008, including all 20 check constraints, partial indexes, composite owner
+identities, cascading authentication ownership, defaults, and foreign keys.
+Prisma's partial-index support is enabled by introspection; check constraints
+remain native SQL in the migration. The actual schema contains no generated
+columns, extensions, or triggers. The previous `generated.spec.int.ts` tests
+referred to generated migration DDL rather than generated PostgreSQL columns.
+
+Parameterized `$queryRaw`/`$executeRaw` statements preserve PostgreSQL-specific
+queries and semantics, including transaction time, full-text search, lateral
+projections, and conflict targets using partial indexes. Bind all application
+values through tagged templates or `Prisma.sql`. Never interpolate an unchecked
+identifier or use an unsafe raw-query call with user input.
+
+The idempotent repair for missing latest-analysis pointers is retained at the
+end of the baseline. It does nothing on a fresh database. A baseline deployment
+reproduces the previous final database; it does not upgrade an existing
+Drizzle-managed database. There are no deployed databases to upgrade.
+
+Database `now()` defaults are represented as `@default(dbgenerated())`. Their
+expressions remain in the baseline SQL. This preserves PostgreSQL transaction
+time; this Prisma client evaluates `@default(now())` on the application clock.
+Writing `dbgenerated("now()")` produces a false migration diff against Prisma's
+normalized database default. Native constraint/default changes must be reviewed
+in SQL as well as in the Prisma schema.
+
+Connections explicitly select UTC because the PostgreSQL adapter decodes raw
+`timestamptz` values as UTC. Interactive transactions preserve rollback and
+outbox atomicity, and normalize Prisma unique violations to the existing
+`23505` error contract. Closing a connection permanently disables its adapter,
+matching the previous pool's behavior.
+
+## Equivalence verification
+
+The baseline matches main's migrations 0000–0008 at commit `012f1504e730`. Schema-only dumps from throwaway PostgreSQL 16 databases are identical, with 102 application tables, 20 checks and 168 foreign keys. Prisma's migration diff also reports no schema drift.
+
+For the comparison, omit only the `drizzle` bookkeeping schema and
+`public._prisma_migrations`, then discard pg_dump comments and its random
+`\restrict`/`\unrestrict` tokens. Do not normalize application DDL. Retrieve the
+historical SQL from main at the above commit to repeat the proof; it is intentionally
+absent from the Prisma migration directory.
+
+The generated-schema integration suite independently runs `prisma migrate diff`
+from the committed migration directory to `schema.prisma`, requires an empty
+diff, verifies that a temporary extra model causes exit code 2, then repeats the
+unchanged baseline comparison.
+
+## Recreate a development database
+
+Local databases using the previous migration history must be recreated. Stop
+only your own API process, choose a disposable development database name, and
+create it through `createdb` or your PostgreSQL administration tool. Point
+`DATABASE_URL` at the new database, run `db:migrate`, then `db:seed`. Switch your
+API to that URL. Drop an old development database only after confirming it
+contains no data you need. Do not use `migrate reset` against shared databases.
+
+Integration suites require `ANTICA_TEST_DATABASE_URL` to identify a loopback
+PostgreSQL test database with permission to create/drop databases. Fixtures
+provision unique databases and close their pools before dropping them; the
+platform runner does not migrate or truncate the supplied administrative
+database. API acceptance suites also use that isolated base directly: migrate
+it explicitly with `DATABASE_URL="$ANTICA_TEST_DATABASE_URL" pnpm --filter
+@antica/platform db:migrate` before running API integration tests. The strict
+migration-refusal fixture requires PostgreSQL 16. The migration drift test uses
+an independently owned shadow database and `prisma migrate diff` to compare the
+committed migrations with the Prisma schema.
+
+Documentation consulted:
+
+- https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/generating-prisma-client
+- https://www.prisma.io/docs/orm/reference/prisma-config-reference
+- https://www.prisma.io/docs/orm/overview/databases/postgresql
+- https://www.better-auth.com/docs/adapters/prisma

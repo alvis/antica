@@ -30,3 +30,6 @@ presetter.config.js.map
 .codebase-memory/
 /apps/mobile/android/
 /apps/mobile/ios/
+
+# Prisma client generated during install and typecheck
+packages/platform/src/database/generated/

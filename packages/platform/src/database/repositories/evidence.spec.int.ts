@@ -18,7 +18,7 @@ if (!databaseUrl) {
 
 const now = '2026-10-13T00:00:00.000Z';
 
-describe('fn:createEvidenceRepository', () => {
+describe('fn:createEvidenceRepository', { timeout: 30_000 }, () => {
   it('should round-trip video frame evidence in its original time base', async () => {
     const database = await createIsolatedDatabase();
     const transaction = createTransactionPort(database.db);
@@ -113,6 +113,7 @@ describe('fn:createEvidenceRepository', () => {
           transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
         });
         await unit.evidence.addAnchor(anchor);
+
         return { success: true as const, data: undefined };
       });
       const read = await transaction.run(database.ownerId, async (unit) => ({
@@ -280,6 +281,7 @@ describe('fn:createEvidenceRepository', () => {
         );
         await unit.evidence.addObservation(voice);
         await unit.transcriptions.confirm(transcriptionId, 2, voice.id, now);
+
         return { success: true as const, data: undefined };
       });
       const voiceRead = await transaction.run(
@@ -408,6 +410,7 @@ describe('fn:createEvidenceRepository', () => {
         for (const observation of observations) {
           await unit.evidence.addObservation(observation);
         }
+
         return { success: true as const, data: undefined };
       });
       const first = await transaction.run(database.ownerId, async (unit) => ({

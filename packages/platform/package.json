@@ -11,13 +11,15 @@
   },
   "scripts": {
     "build": "run build",
-    "db:generate": "tsx src/database/generate.ts",
-    "db:migrate": "tsx src/database/migrate.ts",
-    "db:seed": "tsx src/database/seed.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
     "lint": "run lint --",
     "test": "run test --",
     "test:coverage": "run test:coverage --",
-    "typecheck": "tsc6 --project tsconfig.json --noEmit"
+    "typecheck": "prisma generate && tsc6 --project tsconfig.json --noEmit",
+    "db:dev": "prisma migrate dev",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.92",
@@ -31,20 +33,21 @@
     "@qdrant/js-client-rest": "^1.19.0",
     "ai": "^7.0.138",
     "better-auth": "^1.7.7",
-    "drizzle-orm": "^0.45.4",
     "exa-js": "^2.0.0",
     "inngest": "^4.23.0",
     "pdfjs-dist": "^5.4.0",
     "postgres": "^3.4.0",
     "sharp": "^0.34.0",
     "voyageai": "^0.4.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@prisma/client": "7.10.1",
+    "@prisma/adapter-pg": "7.10.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "4.1.11",
-    "drizzle-kit": "^0.31.0",
     "tsx": "^4.20.0",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "prisma": "7.10.1"
   }
 }

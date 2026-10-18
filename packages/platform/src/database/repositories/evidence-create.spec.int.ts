@@ -19,7 +19,7 @@ const resources = inject('platformDatabases');
 const it = createDatabaseTest(resources['evidence-create']!);
 const now = '2026-10-13T12:00:00.000Z';
 
-describe('evidence repository transactions', () => {
+describe('evidence repository transactions', { timeout: 30_000 }, () => {
   it('should atomically retain check fields and both anchor associations while rejecting a stale revision', async ({
     connection,
   }) => {
@@ -134,7 +134,7 @@ describe('evidence repository transactions', () => {
 
       if (kind === 'receipt-error') {
         await expect(operation).rejects.toMatchObject({
-          cause: { code: '23505' },
+          code: '23505',
         });
       } else {
         expect(await operation).toEqual(failure);

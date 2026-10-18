@@ -15,7 +15,6 @@ export {
   listResolvedProviderWebhooks,
   markProviderWebhookDelivered,
 } from './provider-inbox.js';
-export { authSchema } from './schema/auth.js';
 export { claimOtpSend } from './otp-cooldown.js';
 export { ensureCollectorUser, collectorUserId } from './collector.js';
 export { migrateDatabase } from './migrate.js';

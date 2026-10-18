@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 
-import { DrizzleQueryError } from 'drizzle-orm';
-import postgres from 'postgres';
 import { describe, it, vi } from 'vitest';
 
 import { createIsolatedDatabase } from './isolated-database.js';
@@ -26,9 +24,8 @@ interface Remaining {
 }
 
 interface Rejection {
-  readonly hasExactOuter: boolean;
-  readonly hasImmediateDriverCause: boolean;
-  readonly code: string | undefined;
+  readonly hasCommandFailure: boolean;
+  readonly hasConnectionRefusal: boolean;
 }
 
 const baseUrl = process.env.ANTICA_TEST_DATABASE_URL;
@@ -66,9 +63,8 @@ async function assertMigrationRefusalCleanup(url: string): Promise<void> {
     try {
       vi.stubEnv('ANTICA_TEST_DATABASE_URL', database.url);
       assert.deepEqual(await observeRejection(context), {
-        hasExactOuter: true,
-        hasImmediateDriverCause: true,
-        code: '53300',
+        hasCommandFailure: true,
+        hasConnectionRefusal: true,
       });
     } finally {
       vi.stubEnv('ANTICA_TEST_DATABASE_URL', original);
@@ -110,7 +106,7 @@ async function assertMigrationRefusalCleanup(url: string): Promise<void> {
 /**
  * observes the actual public helper rejection without exposing driver diagnostics
  * @param context ledger retaining settlement for teardown
- * @returns exact public error-constructor observations
+ * @returns migration command failure and connection-refusal observations
  */
 async function observeRejection(context: RoleLimitContext): Promise<Rejection> {
   const operation = createIsolatedDatabase();
@@ -129,18 +125,13 @@ async function observeRejection(context: RoleLimitContext): Promise<Rejection> {
     (cause: unknown) => cause,
   );
 
+  const commandError = error as Error & { code?: number; stderr?: string };
+
   return {
-    hasExactOuter:
-      error instanceof DrizzleQueryError &&
-      error.constructor === DrizzleQueryError,
-    hasImmediateDriverCause:
-      error instanceof DrizzleQueryError &&
-      error.cause instanceof postgres.PostgresError,
-    code:
-      error instanceof DrizzleQueryError &&
-      error.cause instanceof postgres.PostgresError
-        ? error.cause.code
-        : undefined,
+    hasCommandFailure: error instanceof Error && commandError.code === 1,
+    hasConnectionRefusal: /too many connections|P2037|53300/i.test(
+      commandError.stderr ?? '',
+    ),
   };
 }
 

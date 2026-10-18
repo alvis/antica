@@ -1,22 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import { and, asc, desc, eq, inArray, lt, or } from 'drizzle-orm';
+import { Prisma } from '../generated/client.js';
 
 import { indexVersionId } from '../index-version.js';
-import {
-  jobs,
-  indexVersions,
-  noteCitations,
-  noteParagraphs,
-  notes,
-  referenceLinks,
-  researchDraftRevisions,
-  researchRuns,
-  researchSources,
-  retrievalSnapshots,
-  sources,
-  sourceVersions,
-} from '../schema/index.js';
+import { jsonValue, nullableJson } from '../json.js';
 
 import {
   createSourceRepository,
@@ -33,29 +20,34 @@ import type {
   ReferenceLink,
   ResearchDetail,
 } from '@antica/contracts';
-import type {
-  RecordVersions,
-  Source,
-  SourceCitation,
-  SourceVersion,
-} from '@antica/domain';
+import type { Source, SourceCitation, SourceVersion } from '@antica/domain';
+
+import type { jobs, referenceLinks } from '../generated/client.js';
 
 import type { Transaction } from '../transaction.js';
 
+interface ReferenceRow extends Omit<referenceLinks, 'versions'> {
+  readonly versions: ReferenceLink['versions'];
+}
+
 type ReferenceCursor = { readonly createdAt: string; readonly id: string };
 
+/** @param value */
 function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function iso(value: string): string {
+/** @param value */
+function iso(value: Date | string): string {
   return new Date(value).toISOString();
 }
 
+/** @param cursor */
 function encodeCursor(cursor: ReferenceCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
+/** @param value */
 function decodeCursor(value: string): ReferenceCursor {
   const cursor = JSON.parse(
     Buffer.from(value, 'base64url').toString('utf8'),
@@ -67,7 +59,8 @@ function decodeCursor(value: string): ReferenceCursor {
   return cursor;
 }
 
-function toJobState(row: typeof jobs.$inferSelect): JobState {
+/** @param row */
+function toJobState(row: jobs): JobState {
   if (row.state === 'running') {
     return { kind: 'running', stage: row.stage };
   }
@@ -96,6 +89,11 @@ function toJobState(row: typeof jobs.$inferSelect): JobState {
   return { kind: 'queued' };
 }
 
+/**
+ * @param tx
+ * @param ownerId
+ * @param sourceIds
+ */
 async function currentVersionIds(
   tx: Transaction,
   ownerId: string,
@@ -104,11 +102,16 @@ async function currentVersionIds(
   if (!sourceIds.length) {
     return [];
   }
-  const rows = await tx
-    .select({ sourceId: sources.id, versionId: sources.currentVersionId })
-    .from(sources)
-    .where(
-      and(eq(sources.ownerId, ownerId), inArray(sources.id, [...sourceIds])),
+  const rows = await tx.sources
+    .findMany({
+      where: { AND: [{ ownerId }, { id: { in: [...sourceIds] } }] },
+      select: { id: true, currentVersionId: true },
+    })
+    .then((rows) =>
+      rows.map((row) => ({
+        sourceId: row.id,
+        versionId: row.currentVersionId,
+      })),
     );
   if (
     rows.length !== new Set(sourceIds).size ||
@@ -121,6 +124,11 @@ async function currentVersionIds(
   return sourceIds.map((id) => bySource.get(id)!);
 }
 
+/**
+ * @param tx
+ * @param ownerId
+ * @param citation
+ */
 async function ensureCitation(
   tx: Transaction,
   ownerId: string,
@@ -191,23 +199,18 @@ export function createResearchRepository(
   ownerId: string,
 ): ResearchRepository {
   async function readNote(id: string): Promise<Note | null> {
-    const [row] = await tx
-      .select()
-      .from(notes)
-      .where(and(eq(notes.id, id), eq(notes.ownerId, ownerId)));
+    const row = await tx.notes.findFirst({ where: { id, ownerId } });
     if (!row) {
       return null;
     }
     const [paragraphRows, citationRows] = await Promise.all([
-      tx
-        .select()
-        .from(noteParagraphs)
-        .where(eq(noteParagraphs.noteId, id))
-        .orderBy(asc(noteParagraphs.ordinal)),
-      tx
-        .select({ id: noteCitations.citationId })
-        .from(noteCitations)
-        .where(eq(noteCitations.noteId, id)),
+      tx.noteParagraphs.findMany({
+        where: { noteId: id },
+        orderBy: [{ ordinal: 'asc' }],
+      }),
+      tx.noteCitations
+        .findMany({ where: { noteId: id }, select: { citationId: true } })
+        .then((rows) => rows.map((row) => ({ id: row.citationId }))),
     ]);
     const citations = (
       await Promise.all(
@@ -239,12 +242,28 @@ export function createResearchRepository(
   }
 
   async function readReference(id: string): Promise<ReferenceLink | null> {
-    const [row] = await tx
-      .select()
-      .from(referenceLinks)
-      .where(
-        and(eq(referenceLinks.id, id), eq(referenceLinks.ownerId, ownerId)),
-      );
+    const [row] = await tx.$queryRaw<ReferenceRow[]>(Prisma.sql`
+      select r."id" as "id",
+      r."owner_id" as "ownerId",
+      r."target_record_id" as "targetRecordId",
+      r."target_check_id" as "targetCheckId",
+      r."target_observation_id" as "targetObservationId",
+      r."target_anchor_id" as "targetAnchorId",
+      r."subject_kind" as "subjectKind",
+      r."source_locator_id" as "sourceLocatorId",
+      r."reference_image_id" as "referenceImageId",
+      r."subject_record_id" as "subjectRecordId",
+      r."original_asset_id" as "originalAssetId",
+      r."subject_anchor_id" as "subjectAnchorId",
+      r."comparison_id" as "comparisonId",
+      r."note" as "note",
+      r."target_identity_key" as "targetIdentityKey",
+      r."subject_identity_key" as "subjectIdentityKey",
+      r."created_at" as "createdAt",
+      r."versions" as "versions"
+    from reference_links r
+      where r.id = ${id}::uuid and r.owner_id = ${ownerId}
+    `);
     if (!row) {
       return null;
     }
@@ -268,6 +287,7 @@ export function createResearchRepository(
             originalAssetId: row.originalAssetId!,
             evidenceAnchorId: row.subjectAnchorId,
           };
+
     return {
       id: row.id,
       target: {
@@ -280,82 +300,82 @@ export function createResearchRepository(
       comparisonId: row.comparisonId,
       noteZhHant: row.note ?? '',
       createdAt: iso(row.createdAt),
-      versions: row.versions as RecordVersions,
+      versions: row.versions,
     };
   }
 
   async function get(id: string): Promise<ResearchDetail | null> {
-    const [row] = await tx
-      .select()
-      .from(researchRuns)
-      .innerJoin(
-        jobs,
-        and(eq(researchRuns.jobId, jobs.id), eq(jobs.ownerId, ownerId)),
-      )
-      .where(and(eq(researchRuns.id, id), eq(researchRuns.ownerId, ownerId)));
+    const row = await tx.researchRuns.findFirst({
+      where: { id, ownerId, jobs: { ownerId } },
+      include: { jobs: true },
+    });
     if (!row) {
       return null;
     }
     const [sourceRows, draftRows, noteRows] = await Promise.all([
-      tx
-        .select({ sourceId: sourceVersions.sourceId })
-        .from(researchSources)
-        .innerJoin(
-          sourceVersions,
-          eq(researchSources.sourceVersionId, sourceVersions.id),
-        )
-        .where(eq(researchSources.researchId, id)),
-      tx
-        .select()
-        .from(researchDraftRevisions)
-        .where(eq(researchDraftRevisions.researchId, id))
-        .orderBy(desc(researchDraftRevisions.revision))
-        .limit(1),
-      tx
-        .select({ id: notes.id })
-        .from(notes)
-        .where(and(eq(notes.ownerId, ownerId), eq(notes.researchId, id)))
-        .orderBy(asc(notes.savedAt), asc(notes.id)),
+      tx.researchSources
+        .findMany({
+          where: { researchId: id },
+          select: { sourceVersions: { select: { sourceId: true } } },
+        })
+        .then((rows) => rows.map((row) => row.sourceVersions)),
+      tx.researchDraftRevisions.findMany({
+        where: { researchId: id },
+        orderBy: [{ revision: 'desc' }],
+        take: 1,
+      }),
+      tx.notes.findMany({
+        where: { AND: [{ ownerId }, { researchId: id }] },
+        orderBy: [{ savedAt: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      }),
     ]);
     const savedNotes = (
       await Promise.all(noteRows.map(async (note) => readNote(note.id)))
     ).filter((note): note is Note => note !== null);
 
     return {
-      researchId: row.research_runs.id,
-      jobId: row.research_runs.jobId,
+      researchId: row.id,
+      jobId: row.jobId,
       state: toJobState(row.jobs),
       request: {
-        requestKey: row.research_runs.requestKey,
-        instructionZhHant: row.research_runs.instruction,
-        scope: row.research_runs.scope as ResearchDetail['request']['scope'],
-        recordId: row.research_runs.recordId,
-        entryId: row.research_runs.entryId,
+        requestKey: row.requestKey,
+        instructionZhHant: row.instruction,
+        scope: row.scope as ResearchDetail['request']['scope'],
+        recordId: row.recordId,
+        entryId: row.entryId,
         sourceIds: sourceRows.map((source) => source.sourceId),
-        preferNamedAuthors: row.research_runs.preferNamedAuthors === 'true',
+        preferNamedAuthors: row.preferNamedAuthors === 'true',
       },
       sourceIds: [...sourceRows.map((source) => source.sourceId)],
       draft:
         (draftRows[0]?.immutableContent as ResearchDetail['draft']) ?? null,
       notes: savedNotes,
-      warningsZhHant: [...(row.research_runs.warnings as readonly string[])],
+      warningsZhHant: [...(row.warnings as readonly string[])],
     };
   }
 
   return {
     get,
+    /**
+     * @param id
+     * @param jobId
+     * @param request
+     */
     async create(id, jobId, request) {
-      await tx.insert(researchRuns).values({
-        id,
-        ownerId,
-        jobId,
-        requestKey: request.requestKey,
-        recordId: request.recordId,
-        entryId: request.entryId,
-        instruction: request.instructionZhHant,
-        scope: request.scope,
-        preferNamedAuthors: String(request.preferNamedAuthors),
-        warnings: [],
+      await tx.researchRuns.createMany({
+        data: {
+          id,
+          ownerId,
+          jobId,
+          requestKey: request.requestKey,
+          recordId: request.recordId,
+          entryId: request.entryId,
+          instruction: request.instructionZhHant,
+          scope: request.scope,
+          preferNamedAuthors: String(request.preferNamedAuthors),
+          warnings: jsonValue([]),
+        },
       });
       const versionIds = await currentVersionIds(
         tx,
@@ -363,92 +383,80 @@ export function createResearchRepository(
         request.sourceIds,
       );
       if (versionIds.length) {
-        await tx.insert(researchSources).values(
-          versionIds.map((sourceVersionId) => ({
+        await tx.researchSources.createMany({
+          data: versionIds.map((sourceVersionId) => ({
             researchId: id,
             sourceVersionId,
           })),
-        );
+        });
       }
     },
+    /** @param detail */
     async saveDetail(detail) {
-      const [run] = await tx
-        .select({ id: researchRuns.id })
-        .from(researchRuns)
-        .where(
-          and(
-            eq(researchRuns.id, detail.researchId),
-            eq(researchRuns.ownerId, ownerId),
-          ),
-        );
+      const [run] = await tx.researchRuns.findMany({
+        where: { AND: [{ id: detail.researchId }, { ownerId }] },
+        select: { id: true },
+      });
       if (!run) {
         throw new Error('Research run is inaccessible');
       }
-      await tx
-        .update(researchRuns)
-        .set({ warnings: detail.warningsZhHant })
-        .where(
-          and(
-            eq(researchRuns.id, detail.researchId),
-            eq(researchRuns.ownerId, ownerId),
-          ),
-        );
-      await tx
-        .delete(researchSources)
-        .where(eq(researchSources.researchId, detail.researchId));
+      await tx.researchRuns.updateMany({
+        data: { warnings: jsonValue(detail.warningsZhHant) },
+        where: { AND: [{ id: detail.researchId }, { ownerId }] },
+      });
+      await tx.researchSources.deleteMany({
+        where: { researchId: detail.researchId },
+      });
       const versionIds = await currentVersionIds(tx, ownerId, detail.sourceIds);
       if (versionIds.length) {
-        await tx.insert(researchSources).values(
-          versionIds.map((sourceVersionId) => ({
+        await tx.researchSources.createMany({
+          data: versionIds.map((sourceVersionId) => ({
             researchId: detail.researchId,
             sourceVersionId,
           })),
-        );
+        });
       }
       if (detail.draft) {
         for (const citation of detail.draft.citations) {
           await ensureCitation(tx, ownerId, citation);
         }
         const contentHash = hash(detail.draft);
-        const [existing] = await tx
-          .select({ contentHash: researchDraftRevisions.contentHash })
-          .from(researchDraftRevisions)
-          .where(
-            and(
-              eq(researchDraftRevisions.researchId, detail.researchId),
-              eq(researchDraftRevisions.revision, detail.draft.revision),
-            ),
-          );
+        const [existing] = await tx.researchDraftRevisions.findMany({
+          where: {
+            AND: [
+              { researchId: detail.researchId },
+              { revision: detail.draft.revision },
+            ],
+          },
+          select: { contentHash: true },
+        });
         if (existing && existing.contentHash !== contentHash) {
           throw new Error('Research draft revision is immutable');
         }
         if (!existing) {
-          await tx.insert(researchDraftRevisions).values({
-            researchId: detail.researchId,
-            revision: detail.draft.revision,
-            immutableContent: detail.draft,
-            contentHash,
+          await tx.researchDraftRevisions.createMany({
+            data: {
+              researchId: detail.researchId,
+              revision: detail.draft.revision,
+              immutableContent: jsonValue(detail.draft),
+              contentHash,
+            },
           });
         }
       }
     },
+    /** @param id */
     async getRetrievalSnapshot(id) {
-      const [run] = await tx
-        .select({ id: researchRuns.id })
-        .from(researchRuns)
-        .where(and(eq(researchRuns.id, id), eq(researchRuns.ownerId, ownerId)));
+      const [run] = await tx.researchRuns.findMany({
+        where: { AND: [{ id }, { ownerId }] },
+        select: { id: true },
+      });
       if (!run) {
         return null;
       }
-      const [row] = await tx
-        .select()
-        .from(retrievalSnapshots)
-        .where(
-          and(
-            eq(retrievalSnapshots.id, id),
-            eq(retrievalSnapshots.ownerId, ownerId),
-          ),
-        );
+      const [row] = await tx.retrievalSnapshots.findMany({
+        where: { AND: [{ id }, { ownerId }] },
+      });
 
       return (
         (row?.immutablePack as Awaited<
@@ -456,43 +464,38 @@ export function createResearchRepository(
         >) ?? null
       );
     },
+    /** @param snapshot */
     async saveRetrievalSnapshot(snapshot) {
-      const [run] = await tx
-        .select({ id: researchRuns.id })
-        .from(researchRuns)
-        .where(
-          and(
-            eq(researchRuns.id, snapshot.id),
-            eq(researchRuns.ownerId, ownerId),
-          ),
-        );
+      const [run] = await tx.researchRuns.findMany({
+        where: { AND: [{ id: snapshot.id }, { ownerId }] },
+        select: { id: true },
+      });
       if (!run) {
         throw new Error('Research run is inaccessible');
       }
       const contentHash = hash(snapshot);
-      const [existing] = await tx
-        .select({ contentHash: retrievalSnapshots.contentHash })
-        .from(retrievalSnapshots)
-        .where(eq(retrievalSnapshots.id, snapshot.id));
+      const [existing] = await tx.retrievalSnapshots.findMany({
+        where: { id: snapshot.id },
+        select: { contentHash: true },
+      });
       if (existing && existing.contentHash !== contentHash) {
         throw new Error('Retrieval snapshot is immutable');
       }
       if (!existing) {
         const persistedIndexId = indexVersionId(snapshot.index.indexVersion);
-        await tx
-          .insert(indexVersions)
-          .values({
+        await tx.indexVersions.createMany({
+          data: {
             id: persistedIndexId,
             kind: 'text',
             embeddingModelId: snapshot.index.embeddingModelId,
             dimensions: snapshot.index.dimensions,
             status: 'active',
-          })
-          .onConflictDoNothing();
-        const [persistedIndex] = await tx
-          .select()
-          .from(indexVersions)
-          .where(eq(indexVersions.id, persistedIndexId));
+          },
+          skipDuplicates: true,
+        });
+        const [persistedIndex] = await tx.indexVersions.findMany({
+          where: { id: persistedIndexId },
+        });
         if (
           !persistedIndex ||
           persistedIndex.kind !== 'text' ||
@@ -501,16 +504,19 @@ export function createResearchRepository(
         ) {
           throw new Error('Retrieval snapshot index identity conflicts');
         }
-        await tx.insert(retrievalSnapshots).values({
-          id: snapshot.id,
-          ownerId,
-          indexVersionId: persistedIndexId,
-          immutablePack: snapshot,
-          contentHash,
-          createdAt: snapshot.createdAt,
+        await tx.retrievalSnapshots.createMany({
+          data: {
+            id: snapshot.id,
+            ownerId,
+            indexVersionId: persistedIndexId,
+            immutablePack: jsonValue(snapshot),
+            contentHash,
+            createdAt: snapshot.createdAt,
+          },
         });
       }
     },
+    /** @param note */
     async addNote(note) {
       const detail = await get(note.researchId);
       if (!detail) {
@@ -519,121 +525,123 @@ export function createResearchRepository(
       for (const citation of note.citations) {
         await ensureCitation(tx, ownerId, citation);
       }
-      await tx.insert(notes).values({
-        id: note.id,
-        ownerId,
-        researchId: note.researchId,
-        draftRevision: detail.draft?.revision ?? 0,
-        title: note.titleZhHant,
-        recordId: note.recordId,
-        entryId: note.entryId,
-        savedBy: note.savedBy,
-        savedAt: note.savedAt,
+      await tx.notes.createMany({
+        data: {
+          id: note.id,
+          ownerId,
+          researchId: note.researchId,
+          draftRevision: detail.draft?.revision ?? 0,
+          title: note.titleZhHant,
+          recordId: note.recordId,
+          entryId: note.entryId,
+          savedBy: note.savedBy,
+          savedAt: note.savedAt,
+        },
       });
       if (note.paragraphs.length) {
-        await tx.insert(noteParagraphs).values(
-          note.paragraphs.map((paragraph, ordinal) => ({
+        await tx.noteParagraphs.createMany({
+          data: note.paragraphs.map((paragraph, ordinal) => ({
             noteId: note.id,
             ordinal,
             text: paragraph.textZhHant,
-            content: paragraph,
+            content: nullableJson(paragraph),
           })),
-        );
+        });
       }
       if (note.citations.length) {
-        await tx.insert(noteCitations).values(
-          note.citations.map((citation) => ({
+        await tx.noteCitations.createMany({
+          data: note.citations.map((citation) => ({
             noteId: note.id,
             citationId: citation.id,
           })),
-        );
+        });
       }
     },
+    /**
+     * @param link
+     * @param identity
+     */
     async addReference(link, identity) {
       const sourceLocatorId = link.reference.kind === 'source' ? link.id : null;
       if (sourceLocatorId && link.reference.kind === 'source') {
         await writeSourceLocator(tx, sourceLocatorId, link.reference.locator);
       }
-      await tx.insert(referenceLinks).values({
-        id: link.id,
-        ownerId,
-        targetRecordId: link.target.recordId,
-        targetCheckId: link.target.checkId,
-        targetObservationId: link.target.observationId,
-        targetAnchorId: link.target.evidenceAnchorId,
-        subjectKind: link.reference.kind,
-        sourceLocatorId,
-        referenceImageId:
-          link.reference.kind === 'source'
-            ? link.reference.referenceImageId
-            : null,
-        subjectRecordId:
-          link.reference.kind === 'collection' ? link.reference.recordId : null,
-        originalAssetId:
-          link.reference.kind === 'collection'
-            ? link.reference.originalAssetId
-            : null,
-        subjectAnchorId:
-          link.reference.kind === 'collection'
-            ? link.reference.evidenceAnchorId
-            : null,
-        comparisonId: link.comparisonId,
-        note: link.noteZhHant,
-        targetIdentityKey: link.target.recordId,
-        subjectIdentityKey: identity,
-        versions: link.versions,
-        createdAt: link.createdAt,
+      await tx.referenceLinks.createMany({
+        data: {
+          id: link.id,
+          ownerId,
+          targetRecordId: link.target.recordId,
+          targetCheckId: link.target.checkId,
+          targetObservationId: link.target.observationId,
+          targetAnchorId: link.target.evidenceAnchorId,
+          subjectKind: link.reference.kind,
+          sourceLocatorId,
+          referenceImageId:
+            link.reference.kind === 'source'
+              ? link.reference.referenceImageId
+              : null,
+          subjectRecordId:
+            link.reference.kind === 'collection'
+              ? link.reference.recordId
+              : null,
+          originalAssetId:
+            link.reference.kind === 'collection'
+              ? link.reference.originalAssetId
+              : null,
+          subjectAnchorId:
+            link.reference.kind === 'collection'
+              ? link.reference.evidenceAnchorId
+              : null,
+          comparisonId: link.comparisonId,
+          note: link.noteZhHant,
+          targetIdentityKey: link.target.recordId,
+          subjectIdentityKey: identity,
+          versions: nullableJson(link.versions),
+          createdAt: link.createdAt,
+        },
       });
     },
+    /** @param id */
     async getReference(id) {
       return readReference(id);
     },
+    /**
+     * @param recordId
+     * @param identity
+     */
     async findReference(recordId, identity) {
-      const [row] = await tx
-        .select({ id: referenceLinks.id })
-        .from(referenceLinks)
-        .where(
-          and(
-            eq(referenceLinks.ownerId, ownerId),
-            eq(referenceLinks.targetRecordId, recordId),
-            eq(referenceLinks.subjectIdentityKey, identity),
-          ),
-        );
+      const [row] = await tx.referenceLinks.findMany({
+        where: {
+          AND: [
+            { ownerId },
+            { targetRecordId: recordId },
+            { subjectIdentityKey: identity },
+          ],
+        },
+        select: { id: true },
+      });
 
       return row ? readReference(row.id) : null;
     },
+    /**
+     * @param recordId
+     * @param filters
+     */
     async queryReferences(
       recordId,
       filters,
     ): Promise<CursorPage<ReferenceLink>> {
       const limit = Math.min(filters.limit ?? 50, 100);
       const cursor = filters.cursor ? decodeCursor(filters.cursor) : null;
-      const rows = await tx
-        .select({ id: referenceLinks.id, createdAt: referenceLinks.createdAt })
-        .from(referenceLinks)
-        .where(
-          and(
-            eq(referenceLinks.ownerId, ownerId),
-            eq(referenceLinks.targetRecordId, recordId),
-            filters.checkId
-              ? eq(referenceLinks.targetCheckId, filters.checkId)
-              : undefined,
-            filters.observationId
-              ? eq(referenceLinks.targetObservationId, filters.observationId)
-              : undefined,
-            cursor
-              ? or(
-                  lt(referenceLinks.createdAt, cursor.createdAt),
-                  and(
-                    eq(referenceLinks.createdAt, cursor.createdAt),
-                    lt(referenceLinks.id, cursor.id),
-                  ),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(desc(referenceLinks.createdAt), desc(referenceLinks.id))
-        .limit(limit + 1);
+      const rows = await tx.$queryRaw<ReferenceCursor[]>(Prisma.sql`
+        select id, created_at::text as "createdAt" from reference_links
+        where owner_id = ${ownerId} and target_record_id = ${recordId}::uuid
+          ${filters.checkId ? Prisma.sql`and target_check_id = ${filters.checkId}::uuid` : Prisma.empty}
+          ${filters.observationId ? Prisma.sql`and target_observation_id = ${filters.observationId}::uuid` : Prisma.empty}
+          ${cursor ? Prisma.sql`and (created_at, id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : Prisma.empty}
+        order by created_at desc, id desc
+        limit ${limit + 1}
+      `);
       const page = rows.slice(0, limit);
       const items = (
         await Promise.all(page.map(async (row) => readReference(row.id)))

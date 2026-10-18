@@ -405,7 +405,7 @@ describe('Selected source page projection', () => {
         .map((entry) => entry.contentAsRetrieved)
         .sort(),
     ).toEqual([revised.pages[0]!.rawText, original.pages[1]!.rawText].sort());
-    const persisted = await fixture.runtime.database.db.$client`
+    const persisted = await fixture.runtime.database.db.$queryRaw`
       select mapping.id from source_chunk_mappings mapping
       join source_versions version on version.id = mapping.source_version_id
       where version.owner_id = ${collectorUserId}
@@ -512,9 +512,9 @@ describe('Selected source page projection', () => {
     const { sources, accepted, original, pack } =
       await createProjection(fixture);
     const unparsed = original.pages[1]!;
-    await fixture.runtime.database.db.$client`
+    await fixture.runtime.database.db.$executeRaw`
       delete from source_page_parses
-      where parse_run_id = ${original.parseRunId} and page_id = ${unparsed.id}
+      where parse_run_id = ${original.parseRunId}::uuid and page_id = ${unparsed.id}::uuid
     `;
     const selected = value(
       await sources.submit(collectorUserId, {

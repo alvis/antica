@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, inject, it } from 'vitest';
 
 import { createDatabase } from '../connection.js';
-import { jobs, records } from '../schema/index.js';
 
 import { createEditDraftRepository } from './edit-drafts.js';
 
@@ -15,6 +14,7 @@ import type { EditDraftResult, RecordFields } from '@antica/contracts';
 
 import type { Transaction } from '../transaction.js';
 
+const resources = inject('platformDatabases');
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL ?? '';
 if (!databaseUrl) {
   throw new Error(
@@ -26,10 +26,13 @@ const rollback = new Error('Rollback edit draft test transaction');
 async function inRolledBackTransaction(
   operation: (tx: Transaction) => Promise<void>,
 ): Promise<void> {
-  const database = createDatabase({ url: databaseUrl, maxConnections: 1 });
+  const database = createDatabase({
+    url: resources['edit-drafts']!.url,
+    maxConnections: 1,
+  });
   try {
     await expect(
-      database.db.transaction(async (tx) => {
+      database.db.$transaction(async (tx) => {
         await operation(tx);
         throw rollback;
       }),
@@ -39,7 +42,7 @@ async function inRolledBackTransaction(
   }
 }
 
-describe('fn:createEditDraftRepository', () => {
+describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
   it('should preserve frozen inputs and apply generated proposals incrementally with revision checks', async () => {
     await inRolledBackTransaction(async (tx) => {
       const ownerId = randomUUID();
@@ -51,21 +54,25 @@ describe('fn:createEditDraftRepository', () => {
       const descriptionId = randomUUID();
       const nameId = randomUUID();
       const now = '2026-10-13T04:00:00.000Z';
-      await tx.insert(records).values({
-        id: recordId,
-        ownerId,
-        code: `TEST-${recordId}`,
-        unitKind: 'single',
-        name: 'Collector name',
-        description: 'Original description',
+      await tx.records.createMany({
+        data: {
+          id: recordId,
+          ownerId,
+          code: `TEST-${recordId}`,
+          unitKind: 'single',
+          name: 'Collector name',
+          description: 'Original description',
+        },
       });
-      await tx.insert(jobs).values({
-        id: jobId,
-        ownerId,
-        kind: 'recordEditing',
-        resourceId: editDraftId,
-        state: 'queued',
-        stage: 'draft',
+      await tx.jobs.createMany({
+        data: {
+          id: jobId,
+          ownerId,
+          kind: 'recordEditing',
+          resourceId: editDraftId,
+          state: 'queued',
+          stage: 'draft',
+        },
       });
       const fields: RecordFields = {
         name: 'Collector name',

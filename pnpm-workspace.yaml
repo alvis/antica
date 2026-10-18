@@ -5,7 +5,9 @@ packages:
 
 allowBuilds:
   '@parcel/watcher': true
+  '@prisma/engines': true
   esbuild: true
+  prisma: true
   protobufjs: true
   sharp: true
   unrs-resolver: true
@@ -58,6 +60,9 @@ minimumReleaseAgeExclude:
   - storybook@10.6.2
 
 overrides:
+  'better-auth>drizzle-kit': '-'
+  'better-auth>drizzle-orm': '-'
+  '@better-auth/drizzle-adapter>drizzle-orm': '-'
   react-dom: 19.2.3
   test-renderer: 1.2.0
   '@types/istanbul-lib-instrument@1.7.8>source-map': 0.7.6

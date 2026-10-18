@@ -1,33 +1,35 @@
 import { isDeepStrictEqual } from 'node:util';
 
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-
 import { editDraftDetailSchema } from '@antica/contracts';
 
-import { editDraftRuns, jobs, records } from '../schema/index.js';
+import { Prisma } from '../generated/client.js';
+import { jsonValue, nullableJson } from '../json.js';
 
 import type {
   EditDraftRepository,
   EditDraftRunRecord,
 } from '@antica/application/ports';
+
 import type { Transaction } from '../transaction.js';
 
-function iso(value: string): string {
+/** @param value */
+function iso(value: string | Date): string {
   return new Date(value).toISOString();
 }
 
 /**
  * persists frozen edit inputs, first-write proposals, and proposal adoption
+ * @param tx
+ * @param ownerId
  */
 export function createEditDraftRepository(
   tx: Transaction,
   ownerId: string,
 ): EditDraftRepository {
   async function get(id: string): Promise<EditDraftRunRecord | null> {
-    const [row] = await tx
-      .select()
-      .from(editDraftRuns)
-      .where(and(eq(editDraftRuns.id, id), eq(editDraftRuns.ownerId, ownerId)));
+    const [row] = await tx.editDraftRuns.findMany({
+      where: { AND: [{ id }, { ownerId }] },
+    });
     if (!row) {
       return null;
     }
@@ -53,6 +55,7 @@ export function createEditDraftRepository(
 
   return {
     get,
+    /** @param run */
     async create(run) {
       const { detail, request } = run;
       if (
@@ -77,58 +80,57 @@ export function createEditDraftRepository(
       }
 
       const [[job], [record]] = await Promise.all([
-        tx
-          .select({ id: jobs.id })
-          .from(jobs)
-          .where(
-            and(
-              eq(jobs.id, detail.jobId),
-              eq(jobs.ownerId, ownerId),
-              eq(jobs.kind, 'recordEditing'),
-              eq(jobs.resourceId, detail.editDraftId),
-            ),
-          ),
-        tx
-          .select({ id: records.id })
-          .from(records)
-          .where(
-            and(
-              eq(records.id, detail.snapshot.recordId),
-              eq(records.ownerId, ownerId),
-            ),
-          ),
+        tx.jobs.findMany({
+          select: { id: true },
+          where: {
+            AND: [
+              { id: detail.jobId },
+              { ownerId },
+              { kind: 'recordEditing' },
+              { resourceId: detail.editDraftId },
+            ],
+          },
+        }),
+        tx.records.findMany({
+          select: { id: true },
+          where: { AND: [{ id: detail.snapshot.recordId }, { ownerId }] },
+        }),
       ]);
       if (!job || !record) {
         throw new Error('Edit draft dependencies are inaccessible');
       }
 
-      await tx.insert(editDraftRuns).values({
-        id: detail.editDraftId,
-        ownerId,
-        jobId: detail.jobId,
-        recordId: detail.snapshot.recordId,
-        revision: detail.revision,
-        status: detail.status,
-        snapshot: detail.snapshot,
-        request,
-        modelSelection: run.modelSelection,
-        result: null,
-        invocation: null,
-        appliedProposalIds: [],
-        createdAt: detail.createdAt,
-        updatedAt: detail.updatedAt,
+      await tx.editDraftRuns.createMany({
+        data: {
+          id: detail.editDraftId,
+          ownerId,
+          jobId: detail.jobId,
+          recordId: detail.snapshot.recordId,
+          revision: detail.revision,
+          status: detail.status,
+          snapshot: jsonValue(detail.snapshot),
+          request: jsonValue(request),
+          modelSelection: jsonValue(run.modelSelection),
+          result: nullableJson(null),
+          invocation: nullableJson(null),
+          appliedProposalIds: jsonValue([]),
+          createdAt: detail.createdAt,
+          updatedAt: detail.updatedAt,
+        },
       });
     },
+    /**
+     * @param id
+     * @param result
+     * @param invocation
+     * @param expectedRevision
+     * @param updatedAt
+     */
     async saveResult(id, result, invocation, expectedRevision, updatedAt) {
-      const [run] = await tx
-        .select({
-          recordId: editDraftRuns.recordId,
-          snapshot: editDraftRuns.snapshot,
-        })
-        .from(editDraftRuns)
-        .where(
-          and(eq(editDraftRuns.id, id), eq(editDraftRuns.ownerId, ownerId)),
-        );
+      const [run] = await tx.editDraftRuns.findMany({
+        select: { recordId: true, snapshot: true },
+        where: { AND: [{ id }, { ownerId }] },
+      });
       const snapshot = run?.snapshot as
         EditDraftRunRecord['detail']['snapshot'] | undefined;
       if (
@@ -145,29 +147,35 @@ export function createEditDraftRepository(
       ) {
         return false;
       }
-      const [changed] = await tx
-        .update(editDraftRuns)
-        .set({
-          result,
-          invocation,
+      const [changed] = await tx.editDraftRuns.updateManyAndReturn({
+        data: {
+          result: nullableJson(result),
+          invocation: nullableJson(invocation),
           status: 'ready',
           revision: expectedRevision + 1,
           updatedAt,
-        })
-        .where(
-          and(
-            eq(editDraftRuns.id, id),
-            eq(editDraftRuns.ownerId, ownerId),
-            eq(editDraftRuns.revision, expectedRevision),
-            eq(editDraftRuns.status, 'pending'),
-            isNull(editDraftRuns.result),
-            isNull(editDraftRuns.invocation),
-          ),
-        )
-        .returning({ id: editDraftRuns.id });
+        },
+        select: { id: true },
+        where: {
+          AND: [
+            { id },
+            { ownerId },
+            { revision: expectedRevision },
+            { status: 'pending' },
+            { result: { equals: Prisma.DbNull } },
+            { invocation: { equals: Prisma.DbNull } },
+          ],
+        },
+      });
 
       return Boolean(changed);
     },
+    /**
+     * @param id
+     * @param expectedRevision
+     * @param selectedProposalIds
+     * @param updatedAt
+     */
     async markApplied(id, expectedRevision, selectedProposalIds, updatedAt) {
       if (
         selectedProposalIds.length === 0 ||
@@ -175,19 +183,23 @@ export function createEditDraftRepository(
       ) {
         return null;
       }
-      const [run] = await tx
-        .select({
-          result: editDraftRuns.result,
-          applied: editDraftRuns.appliedProposalIds,
+      const [run] = await tx.editDraftRuns
+        .findMany({
+          select: { result: true, appliedProposalIds: true },
+          where: {
+            AND: [
+              { id },
+              { ownerId },
+              { revision: expectedRevision },
+              { status: { in: ['ready', 'partially_applied'] } },
+            ],
+          },
         })
-        .from(editDraftRuns)
-        .where(
-          and(
-            eq(editDraftRuns.id, id),
-            eq(editDraftRuns.ownerId, ownerId),
-            eq(editDraftRuns.revision, expectedRevision),
-            inArray(editDraftRuns.status, ['ready', 'partially_applied']),
-          ),
+        .then((rows) =>
+          rows.map((row) => ({
+            result: row.result,
+            applied: row.appliedProposalIds,
+          })),
         );
       const result = run?.result as EditDraftRunRecord['detail']['result'];
       const applied = (run?.applied ?? []) as readonly string[];
@@ -208,23 +220,23 @@ export function createEditDraftRepository(
       }
       const status =
         combined.length === proposalIds.size ? 'applied' : 'partially_applied';
-      const [changed] = await tx
-        .update(editDraftRuns)
-        .set({
-          appliedProposalIds: combined,
+      const [changed] = await tx.editDraftRuns.updateManyAndReturn({
+        data: {
+          appliedProposalIds: jsonValue(combined),
           status,
           revision: expectedRevision + 1,
           updatedAt,
-        })
-        .where(
-          and(
-            eq(editDraftRuns.id, id),
-            eq(editDraftRuns.ownerId, ownerId),
-            eq(editDraftRuns.revision, expectedRevision),
-            inArray(editDraftRuns.status, ['ready', 'partially_applied']),
-          ),
-        )
-        .returning({ id: editDraftRuns.id });
+        },
+        select: { id: true },
+        where: {
+          AND: [
+            { id },
+            { ownerId },
+            { revision: expectedRevision },
+            { status: { in: ['ready', 'partially_applied'] } },
+          ],
+        },
+      });
       if (!changed) {
         return null;
       }

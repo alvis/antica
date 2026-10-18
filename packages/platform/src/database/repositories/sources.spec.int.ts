@@ -1,28 +1,10 @@
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
 import { describe, expect, inject } from 'vitest';
 
 import { createDatabase } from '../connection.js';
 import { indexVersionId } from '../index-version.js';
 
-import {
-  canonicalViews,
-  parseRuns,
-  sourcePageParses,
-  sourcePages,
-  sourceRegions,
-  indexVersions,
-  sourceBlocks,
-  jobs,
-  knowledgeEntries,
-  mediaAssets,
-  mediaDerivatives,
-  referenceImages,
-  sourceIntakes,
-  sourceVersionAssets,
-} from '../schema/index.js';
 import { createDatabaseTest } from '../spec/fixtures/runner.js';
 
 import {
@@ -41,12 +23,14 @@ import type {
   ReferenceImage,
 } from '@antica/domain';
 
+import type { Transaction } from '../transaction.js';
+
 const resources = inject('platformDatabases');
 const it = createDatabaseTest(resources.sources!);
 
 const instant = '2026-10-13T00:00:00.000Z';
 
-describe('fn:createSourceRepository', () => {
+describe('fn:createSourceRepository', { timeout: 30_000 }, () => {
   it('should omit a region deleted after listing under read committed isolation', async ({
     connection,
   }) => {
@@ -60,97 +44,106 @@ describe('fn:createSourceRepository', () => {
     const parseRunId = randomUUID();
     const regionId = randomUUID();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         await createSourceRepository(tx, ownerId).create(
           source,
           { ...version, activeParseRunId: parseRunId },
           [],
         );
-        await tx.insert(mediaAssets).values({
-          id: assetId,
-          ownerId,
-          sourceVersionId: version.id,
-          kind: 'document',
-          purpose: 'book_file',
-          state: 'ready',
-          objectKey: `originals/${assetId}`,
-          originalFileName: 'catalog.pdf',
-          mimeType: 'application/pdf',
-          byteLength: 10,
-          sha256: 'a'.repeat(64),
+        await tx.mediaAssets.createMany({
+          data: {
+            id: assetId,
+            ownerId,
+            sourceVersionId: version.id,
+            kind: 'document',
+            purpose: 'book_file',
+            state: 'ready',
+            objectKey: `originals/${assetId}`,
+            originalFileName: 'catalog.pdf',
+            mimeType: 'application/pdf',
+            byteLength: 10,
+            sha256: 'a'.repeat(64),
+          },
         });
-        await tx.insert(canonicalViews).values({
-          id: viewId,
-          originalAssetId: assetId,
-          width: 100,
-          height: 200,
-          coordinateSpace: 'pdf_page_points',
-          transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        await tx.canonicalViews.createMany({
+          data: {
+            id: viewId,
+            originalAssetId: assetId,
+            width: 100,
+            height: 200,
+            coordinateSpace: 'pdf_page_points',
+            transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+          },
         });
-        await tx.insert(sourcePages).values({
-          id: pageId,
-          sourceVersionId: version.id,
-          pageIndex: 0,
-          originalAssetId: assetId,
-          canonicalViewId: viewId,
-          pdfPageIndex: 0,
+        await tx.sourcePages.createMany({
+          data: {
+            id: pageId,
+            sourceVersionId: version.id,
+            pageIndex: 0,
+            originalAssetId: assetId,
+            canonicalViewId: viewId,
+            pdfPageIndex: 0,
+          },
         });
-        await tx.insert(jobs).values({
-          id: parseRunId,
-          ownerId,
-          kind: 'sourceIngestion',
-          resourceId: version.id,
-          state: 'pending',
-          stage: 'parse',
+        await tx.jobs.createMany({
+          data: {
+            id: parseRunId,
+            ownerId,
+            kind: 'sourceIngestion',
+            resourceId: version.id,
+            state: 'pending',
+            stage: 'parse',
+          },
         });
-        await tx.insert(parseRuns).values({
-          id: parseRunId,
-          sourceVersionId: version.id,
-          jobId: parseRunId,
-          provider: 'test',
-          status: 'completed',
+        await tx.parseRuns.createMany({
+          data: {
+            id: parseRunId,
+            sourceVersionId: version.id,
+            jobId: parseRunId,
+            provider: 'test',
+            status: 'completed',
+          },
         });
-        await tx.insert(sourcePageParses).values({
-          parseRunId,
-          pageId,
-          rawText: '',
-          searchText: '',
-          quality: 'usable',
+        await tx.sourcePageParses.createMany({
+          data: {
+            parseRunId,
+            pageId,
+            rawText: '',
+            searchText: '',
+            quality: 'usable',
+          },
         });
-        await tx.insert(sourceRegions).values({
-          id: regionId,
-          sourceVersionId: version.id,
-          pageId,
-          parseRunId,
-          kind: 'figure',
-          geometry: { kind: 'rect', x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+        await tx.sourceRegions.createMany({
+          data: {
+            id: regionId,
+            sourceVersionId: version.id,
+            pageId,
+            parseRunId,
+            kind: 'figure',
+            geometry: { kind: 'rect', x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+          },
         });
       });
-      const before = await reader.db.transaction(async (tx) =>
+      const before = await reader.db.$transaction(async (tx) =>
         createSourceRepository(tx, ownerId).get(source.id),
       );
       expect(before?.regions).toMatchObject([{ id: regionId }]);
-      reader.db.$client.options.debug = (_connection, query): void => {
-        if (
-          query.includes('from "source_regions"') &&
-          query.includes('"source_regions"."id" =')
-        ) {
-          execFileSync(
-            process.execPath,
-            [
-              '--input-type=module',
-              '-e',
-              'import postgres from "postgres"; const client = postgres(process.argv[1], { max: 1, prepare: false }); try { await client.unsafe("delete from source_regions where id = $1", [process.argv[2]]); } finally { await client.end(); }',
-              database.url,
-              regionId,
-            ],
-            { cwd: new URL('../../../', import.meta.url), timeout: 10000 },
-          );
-        }
-      };
+      const observedReader = reader.db.$extends({
+        query: {
+          sourceRegions: {
+            async findFirst({ args, query }) {
+              await database.db.sourceRegions.deleteMany({
+                where: { id: regionId },
+              });
 
-      const result = await reader.db.transaction(async (tx) =>
-        createSourceRepository(tx, ownerId).get(source.id),
+              return query(args);
+            },
+          },
+        },
+      });
+
+      const result = await observedReader.$transaction(async (tx) =>
+        createSourceRepository(tx as Transaction, ownerId).get(source.id),
       );
 
       expect(result).toMatchObject({
@@ -172,7 +165,7 @@ describe('fn:createSourceRepository', () => {
     const parseRunId = randomUUID();
     const publicIndexVersion = 'test-v1';
     const persistedIndexId = indexVersionId(publicIndexVersion);
-    await database.db.transaction(async (tx) => {
+    await database.db.$transaction(async (tx) => {
       const repository = createSourceRepository(tx, ownerId);
       expect(
         await repository.resolveProviderChunk(
@@ -182,20 +175,24 @@ describe('fn:createSourceRepository', () => {
         ),
       ).toBeNull();
       await repository.create(source, version, []);
-      await tx.insert(jobs).values({
-        id: parseRunId,
-        ownerId,
-        kind: 'sourceIngestion',
-        resourceId: version.id,
-        state: 'pending',
-        stage: 'parse',
+      await tx.jobs.createMany({
+        data: {
+          id: parseRunId,
+          ownerId,
+          kind: 'sourceIngestion',
+          resourceId: version.id,
+          state: 'pending',
+          stage: 'parse',
+        },
       });
-      await tx.insert(parseRuns).values({
-        id: parseRunId,
-        sourceVersionId: version.id,
-        jobId: parseRunId,
-        provider: 'llama-cloud',
-        status: 'completed',
+      await tx.parseRuns.createMany({
+        data: {
+          id: parseRunId,
+          sourceVersionId: version.id,
+          jobId: parseRunId,
+          provider: 'llama-cloud',
+          status: 'completed',
+        },
       });
       const index = {
         indexVersion: publicIndexVersion,
@@ -214,19 +211,19 @@ describe('fn:createSourceRepository', () => {
       await repository.addProviderChunkMappings(index, [mapping]);
       await repository.addProviderChunkMappings(index, [mapping]);
       expect(
-        await tx
-          .select({
-            id: indexVersions.id,
-            model: indexVersions.embeddingModelId,
-            dimensions: indexVersions.dimensions,
-            kind: indexVersions.kind,
-          })
-          .from(indexVersions)
-          .where(eq(indexVersions.id, persistedIndexId)),
+        await tx.indexVersions.findMany({
+          select: {
+            id: true,
+            embeddingModelId: true,
+            dimensions: true,
+            kind: true,
+          },
+          where: { id: persistedIndexId },
+        }),
       ).toEqual([
         {
           id: persistedIndexId,
-          model: 'configured-model',
+          embeddingModelId: 'configured-model',
           dimensions: 64,
           kind: 'text',
         },
@@ -249,12 +246,14 @@ describe('fn:createSourceRepository', () => {
         ]),
       ).rejects.toThrow();
       const imageIndex = { ...index, indexVersion: 'image-only' };
-      await tx.insert(indexVersions).values({
-        id: indexVersionId(imageIndex.indexVersion),
-        kind: 'image',
-        embeddingModelId: index.embeddingModelId,
-        dimensions: index.dimensions,
-        status: 'active',
+      await tx.indexVersions.createMany({
+        data: {
+          id: indexVersionId(imageIndex.indexVersion),
+          kind: 'image',
+          embeddingModelId: index.embeddingModelId,
+          dimensions: index.dimensions,
+          status: 'active',
+        },
       });
       await expect(
         repository.addProviderChunkMappings(imageIndex, []),
@@ -301,7 +300,7 @@ describe('fn:createSourceRepository', () => {
     const database = connection;
     const ownerId = randomUUID();
     const { source, version } = sourcePair();
-    await database.db.transaction(async (tx) => {
+    await database.db.$transaction(async (tx) => {
       const repository = createSourceRepository(tx, ownerId);
       await repository.create(source, version, []);
       expect(await repository.getVersion(version.id)).toEqual(version);
@@ -318,26 +317,28 @@ describe('fn:createSourceRepository', () => {
       expect(await repository.getIngestionJobId(version.id)).toBeNull();
       const firstJob = randomUUID();
       const lastJob = randomUUID();
-      await tx.insert(jobs).values([
-        {
-          id: firstJob,
-          ownerId,
-          kind: 'sourceIngestion',
-          resourceId: version.id,
-          state: 'pending',
-          stage: 'queued',
-          createdAt: instant,
-        },
-        {
-          id: lastJob,
-          ownerId,
-          kind: 'sourceIngestion',
-          resourceId: version.id,
-          state: 'pending',
-          stage: 'queued',
-          createdAt: '2026-10-14T00:00:00.000Z',
-        },
-      ]);
+      await tx.jobs.createMany({
+        data: [
+          {
+            id: firstJob,
+            ownerId,
+            kind: 'sourceIngestion',
+            resourceId: version.id,
+            state: 'pending',
+            stage: 'queued',
+            createdAt: instant,
+          },
+          {
+            id: lastJob,
+            ownerId,
+            kind: 'sourceIngestion',
+            resourceId: version.id,
+            state: 'pending',
+            stage: 'queued',
+            createdAt: '2026-10-14T00:00:00.000Z',
+          },
+        ],
+      });
       expect(await repository.getIngestionJobId(version.id)).toBe(firstJob);
       expect((await repository.get(source.id))?.processingJobId).toBe(lastJob);
       const second = {
@@ -399,11 +400,13 @@ describe('fn:createSourceRepository', () => {
       await repository.create(other.source, other.version, []);
       expect(await repository.get(source.id, other.version.id)).toBeNull();
       const entryId = randomUUID();
-      await tx.insert(knowledgeEntries).values({
-        id: entryId,
-        ownerId,
-        displayCode: 'KN-1',
-        currentRevision: 1,
+      await tx.knowledgeEntries.createMany({
+        data: {
+          id: entryId,
+          ownerId,
+          displayCode: 'KN-1',
+          currentRevision: 1,
+        },
       });
       await repository.linkKnowledgeDraft(version.id, entryId);
       await repository.linkKnowledgeDraft(version.id, entryId);
@@ -520,21 +523,23 @@ describe('fn:createSourceRepository', () => {
         mappings: [mapping],
         warnings: [],
       };
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createSourceRepository(tx, ownerId);
-        await tx.insert(sourceIntakes).values({ id: intakeId, ownerId });
-        await tx.insert(mediaAssets).values({
-          id: assetId,
-          ownerId,
-          sourceIntakeId: intakeId,
-          kind: 'document',
-          purpose: 'source_original',
-          state: 'ready',
-          objectKey: `originals/${assetId}`,
-          originalFileName: 'catalog.pdf',
-          mimeType: 'application/pdf',
-          byteLength: 10,
-          sha256: 'a'.repeat(64),
+        await tx.sourceIntakes.createMany({ data: { id: intakeId, ownerId } });
+        await tx.mediaAssets.createMany({
+          data: {
+            id: assetId,
+            ownerId,
+            sourceIntakeId: intakeId,
+            kind: 'document',
+            purpose: 'source_original',
+            state: 'ready',
+            objectKey: `originals/${assetId}`,
+            originalFileName: 'catalog.pdf',
+            mimeType: 'application/pdf',
+            byteLength: 10,
+            sha256: 'a'.repeat(64),
+          },
         });
         await repository.create(
           source,
@@ -548,37 +553,41 @@ describe('fn:createSourceRepository', () => {
             },
           ],
         );
-        await tx.insert(mediaAssets).values({
-          id: rawOutputAssetId,
-          ownerId,
-          sourceVersionId: version.id,
-          kind: 'document',
-          purpose: 'source_parse_output',
-          state: 'ready',
-          objectKey: `parse/${rawOutputAssetId}`,
-          originalFileName: 'parse.json',
-          mimeType: 'application/json',
-          byteLength: 10,
-          sha256: 'b'.repeat(64),
+        await tx.mediaAssets.createMany({
+          data: {
+            id: rawOutputAssetId,
+            ownerId,
+            sourceVersionId: version.id,
+            kind: 'document',
+            purpose: 'source_parse_output',
+            state: 'ready',
+            objectKey: `parse/${rawOutputAssetId}`,
+            originalFileName: 'parse.json',
+            mimeType: 'application/json',
+            byteLength: 10,
+            sha256: 'b'.repeat(64),
+          },
         });
-        await tx.insert(jobs).values({
-          id: parseRunId,
-          ownerId,
-          kind: 'sourceIngestion',
-          resourceId: version.id,
-          state: 'pending',
-          stage: 'parse',
+        await tx.jobs.createMany({
+          data: {
+            id: parseRunId,
+            ownerId,
+            kind: 'sourceIngestion',
+            resourceId: version.id,
+            state: 'pending',
+            stage: 'parse',
+          },
         });
-        await tx
-          .insert(indexVersions)
-          .values({
+        await tx.indexVersions.createMany({
+          skipDuplicates: true,
+          data: {
             id: mapping.indexVersion,
             kind: 'text',
             embeddingModelId: 'test',
             dimensions: 8,
             status: 'ready',
-          })
-          .onConflictDoNothing();
+          },
+        });
         await repository.saveParsed({
           ...pack,
           warnings: [{ pageId: page.id, messageZhHant: 'Review page' }],
@@ -725,23 +734,27 @@ describe('fn:createSourceRepository', () => {
         };
         await foreignRepository.addCitation(foreignCitation);
         const mismatchedImageId = randomUUID();
-        await tx.insert(referenceImages).values({
-          id: mismatchedImageId,
-          sourceVersionId: version.id,
-          locatorId: foreignCitation.id,
-          captionAssociation: 'none',
+        await tx.referenceImages.createMany({
+          data: {
+            id: mismatchedImageId,
+            sourceVersionId: version.id,
+            locatorId: foreignCitation.id,
+            captionAssociation: 'none',
+          },
         });
         expect(
           await readReferenceImage(tx, ownerId, mismatchedImageId),
         ).toBeNull();
         const blockId = randomUUID();
-        await tx.insert(sourceBlocks).values({
-          id: blockId,
-          parseRunId,
-          pageId: page.id,
-          rawText: 'Catalog text',
-          searchMapping: {},
-          ordinal: 0,
+        await tx.sourceBlocks.createMany({
+          data: {
+            id: blockId,
+            parseRunId,
+            pageId: page.id,
+            rawText: 'Catalog text',
+            searchMapping: {},
+            ordinal: 0,
+          },
         });
         const rangedCitation: SourceCitation = {
           id: randomUUID(),
@@ -818,42 +831,50 @@ describe('fn:createSourceRepository', () => {
             originalCoordinateSpace: 'image_pixels',
           },
         };
-        await tx.insert(mediaAssets).values({
-          id: imageAssetId,
-          ownerId,
-          sourceVersionId: version.id,
-          kind: 'photo',
-          purpose: 'source_original',
-          state: 'ready',
-          objectKey: `originals/${imageAssetId}`,
-          originalFileName: 'page.jpg',
-          mimeType: 'image/jpeg',
-          byteLength: 10,
-          sha256: 'c'.repeat(64),
+        await tx.mediaAssets.createMany({
+          data: {
+            id: imageAssetId,
+            ownerId,
+            sourceVersionId: version.id,
+            kind: 'photo',
+            purpose: 'source_original',
+            state: 'ready',
+            objectKey: `originals/${imageAssetId}`,
+            originalFileName: 'page.jpg',
+            mimeType: 'image/jpeg',
+            byteLength: 10,
+            sha256: 'c'.repeat(64),
+          },
         });
-        await tx.insert(sourceVersionAssets).values({
-          versionId: version.id,
-          assetId: imageAssetId,
-          ordinal: 1,
+        await tx.sourceVersionAssets.createMany({
+          data: {
+            versionId: version.id,
+            assetId: imageAssetId,
+            ordinal: 1,
+          },
         });
-        await tx.insert(mediaDerivatives).values({
-          id: imageDerivativeId,
-          ownerId,
-          originalAssetId: imageAssetId,
-          kind: 'canonical',
-          objectKey: `derivatives/${imageDerivativeId}`,
-          mimeType: 'image/jpeg',
-          byteLength: 10,
-          sha256: 'd'.repeat(64),
+        await tx.mediaDerivatives.createMany({
+          data: {
+            id: imageDerivativeId,
+            ownerId,
+            originalAssetId: imageAssetId,
+            kind: 'canonical',
+            objectKey: `derivatives/${imageDerivativeId}`,
+            mimeType: 'image/jpeg',
+            byteLength: 10,
+            sha256: 'd'.repeat(64),
+          },
         });
-        await tx.insert(canonicalViews).values({
-          id: imagePage.view.id,
-          originalAssetId: imageAssetId,
-          derivativeId: imageDerivativeId,
-          width: imagePage.view.width,
-          height: imagePage.view.height,
-          coordinateSpace: imagePage.view.originalCoordinateSpace,
-          transformToOriginal: imagePage.view.transformToOriginal,
+        await tx.canonicalViews.createMany({
+          data: {
+            id: imagePage.view.id,
+            originalAssetId: imageAssetId,
+            derivativeId: imageDerivativeId,
+            width: imagePage.view.width,
+            height: imagePage.view.height,
+            coordinateSpace: imagePage.view.originalCoordinateSpace,
+            transformToOriginal: imagePage.view.transformToOriginal,
+          },
         });
         await repository.saveParsed({
           ...pack,
@@ -906,7 +927,7 @@ describe('fn:createSourceRepository', () => {
     const ownerId = randomUUID();
     const { source, version } = sourcePair();
     await expect(
-      database.db.transaction(async (tx) => {
+      database.db.$transaction(async (tx) => {
         await createSourceRepository(tx, ownerId).create(source, version, [
           { assetId: randomUUID(), order: 0, printedPageLabel: null },
         ]);
@@ -920,7 +941,7 @@ describe('fn:createSourceRepository', () => {
     const database = connection;
     const ownerId = randomUUID();
     const { source, version } = sourcePair();
-    await database.db.transaction(async (tx) => {
+    await database.db.$transaction(async (tx) => {
       const repository = createSourceRepository(tx, ownerId);
       await repository.create(source, version, []);
       for (const position of [

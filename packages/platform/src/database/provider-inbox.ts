@@ -1,10 +1,6 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { jsonValue } from './json.js';
+
 import type { Database } from './connection.js';
-import {
-  jobs,
-  providerJobMappings,
-  providerWebhookInbox,
-} from './schema/index.js';
 
 /** provider callback accepted only after signature verification */
 export interface VerifiedProviderWebhook {
@@ -18,89 +14,86 @@ export interface VerifiedProviderWebhook {
 }
 
 /**
- * stores only an already signature-verified callback, even before its job mapping exists
+ * stores an already signature-verified callback, even before its job mapping exists
+ * @param db platform database
+ * @param event verified callback
+ * @returns whether this delivery inserted the event
  */
 export async function recordVerifiedProviderWebhook(
   db: Database,
   event: VerifiedProviderWebhook,
 ): Promise<{ readonly inserted: boolean }> {
-  const [inserted] = await db
-    .insert(providerWebhookInbox)
-    .values(event)
-    .onConflictDoNothing()
-    .returning({ eventId: providerWebhookInbox.eventId });
-  if (inserted) {
+  const inserted = await db.providerWebhookInbox.createMany({
+    data: { ...event, payload: jsonValue(event.payload) },
+    skipDuplicates: true,
+  });
+  if (inserted.count === 1) {
     return { inserted: true };
   }
-  const [existing] = await db
-    .select({
-      hash: providerWebhookInbox.payloadHash,
-      providerJobId: providerWebhookInbox.providerJobId,
-    })
-    .from(providerWebhookInbox)
-    .where(
-      and(
-        eq(providerWebhookInbox.provider, event.provider),
-        eq(providerWebhookInbox.eventId, event.eventId),
-      ),
-    );
+  const existing = await db.providerWebhookInbox.findUnique({
+    where: {
+      provider_eventId: { provider: event.provider, eventId: event.eventId },
+    },
+    select: { payloadHash: true, providerJobId: true },
+  });
   if (
     !existing ||
-    existing.hash !== event.payloadHash ||
+    existing.payloadHash !== event.payloadHash ||
     existing.providerJobId !== event.providerJobId
   ) {
     throw new Error('Provider event ID conflicts with another payload');
   }
+
   return { inserted: false };
 }
 
+/** resolved verified callback with its trusted owner and job */
+export interface ResolvedProviderWebhook {
+  readonly provider: string;
+  readonly eventId: string;
+  readonly providerJobId: string;
+  readonly eventType: string;
+  readonly signedAt: string;
+  readonly payload: unknown;
+  readonly ownerId: string;
+  readonly jobId: string;
+  readonly step: string;
+}
+
 /**
- * resolves pending verified callbacks through trusted provider-job and job-owner rows
+ * resolves pending callbacks through trusted provider-job and job-owner rows
+ * @param db platform database
+ * @param limit maximum callbacks, bounded to one hundred
+ * @returns oldest pending callbacks whose job mapping exists
  */
 export async function listResolvedProviderWebhooks(
   db: Database,
   limit: number,
-) {
-  const rows = await db
-    .select({
-      event: providerWebhookInbox,
-      jobId: providerJobMappings.jobId,
-      step: providerJobMappings.stageKey,
-      ownerId: jobs.ownerId,
-    })
-    .from(providerWebhookInbox)
-    .innerJoin(
-      providerJobMappings,
-      and(
-        eq(providerWebhookInbox.provider, providerJobMappings.provider),
-        eq(
-          providerWebhookInbox.providerJobId,
-          providerJobMappings.providerJobId,
-        ),
-      ),
-    )
-    .innerJoin(jobs, eq(providerJobMappings.jobId, jobs.id))
-    .where(isNull(providerWebhookInbox.deliveredAt))
-    .orderBy(
-      asc(providerWebhookInbox.createdAt),
-      asc(providerWebhookInbox.eventId),
-    )
-    .limit(Math.min(Math.max(limit, 1), 100));
-  return rows.map((row) => ({
-    provider: row.event.provider,
-    eventId: row.event.eventId,
-    providerJobId: row.event.providerJobId,
-    eventType: row.event.eventType,
-    signedAt: new Date(row.event.signedAt).toISOString(),
-    payload: row.event.payload,
-    ownerId: row.ownerId,
-    jobId: row.jobId,
-    step: row.step,
-  }));
+): Promise<ResolvedProviderWebhook[]> {
+  const rows = await db.$queryRaw<
+    Array<Omit<ResolvedProviderWebhook, 'signedAt'> & { signedAt: Date }>
+  >`
+    select inbox.provider, inbox.event_id as "eventId", inbox.provider_job_id as "providerJobId",
+      inbox.event_type as "eventType", inbox.signed_at as "signedAt", inbox.payload,
+      job.owner_id as "ownerId", mapping.job_id as "jobId", mapping.stage_key as step
+    from provider_webhook_inbox inbox
+    inner join provider_job_mappings mapping
+      on inbox.provider = mapping.provider and inbox.provider_job_id = mapping.provider_job_id
+    inner join jobs job on mapping.job_id = job.id
+    where inbox.delivered_at is null
+    order by inbox.created_at, inbox.event_id
+    limit ${Math.min(Math.max(limit, 1), 100)}`;
+
+  return rows.map((row) => ({ ...row, signedAt: row.signedAt.toISOString() }));
 }
 
 /**
- * marks a callback delivered only after its owner-scoped handler succeeds
+ * marks a callback delivered after its owner-scoped handler succeeds
+ * @param db platform database
+ * @param provider provider identity
+ * @param eventId callback identity
+ * @param deliveredAt successful delivery instant
+ * @returns whether an undelivered callback changed
  */
 export async function markProviderWebhookDelivered(
   db: Database,
@@ -108,16 +101,10 @@ export async function markProviderWebhookDelivered(
   eventId: string,
   deliveredAt: string,
 ): Promise<boolean> {
-  const [row] = await db
-    .update(providerWebhookInbox)
-    .set({ deliveredAt })
-    .where(
-      and(
-        eq(providerWebhookInbox.provider, provider),
-        eq(providerWebhookInbox.eventId, eventId),
-        isNull(providerWebhookInbox.deliveredAt),
-      ),
-    )
-    .returning({ eventId: providerWebhookInbox.eventId });
-  return Boolean(row);
+  const changed = await db.providerWebhookInbox.updateMany({
+    data: { deliveredAt },
+    where: { provider, eventId, deliveredAt: null },
+  });
+
+  return changed.count === 1;
 }

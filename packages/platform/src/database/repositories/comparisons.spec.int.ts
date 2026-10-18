@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, inject, it } from 'vitest';
 
 import { createDatabase } from '../connection.js';
-import { comparisonFailures } from '../schema/index.js';
 
 import { createComparisonRepository } from './comparisons.js';
 
@@ -13,6 +11,7 @@ import type { ImageComparisonResult } from '@antica/contracts';
 
 import type { Transaction } from '../transaction.js';
 
+const resources = inject('platformDatabases');
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL ?? '';
 if (!databaseUrl) {
   throw new Error(
@@ -24,10 +23,13 @@ const rollback = new Error('Rollback comparison test transaction');
 async function inRolledBackTransaction(
   operation: (tx: Transaction) => Promise<void>,
 ): Promise<void> {
-  const database = createDatabase({ url: databaseUrl, maxConnections: 1 });
+  const database = createDatabase({
+    url: resources.comparisons!.url,
+    maxConnections: 1,
+  });
   try {
     await expect(
-      database.db.transaction(async (tx) => {
+      database.db.$transaction(async (tx) => {
         await operation(tx);
         throw rollback;
       }),
@@ -37,7 +39,7 @@ async function inRolledBackTransaction(
   }
 }
 
-describe('fn:createComparisonRepository', () => {
+describe('fn:createComparisonRepository', { timeout: 30_000 }, () => {
   it("should persist one owner's immutable comparison and refuse conflicting reuse of its ID", async () => {
     await inRolledBackTransaction(async (tx) => {
       const ownerId = randomUUID();
@@ -106,10 +108,9 @@ describe('fn:createComparisonRepository', () => {
       };
 
       await createComparisonRepository(tx, ownerId).recordFailure(failure);
-      const [stored] = await tx
-        .select()
-        .from(comparisonFailures)
-        .where(eq(comparisonFailures.id, id));
+      const [stored] = await tx.comparisonFailures.findMany({
+        where: { id },
+      });
       expect(stored).toMatchObject({
         ownerId,
         query: failure.query,

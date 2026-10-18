@@ -1,4 +1,6 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { Prisma } from '../generated/client.js';
+import { jsonValue, nullableJson } from '../json.js';
+
 import type {
   CommandRepository,
   JobRepository,
@@ -6,32 +8,28 @@ import type {
   OutboxRepository,
 } from '@antica/application/ports';
 import type { JobEnvelope, JobState } from '@antica/contracts';
-import type { Transaction } from '../transaction.js';
-import type { Database } from '../connection.js';
-import {
-  idempotencyRequests,
-  jobSteps,
-  jobs,
-  outbox,
-  providerEvents,
-  providerJobMappings,
-} from '../schema/index.js';
 
-function toJob(row: typeof jobs.$inferSelect): JobEnvelope {
+import type { Database } from '../connection.js';
+import type { jobs } from '../generated/client.js';
+import type { Transaction } from '../transaction.js';
+
+/**
+ * maps a persisted job to its public envelope
+ * @param row persisted job
+ * @returns job envelope with normalized instants
+ */
+function toJob(row: jobs): JobEnvelope {
   const state: JobState =
     row.state === 'running'
       ? { kind: 'running', stage: row.stage }
       : row.state === 'waiting'
         ? { kind: 'waiting', stage: row.stage }
         : row.state === 'succeeded'
-          ? {
-              kind: 'succeeded',
-              completedAt: new Date(row.completedAt!).toISOString(),
-            }
+          ? { kind: 'succeeded', completedAt: row.completedAt!.toISOString() }
           : row.state === 'partial'
             ? {
                 kind: 'partial',
-                completedAt: new Date(row.completedAt!).toISOString(),
+                completedAt: row.completedAt!.toISOString(),
                 incompleteStages:
                   (row.result as { incompleteStages?: string[] } | null)
                     ?.incompleteStages ?? [],
@@ -45,39 +43,43 @@ function toJob(row: typeof jobs.$inferSelect): JobEnvelope {
                   >['error'],
                 }
               : { kind: 'queued' };
+
   return {
     id: row.id,
     kind: row.kind as JobEnvelope['kind'],
     resourceId: row.resourceId,
     state,
-    createdAt: new Date(row.createdAt).toISOString(),
-    updatedAt: new Date(row.updatedAt).toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
     result: row.result,
   };
 }
 
 /**
  * persists idempotent command results with operation-specific keys
+ * @param tx
+ * @param ownerId
  */
 export function createCommandRepository(
   tx: Transaction,
   ownerId: string,
 ): CommandRepository {
   return {
+    /**
+     * @param requestOwnerId
+     * @param operation
+     * @param requestKey
+     */
     async get(requestOwnerId, operation, requestKey) {
       if (requestOwnerId !== ownerId) {
         return null;
       }
-      const [row] = await tx
-        .select()
-        .from(idempotencyRequests)
-        .where(
-          and(
-            eq(idempotencyRequests.ownerId, ownerId),
-            eq(idempotencyRequests.operation, operation),
-            eq(idempotencyRequests.key, requestKey),
-          ),
-        );
+      const row = await tx.idempotencyRequests.findUnique({
+        where: {
+          ownerId_operation_key: { ownerId, operation, key: requestKey },
+        },
+      });
+
       return row && row.responseStatus !== null
         ? {
             ownerId,
@@ -89,18 +91,21 @@ export function createCommandRepository(
           }
         : null;
     },
+    /** @param receipt */
     async insert(receipt) {
       if (receipt.ownerId !== ownerId) {
         throw new Error('Command owner mismatch');
       }
-      await tx.insert(idempotencyRequests).values({
-        ownerId,
-        operation: receipt.operation,
-        key: receipt.requestKey,
-        fingerprint: receipt.fingerprint,
-        status: 'completed',
-        responseStatus: receipt.status,
-        response: receipt.result,
+      await tx.idempotencyRequests.create({
+        data: {
+          ownerId,
+          operation: receipt.operation,
+          key: receipt.requestKey,
+          fingerprint: receipt.fingerprint,
+          status: 'completed',
+          responseStatus: receipt.status,
+          response: nullableJson(receipt.result),
+        },
       });
     },
   };
@@ -108,351 +113,349 @@ export function createCommandRepository(
 
 /**
  * persists durable job state, steps and provider callback deduplication
+ * @param tx
+ * @param ownerId
  */
 export function createJobRepository(
   tx: Transaction,
   ownerId: string,
 ): JobRepository {
   return {
+    /** @param id */
     async get(id) {
-      const [row] = await tx
-        .select()
-        .from(jobs)
-        .where(and(eq(jobs.id, id), eq(jobs.ownerId, ownerId)));
+      const row = await tx.jobs.findFirst({ where: { id, ownerId } });
+
       return row ? toJob(row) : null;
     },
+    /**
+     * @param kind
+     * @param resourceId
+     */
     async getByResource(kind, resourceId) {
-      const [row] = await tx
-        .select()
-        .from(jobs)
-        .where(
-          and(
-            eq(jobs.ownerId, ownerId),
-            eq(jobs.kind, kind),
-            eq(jobs.resourceId, resourceId),
-          ),
-        )
-        .orderBy(desc(jobs.createdAt), desc(jobs.id))
-        .limit(1);
+      const row = await tx.jobs.findFirst({
+        where: { ownerId, kind, resourceId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+
       return row ? toJob(row) : null;
     },
+    /** @param job */
     async create(job) {
-      await tx.insert(jobs).values({
-        id: job.id,
-        ownerId,
-        kind: job.kind,
-        resourceId: job.resourceId,
-        state: job.state.kind,
-        stage: 'stage' in job.state ? job.state.stage : '',
-        createdAt: job.createdAt,
-        updatedAt: job.updatedAt,
-        completedAt: 'completedAt' in job.state ? job.state.completedAt : null,
-        error: job.state.kind === 'failed' ? job.state.error : null,
-        result: job.result,
+      await tx.jobs.create({
+        data: {
+          id: job.id,
+          ownerId,
+          kind: job.kind,
+          resourceId: job.resourceId,
+          state: job.state.kind,
+          stage: 'stage' in job.state ? job.state.stage : '',
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+          completedAt:
+            'completedAt' in job.state ? job.state.completedAt : null,
+          error: nullableJson(
+            job.state.kind === 'failed' ? job.state.error : null,
+          ),
+          result: nullableJson(job.result),
+        },
       });
     },
+    /**
+     * @param job
+     * @param expectedUpdatedAt
+     */
     async update(job, expectedUpdatedAt) {
-      const changed = await tx
-        .update(jobs)
-        .set({
+      const changed = await tx.jobs.updateMany({
+        data: {
           state: job.state.kind,
           stage: 'stage' in job.state ? job.state.stage : '',
           updatedAt: job.updatedAt,
           completedAt:
             'completedAt' in job.state ? job.state.completedAt : null,
-          error: job.state.kind === 'failed' ? job.state.error : null,
-          result: job.result,
-          revision: sql`${jobs.revision} + 1`,
-        })
-        .where(
-          and(
-            eq(jobs.id, job.id),
-            eq(jobs.ownerId, ownerId),
-            eq(jobs.updatedAt, expectedUpdatedAt),
-            sql`${jobs.state} not in ('succeeded','partial','failed')`,
+          error: nullableJson(
+            job.state.kind === 'failed' ? job.state.error : null,
           ),
-        )
-        .returning({ id: jobs.id });
-      return changed.length === 1;
+          result: nullableJson(job.result),
+          revision: { increment: 1 },
+        },
+        where: {
+          id: job.id,
+          ownerId,
+          updatedAt: expectedUpdatedAt,
+          state: { notIn: ['succeeded', 'partial', 'failed'] },
+        },
+      });
+
+      return changed.count === 1;
     },
+    /**
+     * @param id
+     * @param expectedUpdatedAt
+     * @param updatedAt
+     */
     async restartFailed(id, expectedUpdatedAt, updatedAt) {
-      const [row] = await tx
-        .update(jobs)
-        .set({
+      const changed = await tx.jobs.updateMany({
+        data: {
           state: 'running',
           stage: 'retry',
           updatedAt,
           completedAt: null,
-          error: null,
-          result: null,
-          revision: sql`${jobs.revision} + 1`,
-        })
-        .where(
-          and(
-            eq(jobs.id, id),
-            eq(jobs.ownerId, ownerId),
-            eq(jobs.kind, 'research'),
-            eq(jobs.state, 'failed'),
-            eq(jobs.updatedAt, expectedUpdatedAt),
-          ),
-        )
-        .returning({ id: jobs.id });
-      return Boolean(row);
+          error: Prisma.DbNull,
+          result: Prisma.DbNull,
+          revision: { increment: 1 },
+        },
+        where: {
+          id,
+          ownerId,
+          kind: 'research',
+          state: 'failed',
+          updatedAt: expectedUpdatedAt,
+        },
+      });
+
+      return changed.count === 1;
     },
+    /**
+     * @param provider
+     * @param eventId
+     */
     async hasProviderEvent(provider, eventId) {
-      const [event] = await tx
-        .select({ jobId: providerJobMappings.jobId })
-        .from(providerEvents)
-        .innerJoin(
-          providerJobMappings,
-          eq(providerEvents.mappingId, providerJobMappings.id),
-        )
-        .innerJoin(
-          jobs,
-          and(
-            eq(providerJobMappings.jobId, jobs.id),
-            eq(jobs.ownerId, ownerId),
-          ),
-        )
-        .where(
-          and(
-            eq(providerEvents.provider, provider),
-            eq(providerEvents.eventId, eventId),
-          ),
-        );
+      const event = await tx.providerEvents.findFirst({
+        where: {
+          provider,
+          eventId,
+          providerJobMappings: { jobs: { ownerId } },
+        },
+        select: { eventId: true },
+      });
+
       return Boolean(event);
     },
+    /**
+     * @param provider
+     * @param eventId
+     * @param jobId
+     */
     async recordProviderEvent(provider, eventId, jobId) {
-      const [mapping] = await tx
-        .select()
-        .from(providerJobMappings)
-        .innerJoin(
-          jobs,
-          and(
-            eq(providerJobMappings.jobId, jobs.id),
-            eq(jobs.ownerId, ownerId),
-          ),
-        )
-        .where(
-          and(
-            eq(providerJobMappings.provider, provider),
-            eq(providerJobMappings.jobId, jobId),
-          ),
-        );
+      const mapping = await tx.providerJobMappings.findFirst({
+        where: { provider, jobId, jobs: { ownerId } },
+      });
       if (!mapping) {
         throw new Error('Provider job mapping missing');
       }
-      await tx
-        .insert(providerEvents)
-        .values({
+      await tx.providerEvents.createMany({
+        data: {
           provider,
           eventId,
-          mappingId: mapping.provider_job_mappings.id,
+          mappingId: mapping.id,
           payloadHash: '',
           payload: {},
-        })
-        .onConflictDoNothing();
+        },
+        skipDuplicates: true,
+      });
     },
+    /**
+     * @param jobId
+     * @param step
+     */
     async getStep(jobId, step) {
-      const [row] = await tx
-        .select()
-        .from(jobSteps)
-        .innerJoin(
-          jobs,
-          and(eq(jobSteps.jobId, jobs.id), eq(jobs.ownerId, ownerId)),
-        )
-        .where(and(eq(jobSteps.jobId, jobId), eq(jobSteps.stageKey, step)));
+      const row = await tx.jobSteps.findFirst({
+        where: { jobId, stageKey: step, jobs: { ownerId } },
+      });
+
       return row
         ? {
             jobId,
             step,
-            revision: row.job_steps.revision,
-            state: row.job_steps.state as
+            revision: row.revision,
+            state: row.state as
               'ready' | 'leased' | 'waiting' | 'completed' | 'failed',
-            leaseUntil: row.job_steps.leaseUntil
-              ? new Date(row.job_steps.leaseUntil).toISOString()
-              : null,
-            checkpoint: row.job_steps.checkpoint,
-            result: row.job_steps.result,
+            leaseUntil: row.leaseUntil?.toISOString() ?? null,
+            checkpoint: row.checkpoint,
+            result: row.result,
           }
         : null;
     },
+    /**
+     * @param step
+     * @param expectedRevision
+     */
     async updateStep(step, expectedRevision) {
       if (expectedRevision === 0) {
-        const [job] = await tx
-          .select({ id: jobs.id })
-          .from(jobs)
-          .where(and(eq(jobs.id, step.jobId), eq(jobs.ownerId, ownerId)));
+        const job = await tx.jobs.findFirst({
+          where: { id: step.jobId, ownerId },
+          select: { id: true },
+        });
         if (!job) {
           return false;
         }
-        const [created] = await tx
-          .insert(jobSteps)
-          .values({
+        const changed = await tx.jobSteps.createMany({
+          data: {
             jobId: step.jobId,
             stageKey: step.step,
             revision: 1,
             state: step.state,
             leaseUntil: step.leaseUntil,
-            checkpoint: step.checkpoint,
-            result: step.result,
-          })
-          .onConflictDoNothing()
-          .returning({ jobId: jobSteps.jobId });
-        return Boolean(created);
+            checkpoint: nullableJson(step.checkpoint),
+            result: nullableJson(step.result),
+          },
+          skipDuplicates: true,
+        });
+
+        return changed.count === 1;
       }
-      const [row] = await tx
-        .update(jobSteps)
-        .set({
-          revision: expectedRevision + 1,
-          state: step.state,
-          leaseUntil: step.leaseUntil,
-          checkpoint: step.checkpoint,
-          result: step.result,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(jobSteps.jobId, step.jobId),
-            eq(jobSteps.stageKey, step.step),
-            eq(jobSteps.revision, expectedRevision),
-            sql`exists (select 1 from jobs where jobs.id = ${step.jobId} and jobs.owner_id = ${ownerId})`,
-          ),
-        )
-        .returning({ jobId: jobSteps.jobId });
-      return Boolean(row);
+      // Database time retains PostgreSQL transaction-time semantics.
+      const changed = await tx.$executeRaw`update job_steps set
+        revision = ${expectedRevision + 1}, state = ${step.state},
+        lease_until = ${step.leaseUntil}::timestamptz,
+        checkpoint = ${step.checkpoint === null ? null : JSON.stringify(step.checkpoint)}::jsonb,
+        result = ${step.result === null ? null : JSON.stringify(step.result)}::jsonb,
+        updated_at = now()
+        where job_id = ${step.jobId}::uuid and stage_key = ${step.step}
+          and revision = ${expectedRevision}
+          and exists (select 1 from jobs where jobs.id = ${step.jobId}::uuid and jobs.owner_id = ${ownerId})`;
+
+      return changed === 1;
     },
+    /**
+     * @param provider
+     * @param providerJobId
+     */
     async getProviderJob(provider, providerJobId) {
-      const [row] = await tx
-        .select({
-          jobId: providerJobMappings.jobId,
-          step: providerJobMappings.stageKey,
-        })
-        .from(providerJobMappings)
-        .innerJoin(
-          jobs,
-          and(
-            eq(providerJobMappings.jobId, jobs.id),
-            eq(jobs.ownerId, ownerId),
-          ),
-        )
-        .where(
-          and(
-            eq(providerJobMappings.provider, provider),
-            eq(providerJobMappings.providerJobId, providerJobId),
-          ),
-        );
-      return row ?? null;
+      const row = await tx.providerJobMappings.findFirst({
+        where: { provider, providerJobId, jobs: { ownerId } },
+        select: { jobId: true, stageKey: true },
+      });
+
+      return row ? { jobId: row.jobId, step: row.stageKey } : null;
     },
+    /**
+     * @param provider
+     * @param providerJobId
+     * @param jobId
+     * @param step
+     */
     async mapProviderJob(provider, providerJobId, jobId, step) {
-      const [job] = await tx
-        .select({ id: jobs.id })
-        .from(jobs)
-        .where(and(eq(jobs.id, jobId), eq(jobs.ownerId, ownerId)));
+      const job = await tx.jobs.findFirst({
+        where: { id: jobId, ownerId },
+        select: { id: true },
+      });
       if (!job) {
         throw new Error('Job not found');
       }
-      await tx
-        .insert(providerJobMappings)
-        .values({
+      await tx.providerJobMappings.createMany({
+        data: {
           id: crypto.randomUUID(),
           provider,
           providerJobId,
           jobId,
           stageKey: step,
           correlationToken: crypto.randomUUID(),
-        })
-        .onConflictDoNothing();
+        },
+        skipDuplicates: true,
+      });
     },
   };
 }
 
 /**
  * writes outbox messages in the same transaction as business state
+ * @param tx
+ * @param ownerId
  */
 export function createOutboxRepository(
   tx: Transaction,
   ownerId: string,
 ): OutboxRepository {
   return {
+    /** @param message */
     async enqueue(message) {
       if (message.event.ownerId !== ownerId) {
         throw new Error('Outbox owner mismatch');
       }
-      await tx.insert(outbox).values({
-        eventId: message.id,
-        jobId: message.event.jobId,
-        eventName: message.name,
-        schemaVersion: message.event.schemaVersion,
-        ownerId,
-        resourceId: message.event.resourceId,
-        idempotencyKey: message.event.idempotencyKey,
-        payload: message.event,
-        createdAt: message.createdAt,
-        deliveredAt: message.sentAt,
+      await tx.outbox.create({
+        data: {
+          eventId: message.id,
+          jobId: message.event.jobId,
+          eventName: message.name,
+          schemaVersion: message.event.schemaVersion,
+          ownerId,
+          resourceId: message.event.resourceId,
+          idempotencyKey: message.event.idempotencyKey,
+          payload: jsonValue(message.event),
+          createdAt: message.createdAt,
+          deliveredAt: message.sentAt,
+        },
       });
     },
+    /** @param limit */
     async pending(limit) {
-      const rows = await tx
-        .select()
-        .from(outbox)
-        .where(
-          and(
-            eq(outbox.ownerId, ownerId),
-            isNull(outbox.deliveredAt),
-            sql`${outbox.availableAt} <= now()`,
-          ),
-        )
-        .orderBy(asc(outbox.availableAt), asc(outbox.eventId))
-        .limit(Math.min(Math.max(limit, 1), 100));
+      const rows = await tx.$queryRaw<
+        Array<{
+          eventId: string;
+          eventName: string;
+          payload: OutboxMessage['event'];
+          createdAt: string;
+          deliveredAt: string | null;
+        }>
+      >`
+        select event_id as "eventId", event_name as "eventName", payload,
+          to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt",
+          to_char(delivered_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "deliveredAt"
+        from outbox where owner_id = ${ownerId} and delivered_at is null and available_at <= now()
+        order by available_at, event_id limit ${Math.min(Math.max(limit, 1), 100)}`;
+
       return rows.map((row) => ({
         id: row.eventId,
         name: row.eventName,
-        event: row.payload as OutboxMessage['event'],
+        event: row.payload,
         createdAt: row.createdAt,
         sentAt: row.deliveredAt,
       }));
     },
+    /**
+     * @param id
+     * @param sentAt
+     */
     async markSent(id, sentAt) {
-      await tx
-        .update(outbox)
-        .set({ deliveredAt: sentAt })
-        .where(
-          and(
-            eq(outbox.eventId, id),
-            eq(outbox.ownerId, ownerId),
-            isNull(outbox.deliveredAt),
-          ),
-        );
+      await tx.outbox.updateMany({
+        data: { deliveredAt: sentAt },
+        where: { eventId: id, ownerId, deliveredAt: null },
+      });
     },
   };
 }
 
 /**
  * scans due outbox events so the dispatcher can enter each event's owner transaction
+ * @param db
+ * @param limit
  */
 export async function listPendingOutbox(
   db: Database,
   limit: number,
 ): Promise<
-  readonly (OutboxMessage & {
-    readonly ownerId: string;
-    readonly resourceId: string;
-  })[]
+  ReadonlyArray<
+    OutboxMessage & { readonly ownerId: string; readonly resourceId: string }
+  >
 > {
-  const rows = await db
-    .select()
-    .from(outbox)
-    .where(and(isNull(outbox.deliveredAt), sql`${outbox.availableAt} <= now()`))
-    .orderBy(asc(outbox.availableAt), asc(outbox.eventId))
-    .limit(Math.min(Math.max(limit, 1), 100));
+  const rows = await db.$queryRaw<
+    Array<{
+      id: string;
+      name: string;
+      event: OutboxMessage['event'];
+      ownerId: string;
+      resourceId: string;
+      createdAt: Date;
+    }>
+  >`
+    select event_id as id, event_name as name, payload as event, owner_id as "ownerId", resource_id as "resourceId", created_at as "createdAt"
+    from outbox where delivered_at is null and available_at <= now()
+    order by available_at, event_id limit ${Math.min(Math.max(limit, 1), 100)}`;
+
   return rows.map((row) => ({
-    id: row.eventId,
-    name: row.eventName,
-    event: row.payload as OutboxMessage['event'],
-    ownerId: row.ownerId,
-    resourceId: row.resourceId,
-    createdAt: new Date(row.createdAt).toISOString(),
+    ...row,
+    createdAt: row.createdAt.toISOString(),
     sentAt: null,
   }));
 }

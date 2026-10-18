@@ -13,6 +13,21 @@ declare module 'vitest' {
 }
 
 const slotsByFile: Readonly<Record<string, readonly DatabaseSlot[]>> = {
+  'src/database/repositories/runtime.spec.int.ts': [
+    { id: 'runtime', migrate: true },
+  ],
+  'src/database/source-artifacts.spec.int.ts': [
+    { id: 'source-artifacts', migrate: true },
+  ],
+  'src/database/repositories/comparisons.spec.int.ts': [
+    { id: 'comparisons', migrate: true },
+  ],
+  'src/database/repositories/transcripts.spec.int.ts': [
+    { id: 'transcripts', migrate: true },
+  ],
+  'src/database/repositories/edit-drafts.spec.int.ts': [
+    { id: 'edit-drafts', migrate: true },
+  ],
   'src/database/commands.spec.int.ts': [{ id: 'commands', migrate: true }],
   'src/database/schema/constraints.spec.int.ts': [
     { id: 'constraints', migrate: true },
@@ -21,6 +36,7 @@ const slotsByFile: Readonly<Record<string, readonly DatabaseSlot[]>> = {
     { id: 'generated', migrate: false },
     { id: 'upgrade', migrate: false },
     { id: 'backfill', migrate: false },
+    { id: 'shadow', migrate: false },
   ],
   'src/database/repositories/sources.spec.int.ts': [
     { id: 'sources', migrate: true },
@@ -29,8 +45,14 @@ const slotsByFile: Readonly<Record<string, readonly DatabaseSlot[]>> = {
     { id: 'knowledge', migrate: true },
   ],
   'src/database/retrieval.spec.int.ts': [{ id: 'retrieval', migrate: true }],
+  'src/database/repositories/record-history.spec.int.ts': [
+    { id: 'record-history', migrate: true },
+  ],
   'src/database/repositories/evidence-create.spec.int.ts': [
     { id: 'evidence-create', migrate: true },
+  ],
+  'src/database/repositories/record-messages.spec.int.ts': [
+    { id: 'record-messages', migrate: true },
   ],
 };
 

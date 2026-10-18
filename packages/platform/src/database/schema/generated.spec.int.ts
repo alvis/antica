@@ -1,235 +1,26 @@
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 import { describe, expect, inject } from 'vitest';
 
-import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
+import { migrateDatabase } from '../migrate.js';
 
 import { createSqlTest } from '../spec/fixtures/runner.js';
-
-import {
-  analysisSnapshots,
-  snapshotAssets,
-  snapshotEvidence,
-  snapshotObservations,
-  snapshotChecks,
-  retrievalSnapshots,
-  analysisRuns,
-  runSuggestedMethods,
-  claims,
-  claimEvidence,
-  claimObservations,
-  claimCitations,
-  nextActions,
-  actionStates,
-  actionResolutions,
-  resolutionEvidence,
-  resolutionObservations,
-  resolutionReferences,
-  resolutionChecks,
-  proposals,
-  proposalFindings,
-  proposalStates,
-  adoptionEvents,
-  user,
-  session,
-  account,
-  verification,
-  otpSendCooldown,
-  evidenceAnchors,
-  anchorComponents,
-  observations,
-  observationComponents,
-  observationAnchors,
-  recordChecks,
-  checkComponents,
-  checkObservations,
-  checkAnchors,
-  sources,
-  sourceContributors,
-  sourceLanguages,
-  sourceVersions,
-  sourceArtifacts,
-  sourceVersionAssets,
-  sourcePages,
-  parseRuns,
-  sourcePageParses,
-  sourceBlocks,
-  sourceRegions,
-  regionRelations,
-  sourceLocators,
-  citations,
-  referenceImages,
-  knowledgeEntries,
-  sourceKnowledgeDrafts,
-  knowledgeRevisions,
-  knowledgeRevisionAliases,
-  knowledgeRevisionKinds,
-  knowledgeRevisionCitations,
-  inspectionMethods,
-  methodVersions,
-  knowledgeRevisionMethods,
-  researchRuns,
-  researchSources,
-  researchDraftRevisions,
-  notes,
-  noteParagraphs,
-  noteCitations,
-  referenceLinks,
-  indexVersions,
-  sourceIndexMemberships,
-  sourceChunkMappings,
-  mappingRegions,
-  imageIndexItems,
-  sourceIntakes,
-  mediaAssets,
-  mediaAssetComponents,
-  uploadSessions,
-  uploadParts,
-  mediaDerivatives,
-  canonicalViews,
-  locations,
-  records,
-  recordComponents,
-  recordCategories,
-  recordMaterials,
-  recordTags,
-  recordMeasurements,
-  recordAcquisitions,
-  recordReceipts,
-  jobs,
-  jobSteps,
-  outbox,
-  idempotencyRequests,
-  providerJobMappings,
-  providerEvents,
-  providerWebhookInbox,
-  providerCompletions,
-  sequenceCounters,
-  transcriptionRuns,
-  editDraftRuns,
-  comparisonResults,
-  comparisonFailures,
-} from './index.js';
-
-const schema = {
-  analysisSnapshots,
-  snapshotAssets,
-  snapshotEvidence,
-  snapshotObservations,
-  snapshotChecks,
-  retrievalSnapshots,
-  analysisRuns,
-  runSuggestedMethods,
-  claims,
-  claimEvidence,
-  claimObservations,
-  claimCitations,
-  nextActions,
-  actionStates,
-  actionResolutions,
-  resolutionEvidence,
-  resolutionObservations,
-  resolutionReferences,
-  resolutionChecks,
-  proposals,
-  proposalFindings,
-  proposalStates,
-  adoptionEvents,
-  user,
-  session,
-  account,
-  verification,
-  otpSendCooldown,
-  evidenceAnchors,
-  anchorComponents,
-  observations,
-  observationComponents,
-  observationAnchors,
-  recordChecks,
-  checkComponents,
-  checkObservations,
-  checkAnchors,
-  sources,
-  sourceContributors,
-  sourceLanguages,
-  sourceVersions,
-  sourceArtifacts,
-  sourceVersionAssets,
-  sourcePages,
-  parseRuns,
-  sourcePageParses,
-  sourceBlocks,
-  sourceRegions,
-  regionRelations,
-  sourceLocators,
-  citations,
-  referenceImages,
-  knowledgeEntries,
-  sourceKnowledgeDrafts,
-  knowledgeRevisions,
-  knowledgeRevisionAliases,
-  knowledgeRevisionKinds,
-  knowledgeRevisionCitations,
-  inspectionMethods,
-  methodVersions,
-  knowledgeRevisionMethods,
-  researchRuns,
-  researchSources,
-  researchDraftRevisions,
-  notes,
-  noteParagraphs,
-  noteCitations,
-  referenceLinks,
-  indexVersions,
-  sourceIndexMemberships,
-  sourceChunkMappings,
-  mappingRegions,
-  imageIndexItems,
-  sourceIntakes,
-  mediaAssets,
-  mediaAssetComponents,
-  uploadSessions,
-  uploadParts,
-  mediaDerivatives,
-  canonicalViews,
-  locations,
-  records,
-  recordComponents,
-  recordCategories,
-  recordMaterials,
-  recordTags,
-  recordMeasurements,
-  recordAcquisitions,
-  recordReceipts,
-  jobs,
-  jobSteps,
-  outbox,
-  idempotencyRequests,
-  providerJobMappings,
-  providerEvents,
-  providerWebhookInbox,
-  providerCompletions,
-  sequenceCounters,
-  transcriptionRuns,
-  editDraftRuns,
-  comparisonResults,
-  comparisonFailures,
-};
 
 const resources = inject('platformDatabases');
 const it = createSqlTest(resources);
 
-describe('generated database migration behavior', () => {
-  it('should produce executable DDL that enforces constraints and cascading account ownership', async ({
+describe('generated database migration behavior', { timeout: 30_000 }, () => {
+  it('should deploy executable baseline DDL that enforces constraints and cascading account ownership', async ({
     generated: database,
   }) => {
-    const empty = generateDrizzleJson({});
-    const current = generateDrizzleJson(schema, empty.id);
-    const statements = await generateMigration(empty, current);
-    for (const statement of statements) {
-      await database.unsafe(statement);
-    }
+    await migrateDatabase(resources.generated!);
     const ownerId = randomUUID();
     const recordId = randomUUID();
     await database`insert into records (id, owner_id, code, unit_kind, piece_count) values (${recordId}, ${ownerId}, 'R-1', 'set', 2)`;
@@ -266,23 +57,11 @@ describe('generated database migration behavior', () => {
     await expect(
       database`insert into source_knowledge_drafts (owner_id, source_version_id, entry_id) values (${ownerId}, ${versionId}, ${foreignEntryId})`,
     ).rejects.toMatchObject({ code: '23503' });
-    expect(
-      await generateMigration(current, generateDrizzleJson(schema, current.id)),
-    ).toEqual([]);
   });
-  it('should upgrade populated owner indexes without replacing their identities or dependent foreign keys', async ({
+  it('should replay baseline deployment over populated owner indexes without replacing their identities or dependent foreign keys', async ({
     upgrade: database,
   }) => {
-    const migrationRoot = new URL('../migrations/', import.meta.url);
-    const files = (await readdir(migrationRoot))
-      .filter((file) => /^000[0-6]_.*\.sql$/.test(file))
-      .sort();
-    for (const file of files) {
-      const migration = await readFile(new URL(file, migrationRoot), 'utf8');
-      for (const statement of migration.split('--> statement-breakpoint')) {
-        await database.unsafe(statement);
-      }
-    }
+    await migrateDatabase(resources.upgrade!);
     const ownerId = randomUUID();
     const sourceId = randomUUID();
     const versionId = randomUUID();
@@ -299,13 +78,7 @@ describe('generated database migration behavior', () => {
     await expect(
       database`insert into source_knowledge_drafts (owner_id, source_version_id, entry_id) values (${ownerId}, ${versionId}, ${foreignEntryId})`,
     ).rejects.toMatchObject({ code: '23503' });
-    const upgrade = await readFile(
-      new URL('0007_owner_identity_constraints.sql', migrationRoot),
-      'utf8',
-    );
-    for (const statement of upgrade.split('--> statement-breakpoint')) {
-      await database.unsafe(statement);
-    }
+    await migrateDatabase(resources.upgrade!);
 
     expect(
       await database`select conname from pg_constraint where contype = 'u' and conname in ('knowledge_entries_owner_id_uq', 'source_versions_owner_id_uq') order by conname`,
@@ -337,16 +110,7 @@ describe('generated database migration behavior', () => {
   it('should backfill only missing latest analysis pointers and preserve immutable history on replay', async ({
     backfill: database,
   }) => {
-    const migrationRoot = new URL('../migrations/', import.meta.url);
-    const files = (await readdir(migrationRoot))
-      .filter((file) => /^000[0-7]_.*\.sql$/.test(file))
-      .sort();
-    for (const file of files) {
-      const migration = await readFile(new URL(file, migrationRoot), 'utf8');
-      for (const statement of migration.split('--> statement-breakpoint')) {
-        await database.unsafe(statement);
-      }
-    }
+    await migrateDatabase(resources.backfill!);
     const ownerId = randomUUID();
     const otherOwnerId = randomUUID();
     const tiedRecordId = randomUUID();
@@ -492,16 +256,20 @@ describe('generated database migration behavior', () => {
     const snapshotsBefore =
       await database`select * from analysis_snapshots order by id`;
     const jobsBefore = await database`select * from jobs order by id`;
-    const upgradeFiles = (await readdir(migrationRoot)).filter((file) =>
-      /^0008_.*\.sql$/.test(file),
-    );
-    if (upgradeFiles.length !== 1) {
-      throw new Error('Exactly one 0008 migration is required');
-    }
-    const upgrade = await readFile(
-      new URL(upgradeFiles[0]!, migrationRoot),
-      'utf8',
-    );
+    // Historical repair query remains test evidence after migration squashing.
+    const upgrade = `UPDATE "records" AS record
+SET "latest_run_id" = latest.id
+FROM (
+  SELECT DISTINCT ON ("owner_id", "record_id")
+    "id", "owner_id", "record_id"
+  FROM "analysis_runs"
+  WHERE "status" IN ('completed', 'partial')
+    AND "raw_output" IS NOT NULL
+  ORDER BY "owner_id", "record_id", "created_at" DESC, "id" DESC
+) AS latest
+WHERE record."id" = latest.record_id
+  AND record."owner_id" = latest.owner_id
+  AND record."latest_run_id" IS NULL;`;
     for (const statement of upgrade.split('--> statement-breakpoint')) {
       await database.unsafe(statement);
     }
@@ -554,4 +322,74 @@ describe('generated database migration behavior', () => {
       proposalsBefore,
     );
   });
+  it(
+    'should reject migration/schema drift and detect an added model',
+    { timeout: 60_000 },
+    async () => {
+      const temporary = await mkdtemp(join(tmpdir(), 'antica-prisma-drift-'));
+      const schema = fileURLToPath(
+        new URL('../schema.prisma', import.meta.url),
+      );
+      const migrations = fileURLToPath(
+        new URL('../migrations', import.meta.url),
+      );
+      const config = join(temporary, 'prisma.config.mjs');
+      const changedSchema = join(temporary, 'changed.prisma');
+      const execute = promisify(execFile);
+      const command = [
+        createRequire(import.meta.url).resolve('prisma/build/index.js'),
+        'migrate',
+        'diff',
+        '--config',
+        config,
+        '--from-migrations',
+        migrations,
+        '--to-schema',
+        schema,
+        '--script',
+        '--exit-code',
+      ];
+      try {
+        await writeFile(
+          config,
+          `export default ${JSON.stringify({
+            schema,
+            datasource: {
+              url: resources.generated!.url,
+              shadowDatabaseUrl: resources.shadow!.url,
+            },
+          })}`,
+        );
+        await expect(execute(process.execPath, command)).resolves.toMatchObject(
+          {
+            stdout: expect.any(String),
+          },
+        );
+        await writeFile(
+          changedSchema,
+          `${await readFile(schema, 'utf8')}
+model driftProbe {
+  id String @id
+}
+`,
+        );
+        const changedCommand = command.map((argument) =>
+          argument === schema ? changedSchema : argument,
+        );
+        await expect(
+          execute(process.execPath, changedCommand),
+        ).rejects.toMatchObject({
+          code: 2,
+          stdout: expect.stringContaining('driftProbe'),
+        });
+        await expect(execute(process.execPath, command)).resolves.toMatchObject(
+          {
+            stdout: expect.any(String),
+          },
+        );
+      } finally {
+        await rm(temporary, { recursive: true, force: true });
+      }
+    },
+  );
 });

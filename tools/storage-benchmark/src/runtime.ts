@@ -245,12 +245,15 @@ async function measure(
     verifiedSignedCovers += verified.signed;
     verifiedNullCovers += verified.null;
   };
-  const connection = createDatabase({ url: url.toString(), maxConnections: 1 });
-  const client = connection.db.$client;
   let trace: QueryTrace[] | null = null;
-  client.options.debug = (_connection, query, parameters) => {
-    trace?.push({ query, parameters: [...parameters] });
-  };
+  const connection = createDatabase({
+    url: url.toString(),
+    maxConnections: 1,
+    onQuery: (query, parameters) => {
+      trace?.push({ query, parameters: [...parameters] as QueryParameters });
+    },
+  });
+  const client = postgres(url.toString(), { max: 1, prepare: false });
   const service = createRecordService(
     createTransactionPort(connection.db),
     { now: () => fixedTime },
@@ -446,7 +449,7 @@ async function measure(
     const datasetChecksums =
       await client`select 'records' as relation,md5(string_agg(row_to_json(r)::text,'' order by id)) as orderedRowMd5 from records r union all select 'media_assets',md5(string_agg(row_to_json(m)::text,'' order by id)) from media_assets m union all select 'media_derivatives',md5(string_agg(row_to_json(d)::text,'' order by id)) from media_derivatives d`;
     const migrations =
-      await client`select id,hash,created_at from drizzle.__drizzle_migrations order by id`;
+      await client`select id, checksum as hash, finished_at as created_at from public._prisma_migrations order by started_at, id`;
     const report = {
       kind: 'pt20-storage-service-benchmark',
       seedVersion,
@@ -546,6 +549,7 @@ async function measure(
     return report;
   } finally {
     await connection.close();
+    await client.end();
   }
 }
 

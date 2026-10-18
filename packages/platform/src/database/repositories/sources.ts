@@ -1,34 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-
 import { sourceDetailSchema } from '@antica/contracts';
 
+import { Prisma } from '../generated/client.js';
+
 import { indexVersionId } from '../index-version.js';
-import {
-  canonicalViews,
-  citations,
-  indexVersions,
-  jobs,
-  mappingRegions,
-  mediaAssets,
-  mediaDerivatives,
-  parseRuns,
-  referenceImages,
-  regionRelations,
-  sourceArtifacts,
-  sourceChunkMappings,
-  sourceContributors,
-  sourceKnowledgeDrafts,
-  sourceLanguages,
-  sourceLocators,
-  sourcePageParses,
-  sourcePages,
-  sourceRegions,
-  sources,
-  sourceVersionAssets,
-  sourceVersions,
-} from '../schema/index.js';
+import { jsonValue, nullableJson } from '../json.js';
 import { projectedParseRunId } from '../source-projection.js';
 
 import type {
@@ -39,6 +16,7 @@ import type {
 } from '@antica/application/ports';
 import type { SourceDetail } from '@antica/contracts';
 import type {
+  CanonicalView,
   ReferenceImage,
   Source,
   SourceCitation,
@@ -48,14 +26,32 @@ import type {
   SourceVersion,
 } from '@antica/domain';
 
+import type {
+  sources,
+  sourceVersions,
+  sourcePages,
+  mediaAssets,
+  mediaDerivatives,
+} from '../generated/client.js';
+
 import type { Transaction } from '../transaction.js';
+
+interface SourceVersionRow extends Omit<sourceVersions, 'metadataSnapshot'> {
+  readonly metadataSnapshot: SourceVersion['metadataSnapshot'];
+}
+
+interface SourcePageRow extends sourcePages {
+  readonly canonicalViews: CanonicalView;
+}
 
 type PageCursor = { readonly pageIndex: number; readonly id: string };
 
+/** @param cursor */
 function encodeCursor(cursor: PageCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
+/** @param value */
 function decodeCursor(value: string): PageCursor {
   const cursor = JSON.parse(
     Buffer.from(value, 'base64url').toString('utf8'),
@@ -71,18 +67,25 @@ function decodeCursor(value: string): PageCursor {
   return cursor;
 }
 
+/** @param value */
 function stableUuid(value: string): string {
   const digest = createHash('sha256').update(value).digest('hex');
 
   return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
-function iso(value: string): string {
+/** @param value */
+function iso(value: Date | string): string {
   return new Date(value).toISOString();
 }
 
+/**
+ * @param row
+ * @param contributors
+ * @param languages
+ */
 function toSource(
-  row: typeof sources.$inferSelect,
+  row: sources,
   contributors: Source['metadata']['contributors'],
   languages: readonly string[],
 ): Source {
@@ -110,30 +113,48 @@ function toSource(
   };
 }
 
+/**
+ * @param tx
+ * @param ownerId
+ * @param id
+ */
 async function readVersion(
   tx: Transaction,
   ownerId: string,
   id: string,
 ): Promise<SourceVersion | null> {
-  const [row] = await tx
-    .select()
-    .from(sourceVersions)
-    .where(and(eq(sourceVersions.id, id), eq(sourceVersions.ownerId, ownerId)));
+  const [row] = await tx.$queryRaw<SourceVersionRow[]>(Prisma.sql`
+    select v."id" as "id",
+      v."source_id" as "sourceId",
+      v."owner_id" as "ownerId",
+      v."source_hash" as "sourceHash",
+      v."metadata_snapshot" as "metadataSnapshot",
+      v."captured_at" as "capturedAt",
+      v."retrieved_at" as "retrievedAt",
+      v."status" as "status",
+      v."text_index_status" as "textIndexStatus",
+      v."image_index_status" as "imageIndexStatus",
+      v."active_parse_run_id" as "activeParseRunId"
+    from source_versions v
+    where v.id = ${id}::uuid and v.owner_id = ${ownerId}
+  `);
   if (!row) {
     return null;
   }
-  const assets = await tx
-    .select({ id: sourceVersionAssets.assetId })
-    .from(sourceVersionAssets)
-    .where(eq(sourceVersionAssets.versionId, id))
-    .orderBy(asc(sourceVersionAssets.ordinal));
+  const assets = await tx.sourceVersionAssets
+    .findMany({
+      where: { versionId: id },
+      orderBy: [{ ordinal: 'asc' }],
+      select: { assetId: true },
+    })
+    .then((rows) => rows.map((row) => ({ id: row.assetId })));
 
   return {
     id: row.id,
     sourceId: row.sourceId,
     originalAssetIds: assets.map((asset) => asset.id),
     sourceHash: row.sourceHash,
-    metadataSnapshot: row.metadataSnapshot as SourceVersion['metadataSnapshot'],
+    metadataSnapshot: row.metadataSnapshot,
     capturedAt: iso(row.capturedAt),
     retrievedAt: row.retrievedAt ? iso(row.retrievedAt) : null,
     status: row.status as SourceVersion['status'],
@@ -155,21 +176,12 @@ export async function readSourceLocator(
   ownerId: string,
   id: string,
 ): Promise<SourceLocator | null> {
-  const [row] = await tx
-    .select()
-    .from(sourceLocators)
-    .innerJoin(
-      sources,
-      and(
-        eq(sourceLocators.sourceId, sources.id),
-        eq(sources.ownerId, ownerId),
-      ),
-    )
-    .where(eq(sourceLocators.id, id));
-  if (!row) {
+  const locator = await tx.sourceLocators.findFirst({
+    where: { id, sources: { ownerId } },
+  });
+  if (!locator) {
     return null;
   }
-  const locator = row.source_locators;
   if (locator.kind === 'web') {
     return {
       kind: 'web',
@@ -220,9 +232,8 @@ export async function writeSourceLocator(
   locatorId: string,
   locator: SourceLocator,
 ): Promise<void> {
-  await tx
-    .insert(sourceLocators)
-    .values(
+  await tx.sourceLocators.createMany({
+    data:
       locator.kind === 'web'
         ? {
             id: locatorId,
@@ -245,13 +256,13 @@ export async function writeSourceLocator(
             printedPageLabel: locator.printedPageLabel,
             canonicalViewId: locator.canonicalViewId,
             regionId: locator.regionId,
-            geometry: locator.region,
+            geometry: nullableJson(locator.region),
             blockId: locator.textRange?.blockId,
             rangeStart: locator.textRange?.start,
             rangeEnd: locator.textRange?.end,
           },
-    )
-    .onConflictDoNothing();
+    skipDuplicates: true,
+  });
 }
 
 /**
@@ -266,7 +277,7 @@ export async function readCitation(
   ownerId: string,
   id: string,
 ): Promise<SourceCitation | null> {
-  const [row] = await tx.select().from(citations).where(eq(citations.id, id));
+  const [row] = await tx.citations.findMany({ where: { id } });
   if (!row) {
     return null;
   }
@@ -296,118 +307,101 @@ export async function readReferenceImage(
   ownerId: string,
   id: string,
 ): Promise<ReferenceImage | null> {
-  const [row] = await tx
-    .select()
-    .from(referenceImages)
-    .innerJoin(
-      sourceVersions,
-      and(
-        eq(referenceImages.sourceVersionId, sourceVersions.id),
-        eq(sourceVersions.ownerId, ownerId),
-      ),
-    )
-    .where(eq(referenceImages.id, id));
+  const row = await tx.referenceImages.findFirst({
+    where: { id, sourceVersions: { ownerId } },
+  });
   if (!row) {
     return null;
   }
-  const locator = await readSourceLocator(
-    tx,
-    ownerId,
-    row.reference_images.locatorId,
-  );
+  const locator = await readSourceLocator(tx, ownerId, row.locatorId);
   if (!locator) {
     return null;
   }
-  const captionLocator = row.reference_images.captionLocatorId
-    ? await readSourceLocator(
-        tx,
-        ownerId,
-        row.reference_images.captionLocatorId,
-      )
+  const captionLocator = row.captionLocatorId
+    ? await readSourceLocator(tx, ownerId, row.captionLocatorId)
     : null;
 
   return {
-    id: row.reference_images.id,
-    sourceVersionId: row.reference_images.sourceVersionId,
+    id: row.id,
+    sourceVersionId: row.sourceVersionId,
     locator,
-    figureRegionId: row.reference_images.figureRegionId,
-    storedDerivativeId: row.reference_images.storedDerivativeId,
-    externalImageUrl: row.reference_images.externalImageUrl,
+    figureRegionId: row.figureRegionId,
+    storedDerivativeId: row.storedDerivativeId,
+    externalImageUrl: row.externalImageUrl,
     originalCaption:
-      row.reference_images.captionText && captionLocator
+      row.captionText && captionLocator
         ? {
-            textAsPrinted: row.reference_images.captionText,
+            textAsPrinted: row.captionText,
             locator: captionLocator,
           }
         : null,
-    generatedDescriptionZhHant: row.reference_images.generatedDescriptionZhHant,
-    descriptionJobId: row.reference_images.descriptionJobId,
-    captionAssociation: row.reference_images
-      .captionAssociation as ReferenceImage['captionAssociation'],
+    generatedDescriptionZhHant: row.generatedDescriptionZhHant,
+    descriptionJobId: row.descriptionJobId,
+    captionAssociation:
+      row.captionAssociation as ReferenceImage['captionAssociation'],
   };
 }
 
+/**
+ * @param tx
+ * @param ownerId
+ * @param id
+ */
 async function readPage(
   tx: Transaction,
   ownerId: string,
   id: string,
 ): Promise<SourcePage | null> {
-  const [row] = await tx
-    .select()
-    .from(sourcePages)
-    .innerJoin(
-      sourceVersions,
-      and(
-        eq(sourcePages.sourceVersionId, sourceVersions.id),
-        eq(sourceVersions.ownerId, ownerId),
-      ),
-    )
-    .innerJoin(
-      canonicalViews,
-      eq(sourcePages.canonicalViewId, canonicalViews.id),
-    )
-    .leftJoin(
-      sourceVersionAssets,
-      and(
-        eq(sourceVersionAssets.versionId, sourcePages.sourceVersionId),
-        eq(sourceVersionAssets.assetId, sourcePages.originalAssetId),
-      ),
-    )
-    .where(eq(sourcePages.id, id));
-  if (!row) {
+  const [page] = await tx.$queryRaw<SourcePageRow[]>(Prisma.sql`
+    select p."id" as "id",
+      p."source_version_id" as "sourceVersionId",
+      p."page_index" as "pageIndex",
+      p."printed_page_label" as "printedPageLabel",
+      p."original_asset_id" as "originalAssetId",
+      p."pdf_page_index" as "pdfPageIndex",
+      p."canonical_view_id" as "canonicalViewId",
+      jsonb_build_object(
+        'id', v.id, 'originalAssetId', v.original_asset_id,
+        'derivativeId', v.derivative_id, 'width', v.width, 'height', v.height,
+        'originalCoordinateSpace', v.coordinate_space,
+        'transformToOriginal', v.transform_to_original
+      ) as "canonicalViews"
+    from source_pages p
+    join source_versions s on s.id = p.source_version_id
+    join canonical_views v on v.id = p.canonical_view_id
+    where p.id = ${id}::uuid and s.owner_id = ${ownerId}
+  `);
+  if (!page) {
     return null;
   }
-  const page = row.source_pages;
-  const [selection] = await tx
-    .select({ parseRunId: projectedParseRunId() })
-    .from(sourcePages)
-    .innerJoin(
-      sourceVersions,
-      eq(sourcePages.sourceVersionId, sourceVersions.id),
-    )
-    .where(and(eq(sourcePages.id, id), eq(sourceVersions.ownerId, ownerId)));
+  const registration = await tx.sourceVersionAssets.findUnique({
+    where: {
+      versionId_assetId: {
+        versionId: page.sourceVersionId,
+        assetId: page.originalAssetId,
+      },
+    },
+    select: { presentation: true },
+  });
+  const [selection] = await tx.$queryRaw<
+    Array<{ parseRunId: string | null }>
+  >(Prisma.sql`
+    select ${projectedParseRunId()} as "parseRunId"
+    from source_pages
+    join source_versions on source_pages.source_version_id = source_versions.id
+    where (source_pages.id = ${id}::uuid and source_versions.owner_id = ${ownerId})
+  `);
   const parseRunId = selection?.parseRunId;
   const [parsed] = parseRunId
-    ? await tx
-        .select()
-        .from(sourcePageParses)
-        .where(
-          and(
-            eq(sourcePageParses.pageId, id),
-            eq(sourcePageParses.parseRunId, parseRunId),
-          ),
-        )
+    ? await tx.sourcePageParses.findMany({
+        where: { AND: [{ pageId: id }, { parseRunId }] },
+      })
     : [];
   const regions = parseRunId
-    ? await tx
-        .select({ id: sourceRegions.id })
-        .from(sourceRegions)
-        .where(
-          and(
-            eq(sourceRegions.pageId, id),
-            eq(sourceRegions.parseRunId, parseRunId),
-          ),
-        )
+    ? await tx.sourceRegions.findMany({
+        where: { AND: [{ pageId: id }, { parseRunId }] },
+        select: { id: true },
+      })
     : [];
 
   return {
@@ -418,18 +412,16 @@ async function readPage(
     originalAssetId: page.originalAssetId,
     pdfPageIndex: page.pdfPageIndex,
     view: {
-      id: row.canonical_views.id,
-      originalAssetId: row.canonical_views.originalAssetId,
-      derivativeId: row.canonical_views.derivativeId,
-      width: row.canonical_views.width,
-      height: row.canonical_views.height,
-      originalCoordinateSpace: row.canonical_views
-        .coordinateSpace as SourcePage['view']['originalCoordinateSpace'],
-      transformToOriginal: row.canonical_views
-        .transformToOriginal as SourcePage['view']['transformToOriginal'],
+      id: page.canonicalViews.id,
+      originalAssetId: page.canonicalViews.originalAssetId,
+      derivativeId: page.canonicalViews.derivativeId,
+      width: page.canonicalViews.width,
+      height: page.canonicalViews.height,
+      originalCoordinateSpace: page.canonicalViews.originalCoordinateSpace,
+      transformToOriginal: page.canonicalViews.transformToOriginal,
     },
-    presentation: row.source_version_assets?.presentation
-      ? (row.source_version_assets.presentation as SourcePage['presentation'])
+    presentation: registration?.presentation
+      ? (registration.presentation as SourcePage['presentation'])
       : null,
     rawText: parsed?.rawText ?? '',
     searchText: parsed?.searchText ?? '',
@@ -440,41 +432,43 @@ async function readPage(
   };
 }
 
+/**
+ * @param tx
+ * @param ownerId
+ * @param id
+ */
 async function readRegion(
   tx: Transaction,
   ownerId: string,
   id: string,
 ): Promise<SourceRegion | null> {
-  const [row] = await tx
-    .select()
-    .from(sourceRegions)
-    .innerJoin(
-      sourceVersions,
-      and(
-        eq(sourceRegions.sourceVersionId, sourceVersions.id),
-        eq(sourceVersions.ownerId, ownerId),
-      ),
-    )
-    .where(eq(sourceRegions.id, id));
+  const row = await tx.sourceRegions.findFirst({
+    where: { id, sourceVersions: { ownerId } },
+  });
   if (!row) {
     return null;
   }
-  const relations = await tx
-    .select({ id: regionRelations.toId })
-    .from(regionRelations)
-    .where(eq(regionRelations.fromId, id));
+  const relations = await tx.regionRelations
+    .findMany({ where: { fromId: id }, select: { toId: true } })
+    .then((rows) => rows.map((row) => ({ id: row.toId })));
 
   return {
-    id: row.source_regions.id,
-    sourceVersionId: row.source_regions.sourceVersionId,
-    pageId: row.source_regions.pageId,
-    kind: row.source_regions.kind as SourceRegion['kind'],
-    region: row.source_regions.geometry as SourceRegion['region'],
-    rawText: row.source_regions.rawText,
+    id: row.id,
+    sourceVersionId: row.sourceVersionId,
+    pageId: row.pageId,
+    kind: row.kind as SourceRegion['kind'],
+    region: row.geometry as SourceRegion['region'],
+    rawText: row.rawText,
     relatedRegionIds: relations.map((relation) => relation.id),
   };
 }
 
+/**
+ * @param tx
+ * @param ownerId
+ * @param versionId
+ * @param assets
+ */
 async function saveAssets(
   tx: Transaction,
   ownerId: string,
@@ -482,54 +476,54 @@ async function saveAssets(
   assets: readonly SourceRegistrationAsset[],
 ): Promise<void> {
   for (const asset of assets) {
-    const [moved] = await tx
-      .update(mediaAssets)
-      .set({ sourceIntakeId: null, sourceVersionId: versionId })
-      .where(
-        and(
-          eq(mediaAssets.id, asset.assetId),
-          eq(mediaAssets.ownerId, ownerId),
-          isNull(mediaAssets.sourceVersionId),
-        ),
-      )
-      .returning({ id: mediaAssets.id });
+    const [moved] = await tx.mediaAssets.updateManyAndReturn({
+      data: { sourceIntakeId: null, sourceVersionId: versionId },
+      where: {
+        AND: [{ id: asset.assetId }, { ownerId }, { sourceVersionId: null }],
+      },
+      select: { id: true },
+    });
     if (!moved) {
       throw new Error('Source asset is inaccessible or already registered');
     }
   }
   if (assets.length) {
-    await tx.insert(sourceVersionAssets).values(
-      assets.map((asset) => ({
+    await tx.sourceVersionAssets.createMany({
+      data: assets.map((asset) => ({
         versionId,
         assetId: asset.assetId,
         ordinal: asset.order,
         printedLabel: asset.printedPageLabel,
-        presentation: asset.presentation ?? null,
+        presentation: nullableJson(asset.presentation ?? null),
       })),
-    );
+    });
   }
 }
 
+/**
+ * @param tx
+ * @param source
+ */
 async function saveSourceMetadata(
   tx: Transaction,
   source: Source,
 ): Promise<void> {
   if (source.metadata.contributors.length) {
-    await tx.insert(sourceContributors).values(
-      source.metadata.contributors.map((contributor, ordinal) => ({
+    await tx.sourceContributors.createMany({
+      data: source.metadata.contributors.map((contributor, ordinal) => ({
         sourceId: source.id,
         ordinal,
         ...contributor,
       })),
-    );
+    });
   }
   if (source.metadata.languages.length) {
-    await tx.insert(sourceLanguages).values(
-      source.metadata.languages.map((language) => ({
+    await tx.sourceLanguages.createMany({
+      data: source.metadata.languages.map((language) => ({
         sourceId: source.id,
         language,
       })),
-    );
+    });
   }
 }
 
@@ -557,20 +551,19 @@ export function createSourceRepository(
       throw new Error('Provider mapping index identity does not match');
     }
     const persistedIndexId = indexVersionId(index.indexVersion);
-    await tx
-      .insert(indexVersions)
-      .values({
+    await tx.indexVersions.createMany({
+      data: {
         id: persistedIndexId,
         kind: 'text',
         embeddingModelId: index.embeddingModelId,
         dimensions: index.dimensions,
         status: 'active',
-      })
-      .onConflictDoNothing();
-    const [persistedIndex] = await tx
-      .select()
-      .from(indexVersions)
-      .where(eq(indexVersions.id, persistedIndexId));
+      },
+      skipDuplicates: true,
+    });
+    const [persistedIndex] = await tx.indexVersions.findMany({
+      where: { id: persistedIndexId },
+    });
     if (
       !persistedIndex ||
       persistedIndex.kind !== 'text' ||
@@ -588,16 +581,15 @@ export function createSourceRepository(
     mappings: readonly ProviderChunkMapping[],
   ): Promise<void> {
     for (const mapping of mappings) {
-      const [existing] = await tx
-        .select()
-        .from(sourceChunkMappings)
-        .where(
-          and(
-            eq(sourceChunkMappings.provider, mapping.provider),
-            eq(sourceChunkMappings.indexId, persistedIndexId),
-            eq(sourceChunkMappings.providerChunkId, mapping.providerChunkId),
-          ),
-        );
+      const [existing] = await tx.sourceChunkMappings.findMany({
+        where: {
+          AND: [
+            { provider: mapping.provider },
+            { indexId: persistedIndexId },
+            { providerChunkId: mapping.providerChunkId },
+          ],
+        },
+      });
       let mappingId = existing?.id;
       if (existing) {
         if (
@@ -610,62 +602,69 @@ export function createSourceRepository(
           );
         }
       } else {
-        const [version] = await tx
-          .select({ id: sourceVersions.id })
-          .from(sourceVersions)
-          .where(
-            and(
-              eq(sourceVersions.id, mapping.sourceVersionId),
-              eq(sourceVersions.ownerId, ownerId),
-            ),
-          );
+        const [version] = await tx.sourceVersions.findMany({
+          where: {
+            AND: [{ id: mapping.sourceVersionId }, { ownerId }],
+          },
+          select: { id: true },
+        });
         if (!version) {
           throw new Error('Provider chunk source version is inaccessible');
         }
         mappingId = randomUUID();
-        await tx.insert(sourceChunkMappings).values({
-          id: mappingId,
-          provider: mapping.provider,
-          indexId: persistedIndexId,
-          parseRunId: mapping.parseRunId,
-          providerChunkId: mapping.providerChunkId,
-          providerFigureId: mapping.providerFigureId,
-          sourceVersionId: mapping.sourceVersionId,
+        await tx.sourceChunkMappings.createMany({
+          data: {
+            id: mappingId,
+            provider: mapping.provider,
+            indexId: persistedIndexId,
+            parseRunId: mapping.parseRunId,
+            providerChunkId: mapping.providerChunkId,
+            providerFigureId: mapping.providerFigureId,
+            sourceVersionId: mapping.sourceVersionId,
+          },
         });
       }
       if (mapping.canonicalRegionIds.length) {
-        await tx
-          .insert(mappingRegions)
-          .values(
-            mapping.canonicalRegionIds.map((regionId) => ({
-              mappingId: mappingId!,
-              regionId,
-            })),
-          )
-          .onConflictDoNothing();
+        await tx.mappingRegions.createMany({
+          data: mapping.canonicalRegionIds.map((regionId) => ({
+            mappingId: mappingId!,
+            regionId,
+          })),
+          skipDuplicates: true,
+        });
       }
     }
   }
 
   async function addCitation(citation: SourceCitation): Promise<void> {
-    const version = await getVersion(citation.locator.sourceVersionId);
+    const version = await tx.sourceVersions.findFirst({
+      where: { id: citation.locator.sourceVersionId, ownerId },
+      select: { sourceId: true },
+    });
     if (!version || version.sourceId !== citation.locator.sourceId) {
       throw new Error('Citation source is inaccessible');
     }
     await writeSourceLocator(tx, citation.id, citation.locator);
-    await tx
-      .insert(citations)
-      .values({
+    await tx.citations.createMany({
+      data: {
         id: citation.id,
         locatorId: citation.id,
         relation: citation.relation,
         availability: citation.availability,
         verification: citation.verification,
-      })
-      .onConflictDoNothing();
+      },
+      skipDuplicates: true,
+    });
   }
 
   return {
+    /**
+     * @param id
+     * @param versionId
+     * @param pageId
+     * @param cursor
+     * @param requestedLimit
+     */
     async get(
       id,
       versionId,
@@ -673,24 +672,21 @@ export function createSourceRepository(
       cursor,
       requestedLimit,
     ): Promise<SourceDetail | null> {
-      const [row] = await tx
-        .select()
-        .from(sources)
-        .where(and(eq(sources.id, id), eq(sources.ownerId, ownerId)));
+      const [row] = await tx.sources.findMany({
+        where: { AND: [{ id }, { ownerId }] },
+      });
       if (!row) {
         return null;
       }
       const [contributors, languages] = await Promise.all([
-        tx
-          .select()
-          .from(sourceContributors)
-          .where(eq(sourceContributors.sourceId, id))
-          .orderBy(asc(sourceContributors.ordinal)),
-        tx
-          .select()
-          .from(sourceLanguages)
-          .where(eq(sourceLanguages.sourceId, id))
-          .orderBy(asc(sourceLanguages.language)),
+        tx.sourceContributors.findMany({
+          where: { sourceId: id },
+          orderBy: [{ ordinal: 'asc' }],
+        }),
+        tx.sourceLanguages.findMany({
+          where: { sourceId: id },
+          orderBy: [{ language: 'asc' }],
+        }),
       ]);
       const source = toSource(
         row,
@@ -709,29 +705,24 @@ export function createSourceRepository(
       const limit = Math.min(Math.max(requestedLimit ?? 20, 1), 100);
       const position = cursor ? decodeCursor(cursor) : null;
       const pageRows = pageId
-        ? await tx
-            .select({ id: sourcePages.id, pageIndex: sourcePages.pageIndex })
-            .from(sourcePages)
-            .where(
-              and(
-                eq(sourcePages.id, pageId),
-                eq(sourcePages.sourceVersionId, version.id),
-              ),
-            )
-            .limit(1)
-        : await tx
-            .select({ id: sourcePages.id, pageIndex: sourcePages.pageIndex })
-            .from(sourcePages)
-            .where(
-              and(
-                eq(sourcePages.sourceVersionId, version.id),
-                position
-                  ? sql`(${sourcePages.pageIndex}, ${sourcePages.id}) > (${position.pageIndex}, ${position.id})`
-                  : undefined,
-              ),
-            )
-            .orderBy(asc(sourcePages.pageIndex), asc(sourcePages.id))
-            .limit(limit + 1);
+        ? await tx.sourcePages.findMany({
+            where: { AND: [{ id: pageId }, { sourceVersionId: version.id }] },
+            take: 1,
+            select: { id: true, pageIndex: true },
+          })
+        : await tx.$queryRaw<
+            Array<{
+              id: sourcePages['id'];
+              pageIndex: sourcePages['pageIndex'];
+            }>
+          >(Prisma.sql`
+          select source_pages.id as "id",
+          source_pages.page_index as "pageIndex"
+          from source_pages
+          where (source_pages.source_version_id = ${version.id}::uuid and ${position ? Prisma.sql`(source_pages.page_index, source_pages.id) > (${position.pageIndex}::integer, ${position.id}::uuid)` : Prisma.sql`true`})
+          order by source_pages.page_index asc, source_pages.id asc
+          limit ${limit + 1}
+        `);
       const selected = pageRows.slice(0, limit);
       const pages = (
         await Promise.all(
@@ -740,26 +731,26 @@ export function createSourceRepository(
       ).filter((page): page is SourcePage => page !== null);
       const selectedRegionIds = pages.flatMap((page) => page.regionIds);
       const regionRows = selectedRegionIds.length
-        ? await tx
-            .select({ id: sourceRegions.id })
-            .from(sourceRegions)
-            .where(
-              and(
-                eq(sourceRegions.sourceVersionId, version.id),
-                inArray(sourceRegions.id, selectedRegionIds),
-              ),
-            )
+        ? await tx.sourceRegions.findMany({
+            where: {
+              AND: [
+                { sourceVersionId: version.id },
+                { id: { in: selectedRegionIds } },
+              ],
+            },
+            select: { id: true },
+          })
         : [];
       const regions = (
         await Promise.all(
           regionRows.map(async (region) => readRegion(tx, ownerId, region.id)),
         )
       ).filter((region): region is SourceRegion => region !== null);
-      const imageRows = await tx
-        .select({ id: referenceImages.id })
-        .from(referenceImages)
-        .where(eq(referenceImages.sourceVersionId, version.id))
-        .orderBy(asc(referenceImages.id));
+      const imageRows = await tx.referenceImages.findMany({
+        where: { sourceVersionId: version.id },
+        orderBy: [{ id: 'asc' }],
+        select: { id: true },
+      });
       const images = (
         await Promise.all(
           imageRows.map(async (image) =>
@@ -767,28 +758,27 @@ export function createSourceRepository(
           ),
         )
       ).filter((image): image is ReferenceImage => image !== null);
-      const [job] = await tx
-        .select({ id: jobs.id })
-        .from(jobs)
-        .where(
-          and(
-            eq(jobs.ownerId, ownerId),
-            eq(jobs.kind, 'sourceIngestion'),
-            eq(jobs.resourceId, version.id),
-          ),
-        )
-        .orderBy(desc(jobs.createdAt))
-        .limit(1);
-      const drafts = await tx
-        .select({ id: sourceKnowledgeDrafts.entryId })
-        .from(sourceKnowledgeDrafts)
-        .where(
-          and(
-            eq(sourceKnowledgeDrafts.ownerId, ownerId),
-            eq(sourceKnowledgeDrafts.sourceVersionId, version.id),
-          ),
-        )
-        .orderBy(asc(sourceKnowledgeDrafts.entryId));
+      const [job] = await tx.jobs.findMany({
+        where: {
+          AND: [
+            { ownerId },
+            { kind: 'sourceIngestion' },
+            { resourceId: version.id },
+          ],
+        },
+        orderBy: [{ createdAt: 'desc' }],
+        take: 1,
+        select: { id: true },
+      });
+      const drafts = await tx.sourceKnowledgeDrafts
+        .findMany({
+          where: {
+            AND: [{ ownerId }, { sourceVersionId: version.id }],
+          },
+          orderBy: [{ entryId: 'asc' }],
+          select: { entryId: true },
+        })
+        .then((rows) => rows.map((row) => ({ id: row.entryId })));
       const last = selected.at(-1);
 
       return sourceDetailSchema.parse({
@@ -809,137 +799,79 @@ export function createSourceRepository(
       });
     },
     getVersion,
+    /**
+     * @param sourceVersionId
+     * @param pageIds
+     */
     async getReadTargets(sourceVersionId, pageIds) {
       const selectedPageIds = pageIds ? [...new Set(pageIds)] : undefined;
       const originals = selectedPageIds
         ? selectedPageIds.length
-          ? await tx
-              .select({
-                assetOrDerivativeId: mediaAssets.id,
-                storageKey: mediaAssets.objectKey,
-              })
-              .from(sourcePages)
-              .innerJoin(
-                sourceVersions,
-                and(
-                  eq(sourcePages.sourceVersionId, sourceVersions.id),
-                  eq(sourceVersions.ownerId, ownerId),
-                ),
-              )
-              .innerJoin(
-                sourceVersionAssets,
-                and(
-                  eq(
-                    sourceVersionAssets.versionId,
-                    sourcePages.sourceVersionId,
-                  ),
-                  eq(sourceVersionAssets.assetId, sourcePages.originalAssetId),
-                ),
-              )
-              .innerJoin(
-                mediaAssets,
-                and(
-                  eq(sourcePages.originalAssetId, mediaAssets.id),
-                  eq(mediaAssets.ownerId, ownerId),
-                ),
-              )
-              .where(
-                and(
-                  eq(sourcePages.sourceVersionId, sourceVersionId),
-                  inArray(sourcePages.id, selectedPageIds),
-                ),
-              )
-              .orderBy(asc(sourcePages.pageIndex), asc(mediaAssets.id))
+          ? await tx.$queryRaw<
+              Array<{
+                assetOrDerivativeId: mediaAssets['id'];
+                storageKey: mediaAssets['objectKey'];
+              }>
+            >(Prisma.sql`
+            select media_assets.id as "assetOrDerivativeId",
+            media_assets.object_key as "storageKey"
+            from source_pages
+            join source_versions on (source_pages.source_version_id = source_versions.id and source_versions.owner_id = ${ownerId})
+            join source_version_assets on (source_version_assets.version_id = source_pages.source_version_id and source_version_assets.asset_id = source_pages.original_asset_id)
+            join media_assets on (source_pages.original_asset_id = media_assets.id and media_assets.owner_id = ${ownerId})
+            where (source_pages.source_version_id = ${sourceVersionId}::uuid and source_pages.id in (${Prisma.join(selectedPageIds.map((value) => Prisma.sql`${value}::uuid`))}))
+            order by source_pages.page_index asc, media_assets.id asc
+          `)
           : []
-        : await tx
-            .select({
-              assetOrDerivativeId: mediaAssets.id,
-              storageKey: mediaAssets.objectKey,
-            })
-            .from(sourceVersionAssets)
-            .innerJoin(
-              sourceVersions,
-              and(
-                eq(sourceVersionAssets.versionId, sourceVersions.id),
-                eq(sourceVersions.ownerId, ownerId),
-              ),
-            )
-            .innerJoin(
-              mediaAssets,
-              and(
-                eq(sourceVersionAssets.assetId, mediaAssets.id),
-                eq(mediaAssets.ownerId, ownerId),
-              ),
-            )
-            .where(eq(sourceVersionAssets.versionId, sourceVersionId))
-            .orderBy(asc(sourceVersionAssets.ordinal));
+        : await tx.$queryRaw<
+            Array<{
+              assetOrDerivativeId: mediaAssets['id'];
+              storageKey: mediaAssets['objectKey'];
+            }>
+          >(Prisma.sql`
+          select media_assets.id as "assetOrDerivativeId",
+          media_assets.object_key as "storageKey"
+          from source_version_assets
+          join source_versions on (source_version_assets.version_id = source_versions.id and source_versions.owner_id = ${ownerId})
+          join media_assets on (source_version_assets.asset_id = media_assets.id and media_assets.owner_id = ${ownerId})
+          where source_version_assets.version_id = ${sourceVersionId}::uuid
+          order by source_version_assets.ordinal asc
+        `);
       if (!selectedPageIds?.length) {
         return originals;
       }
 
       const [pageDerivatives, referenceDerivatives] = await Promise.all([
-        tx
-          .select({
-            assetOrDerivativeId: mediaDerivatives.id,
-            storageKey: mediaDerivatives.objectKey,
-          })
-          .from(sourcePages)
-          .innerJoin(
-            sourceVersions,
-            and(
-              eq(sourcePages.sourceVersionId, sourceVersions.id),
-              eq(sourceVersions.ownerId, ownerId),
-            ),
-          )
-          .innerJoin(
-            canonicalViews,
-            eq(sourcePages.canonicalViewId, canonicalViews.id),
-          )
-          .innerJoin(
-            mediaDerivatives,
-            and(
-              eq(canonicalViews.derivativeId, mediaDerivatives.id),
-              eq(mediaDerivatives.ownerId, ownerId),
-            ),
-          )
-          .where(
-            and(
-              eq(sourcePages.sourceVersionId, sourceVersionId),
-              inArray(sourcePages.id, selectedPageIds),
-            ),
-          )
-          .orderBy(asc(sourcePages.pageIndex), asc(mediaDerivatives.id)),
-        tx
-          .select({
-            assetOrDerivativeId: mediaDerivatives.id,
-            storageKey: mediaDerivatives.objectKey,
-          })
-          .from(referenceImages)
-          .innerJoin(
-            sourceVersions,
-            and(
-              eq(referenceImages.sourceVersionId, sourceVersions.id),
-              eq(sourceVersions.ownerId, ownerId),
-            ),
-          )
-          .innerJoin(
-            sourceLocators,
-            eq(referenceImages.locatorId, sourceLocators.id),
-          )
-          .innerJoin(
-            mediaDerivatives,
-            and(
-              eq(referenceImages.storedDerivativeId, mediaDerivatives.id),
-              eq(mediaDerivatives.ownerId, ownerId),
-            ),
-          )
-          .where(
-            and(
-              eq(referenceImages.sourceVersionId, sourceVersionId),
-              inArray(sourceLocators.pageId, selectedPageIds),
-            ),
-          )
-          .orderBy(asc(referenceImages.id)),
+        tx.$queryRaw<
+          Array<{
+            assetOrDerivativeId: mediaDerivatives['id'];
+            storageKey: mediaDerivatives['objectKey'];
+          }>
+        >(Prisma.sql`
+          select media_derivatives.id as "assetOrDerivativeId",
+          media_derivatives.object_key as "storageKey"
+          from source_pages
+          join source_versions on (source_pages.source_version_id = source_versions.id and source_versions.owner_id = ${ownerId})
+          join canonical_views on source_pages.canonical_view_id = canonical_views.id
+          join media_derivatives on (canonical_views.derivative_id = media_derivatives.id and media_derivatives.owner_id = ${ownerId})
+          where (source_pages.source_version_id = ${sourceVersionId}::uuid and source_pages.id in (${Prisma.join(selectedPageIds.map((value) => Prisma.sql`${value}::uuid`))}))
+          order by source_pages.page_index asc, media_derivatives.id asc
+        `),
+        tx.$queryRaw<
+          Array<{
+            assetOrDerivativeId: mediaDerivatives['id'];
+            storageKey: mediaDerivatives['objectKey'];
+          }>
+        >(Prisma.sql`
+          select media_derivatives.id as "assetOrDerivativeId",
+          media_derivatives.object_key as "storageKey"
+          from reference_images
+          join source_versions on (reference_images.source_version_id = source_versions.id and source_versions.owner_id = ${ownerId})
+          join source_locators on reference_images.locator_id = source_locators.id
+          join media_derivatives on (reference_images.stored_derivative_id = media_derivatives.id and media_derivatives.owner_id = ${ownerId})
+          where (reference_images.source_version_id = ${sourceVersionId}::uuid and source_locators.page_id in (${Prisma.join(selectedPageIds.map((value) => Prisma.sql`${value}::uuid`))}))
+          order by reference_images.id asc
+        `),
       ]);
       const targets = new Map(
         [...originals, ...pageDerivatives, ...referenceDerivatives].map(
@@ -949,129 +881,131 @@ export function createSourceRepository(
 
       return [...targets.values()];
     },
+    /** @param sourceHash */
     async findVersionByHash(sourceHash) {
-      const [row] = await tx
-        .select({ id: sourceVersions.id })
-        .from(sourceVersions)
-        .where(
-          and(
-            eq(sourceVersions.ownerId, ownerId),
-            eq(sourceVersions.sourceHash, sourceHash),
-          ),
-        );
+      const [row] = await tx.sourceVersions.findMany({
+        where: { AND: [{ ownerId }, { sourceHash }] },
+        select: { id: true },
+      });
 
       return row ? getVersion(row.id) : null;
     },
+    /** @param versionId */
     async getIngestionJobId(versionId) {
-      const [row] = await tx
-        .select({ id: jobs.id })
-        .from(jobs)
-        .where(
-          and(
-            eq(jobs.ownerId, ownerId),
-            eq(jobs.kind, 'sourceIngestion'),
-            eq(jobs.resourceId, versionId),
-          ),
-        )
-        .orderBy(asc(jobs.createdAt))
-        .limit(1);
+      const [row] = await tx.jobs.findMany({
+        where: {
+          AND: [
+            { ownerId },
+            { kind: 'sourceIngestion' },
+            { resourceId: versionId },
+          ],
+        },
+        orderBy: [{ createdAt: 'asc' }],
+        take: 1,
+        select: { id: true },
+      });
 
       return row?.id ?? null;
     },
+    /** @param id */
     async getPage(id) {
       return readPage(tx, ownerId, id);
     },
+    /** @param versionId */
     async getPageRunSelection(versionId) {
-      const rows = await tx
-        .select({
-          pageId: sourcePages.id,
-          parseRunId: projectedParseRunId(),
-        })
-        .from(sourcePages)
-        .innerJoin(
-          sourceVersions,
-          and(
-            eq(sourcePages.sourceVersionId, sourceVersions.id),
-            eq(sourceVersions.ownerId, ownerId),
-          ),
-        )
-        .where(eq(sourcePages.sourceVersionId, versionId))
-        .orderBy(asc(sourcePages.pageIndex), asc(sourcePages.id));
+      const rows = await tx.$queryRaw<
+        Array<{ pageId: sourcePages['id']; parseRunId: string | null }>
+      >(Prisma.sql`
+        select source_pages.id as "pageId",
+        ${projectedParseRunId()} as "parseRunId"
+        from source_pages
+        join source_versions on (source_pages.source_version_id = source_versions.id and source_versions.owner_id = ${ownerId})
+        where source_pages.source_version_id = ${versionId}::uuid
+        order by source_pages.page_index asc, source_pages.id asc
+      `);
 
       return rows;
     },
+    /**
+     * @param source
+     * @param version
+     * @param assets
+     */
     async create(source, version, assets) {
-      await tx.insert(sources).values({
-        id: source.id,
-        ownerId,
-        kind: source.kind,
-        revision: source.revision,
-        currentVersionId: source.currentVersionId,
-        title: source.metadata.title,
-        authorStatus: source.metadata.authorStatus,
-        editionStatement: source.metadata.editionStatement,
-        publisher: source.metadata.publisher,
-        publicationDateAsPrinted: source.metadata.publicationDateAsPrinted,
-        isbn: source.metadata.isbn,
-        canonicalUrl: source.metadata.canonicalUrl,
-        access: source.metadata.access,
-        rightsStatement: source.metadata.rightsStatement,
-        attributionText: source.metadata.attributionText,
-        createdAt: source.createdAt,
-        updatedAt: source.updatedAt,
+      await tx.sources.createMany({
+        data: {
+          id: source.id,
+          ownerId,
+          kind: source.kind,
+          revision: source.revision,
+          currentVersionId: source.currentVersionId,
+          title: source.metadata.title,
+          authorStatus: source.metadata.authorStatus,
+          editionStatement: source.metadata.editionStatement,
+          publisher: source.metadata.publisher,
+          publicationDateAsPrinted: source.metadata.publicationDateAsPrinted,
+          isbn: source.metadata.isbn,
+          canonicalUrl: source.metadata.canonicalUrl,
+          access: source.metadata.access,
+          rightsStatement: source.metadata.rightsStatement,
+          attributionText: source.metadata.attributionText,
+          createdAt: source.createdAt,
+          updatedAt: source.updatedAt,
+        },
       });
       await saveSourceMetadata(tx, source);
-      await tx.insert(sourceVersions).values({
-        id: version.id,
-        sourceId: version.sourceId,
-        ownerId,
-        sourceHash: version.sourceHash,
-        metadataSnapshot: version.metadataSnapshot,
-        capturedAt: version.capturedAt,
-        retrievedAt: version.retrievedAt,
-        status: version.status,
-        textIndexStatus: version.textIndexStatus,
-        imageIndexStatus: version.imageIndexStatus,
-        activeParseRunId: version.activeParseRunId,
+      await tx.sourceVersions.createMany({
+        data: {
+          id: version.id,
+          sourceId: version.sourceId,
+          ownerId,
+          sourceHash: version.sourceHash,
+          metadataSnapshot: jsonValue(version.metadataSnapshot),
+          capturedAt: version.capturedAt,
+          retrievedAt: version.retrievedAt,
+          status: version.status,
+          textIndexStatus: version.textIndexStatus,
+          imageIndexStatus: version.imageIndexStatus,
+          activeParseRunId: version.activeParseRunId,
+        },
       });
       await saveAssets(tx, ownerId, version.id, assets);
     },
+    /**
+     * @param version
+     * @param expectedSourceRevision
+     * @param assets
+     */
     async addVersion(version, expectedSourceRevision, assets) {
       const metadata = version.metadataSnapshot;
-      const [changed] = await tx
-        .update(sources)
-        .set({
-          revision: expectedSourceRevision + 1,
-          currentVersionId: version.id,
-          title: metadata.title,
-          authorStatus: metadata.authorStatus,
-          editionStatement: metadata.editionStatement,
-          publisher: metadata.publisher,
-          publicationDateAsPrinted: metadata.publicationDateAsPrinted,
-          isbn: metadata.isbn,
-          canonicalUrl: metadata.canonicalUrl,
-          access: metadata.access,
-          rightsStatement: metadata.rightsStatement,
-          attributionText: metadata.attributionText,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(sources.id, version.sourceId),
-            eq(sources.ownerId, ownerId),
-            eq(sources.revision, expectedSourceRevision),
-          ),
-        )
-        .returning({ id: sources.id });
+      const [changed] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        update sources set
+          revision = ${expectedSourceRevision + 1},
+          current_version_id = ${version.id}::uuid,
+          title = ${metadata.title},
+          author_status = ${metadata.authorStatus},
+          edition_statement = ${metadata.editionStatement},
+          publisher = ${metadata.publisher},
+          publication_date_as_printed = ${metadata.publicationDateAsPrinted},
+          isbn = ${metadata.isbn},
+          canonical_url = ${metadata.canonicalUrl},
+          access = ${metadata.access},
+          rights_statement = ${metadata.rightsStatement},
+          attribution_text = ${metadata.attributionText},
+          updated_at = now()
+        where id = ${version.sourceId}::uuid and owner_id = ${ownerId}
+          and revision = ${expectedSourceRevision}
+        returning id
+      `);
       if (!changed) {
         return false;
       }
-      await tx
-        .delete(sourceContributors)
-        .where(eq(sourceContributors.sourceId, version.sourceId));
-      await tx
-        .delete(sourceLanguages)
-        .where(eq(sourceLanguages.sourceId, version.sourceId));
+      await tx.sourceContributors.deleteMany({
+        where: { sourceId: version.sourceId },
+      });
+      await tx.sourceLanguages.deleteMany({
+        where: { sourceId: version.sourceId },
+      });
       await saveSourceMetadata(tx, {
         id: version.sourceId,
         revision: expectedSourceRevision + 1,
@@ -1081,124 +1015,116 @@ export function createSourceRepository(
         metadata,
         currentVersionId: version.id,
       });
-      await tx.insert(sourceVersions).values({
-        id: version.id,
-        sourceId: version.sourceId,
-        ownerId,
-        sourceHash: version.sourceHash,
-        metadataSnapshot: metadata,
-        capturedAt: version.capturedAt,
-        retrievedAt: version.retrievedAt,
-        status: version.status,
-        textIndexStatus: version.textIndexStatus,
-        imageIndexStatus: version.imageIndexStatus,
-        activeParseRunId: version.activeParseRunId,
+      await tx.sourceVersions.createMany({
+        data: {
+          id: version.id,
+          sourceId: version.sourceId,
+          ownerId,
+          sourceHash: version.sourceHash,
+          metadataSnapshot: jsonValue(metadata),
+          capturedAt: version.capturedAt,
+          retrievedAt: version.retrievedAt,
+          status: version.status,
+          textIndexStatus: version.textIndexStatus,
+          imageIndexStatus: version.imageIndexStatus,
+          activeParseRunId: version.activeParseRunId,
+        },
       });
       await saveAssets(tx, ownerId, version.id, assets);
 
       return true;
     },
+    /**
+     * @param version
+     * @param expectedStatus
+     * @param expectedActiveParseRunId
+     */
     async updateVersion(version, expectedStatus, expectedActiveParseRunId) {
-      const [changed] = await tx
-        .update(sourceVersions)
-        .set({
+      const [changed] = await tx.sourceVersions.updateManyAndReturn({
+        data: {
           status: version.status,
           textIndexStatus: version.textIndexStatus,
           imageIndexStatus: version.imageIndexStatus,
           activeParseRunId: version.activeParseRunId,
-        })
-        .where(
-          and(
-            eq(sourceVersions.id, version.id),
-            eq(sourceVersions.ownerId, ownerId),
-            eq(sourceVersions.status, expectedStatus),
-            expectedActiveParseRunId === null
-              ? isNull(sourceVersions.activeParseRunId)
-              : eq(sourceVersions.activeParseRunId, expectedActiveParseRunId),
-          ),
-        )
-        .returning({ id: sourceVersions.id });
+        },
+        where: {
+          AND: [
+            { id: version.id },
+            { ownerId },
+            { status: expectedStatus },
+            {
+              ...(expectedActiveParseRunId === null
+                ? { activeParseRunId: null }
+                : { activeParseRunId: expectedActiveParseRunId }),
+            },
+          ],
+        },
+        select: { id: true },
+      });
 
       return Boolean(changed);
     },
+    /** @param pack */
     async saveParsed(pack) {
       const version = await getVersion(pack.sourceVersionId);
       if (!version) {
         throw new Error('Parsed source version is inaccessible');
       }
-      await tx
-        .insert(parseRuns)
-        .values({
+      await tx.parseRuns.createMany({
+        data: {
           id: pack.parseRunId,
           sourceVersionId: pack.sourceVersionId,
           jobId: pack.parseRunId,
           provider: 'application',
           rawOutputAssetId: pack.rawOutputAssetId,
           status: pack.warnings.length ? 'partial' : 'completed',
-        })
-        .onConflictDoNothing();
-      await tx
-        .insert(sourceArtifacts)
-        .values({
+        },
+        skipDuplicates: true,
+      });
+      await tx.sourceArtifacts.createMany({
+        data: {
           assetId: pack.rawOutputAssetId,
           ownerId,
           sourceVersionId: pack.sourceVersionId,
           parseRunId: pack.parseRunId,
           kind: 'raw_parse_output',
-        })
-        .onConflictDoNothing();
+        },
+        skipDuplicates: true,
+      });
       for (const page of pack.pages) {
-        const [ownedAsset] = await tx
-          .select({ id: mediaAssets.id })
-          .from(sourceVersionAssets)
-          .innerJoin(
-            mediaAssets,
-            and(
-              eq(sourceVersionAssets.assetId, mediaAssets.id),
-              eq(mediaAssets.ownerId, ownerId),
-            ),
-          )
-          .where(
-            and(
-              eq(sourceVersionAssets.versionId, pack.sourceVersionId),
-              eq(sourceVersionAssets.assetId, page.originalAssetId),
-            ),
-          );
+        const [ownedAsset] = await tx.$queryRaw<
+          Array<{ id: mediaAssets['id'] }>
+        >(Prisma.sql`
+          select media_assets.id as "id"
+          from source_version_assets
+          join media_assets on (source_version_assets.asset_id = media_assets.id and media_assets.owner_id = ${ownerId})
+          where (source_version_assets.version_id = ${pack.sourceVersionId}::uuid and source_version_assets.asset_id = ${page.originalAssetId}::uuid)
+        `);
         if (!ownedAsset) {
           throw new Error('Parsed page asset is inaccessible');
         }
 
         if (page.pdfPageIndex !== null) {
-          await tx
-            .insert(canonicalViews)
-            .values({
+          await tx.canonicalViews.createMany({
+            data: {
               id: page.view.id,
               originalAssetId: page.view.originalAssetId,
               derivativeId: null,
               width: page.view.width,
               height: page.view.height,
               coordinateSpace: page.view.originalCoordinateSpace,
-              transformToOriginal: page.view.transformToOriginal,
-            })
-            .onConflictDoNothing();
+              transformToOriginal: jsonValue(page.view.transformToOriginal),
+            },
+            skipDuplicates: true,
+          });
         }
-        const [storedView] = await tx
-          .select()
-          .from(canonicalViews)
-          .innerJoin(
-            mediaAssets,
-            and(
-              eq(canonicalViews.originalAssetId, mediaAssets.id),
-              eq(mediaAssets.ownerId, ownerId),
-            ),
-          )
-          .where(
-            and(
-              eq(canonicalViews.id, page.view.id),
-              eq(canonicalViews.originalAssetId, page.originalAssetId),
-            ),
-          );
-        const view = storedView?.canonical_views;
+        const view = await tx.canonicalViews.findFirst({
+          where: {
+            id: page.view.id,
+            originalAssetId: page.originalAssetId,
+            mediaAssets: { ownerId },
+          },
+        });
         const expectedDerivativeId =
           page.pdfPageIndex !== null ? null : page.view.derivativeId;
         const transform = view?.transformToOriginal as
@@ -1219,9 +1145,8 @@ export function createSourceRepository(
           throw new Error('Parsed page canonical view is inaccessible');
         }
 
-        await tx
-          .insert(sourcePages)
-          .values({
+        await tx.sourcePages.createMany({
+          data: {
             id: page.id,
             sourceVersionId: page.sourceVersionId,
             pageIndex: page.pageIndex,
@@ -1229,12 +1154,12 @@ export function createSourceRepository(
             originalAssetId: page.originalAssetId,
             pdfPageIndex: page.pdfPageIndex,
             canonicalViewId: page.view.id,
-          })
-          .onConflictDoNothing();
-        const [storedPage] = await tx
-          .select()
-          .from(sourcePages)
-          .where(eq(sourcePages.id, page.id));
+          },
+          skipDuplicates: true,
+        });
+        const [storedPage] = await tx.sourcePages.findMany({
+          where: { id: page.id },
+        });
         if (
           !storedPage ||
           storedPage.sourceVersionId !== page.sourceVersionId ||
@@ -1246,69 +1171,69 @@ export function createSourceRepository(
         ) {
           throw new Error('Parsed page identity conflicts with the original');
         }
-        await tx
-          .insert(sourcePageParses)
-          .values({
+        await tx.sourcePageParses.upsert({
+          where: {
+            parseRunId_pageId: { parseRunId: pack.parseRunId, pageId: page.id },
+          },
+          create: {
             parseRunId: pack.parseRunId,
             pageId: page.id,
             rawText: page.rawText,
             searchText: page.searchText,
             quality: page.quality,
-          })
-          .onConflictDoUpdate({
-            target: [sourcePageParses.parseRunId, sourcePageParses.pageId],
-            set: {
-              rawText: page.rawText,
-              searchText: page.searchText,
-              quality: page.quality,
-            },
-          });
+          },
+          update: {
+            rawText: page.rawText,
+            searchText: page.searchText,
+            quality: page.quality,
+          },
+        });
       }
       for (const region of pack.regions) {
-        await tx
-          .insert(sourceRegions)
-          .values({
+        await tx.sourceRegions.createMany({
+          data: {
             id: region.id,
             sourceVersionId: region.sourceVersionId,
             pageId: region.pageId,
             parseRunId: pack.parseRunId,
             kind: region.kind,
-            geometry: region.region,
+            geometry: jsonValue(region.region),
             rawText: region.rawText,
-          })
-          .onConflictDoNothing();
-        const [storedRegion] = await tx
-          .select({ id: sourceRegions.id })
-          .from(sourceRegions)
-          .where(
-            and(
-              eq(sourceRegions.id, region.id),
-              eq(sourceRegions.sourceVersionId, region.sourceVersionId),
-              eq(sourceRegions.pageId, region.pageId),
-              eq(sourceRegions.parseRunId, pack.parseRunId),
-              eq(sourceRegions.kind, region.kind),
-              eq(sourceRegions.geometry, region.region),
-              region.rawText === null
-                ? isNull(sourceRegions.rawText)
-                : eq(sourceRegions.rawText, region.rawText),
-            ),
-          );
+          },
+          skipDuplicates: true,
+        });
+        const [storedRegion] = await tx.sourceRegions.findMany({
+          where: {
+            AND: [
+              { id: region.id },
+              { sourceVersionId: region.sourceVersionId },
+              { pageId: region.pageId },
+              { parseRunId: pack.parseRunId },
+              { kind: region.kind },
+              { geometry: { equals: jsonValue(region.region) } },
+              {
+                ...(region.rawText === null
+                  ? { rawText: null }
+                  : { rawText: region.rawText }),
+              },
+            ],
+          },
+          select: { id: true },
+        });
         if (!storedRegion) {
           throw new Error('Parsed region identity conflicts with the original');
         }
       }
       for (const region of pack.regions) {
         if (region.relatedRegionIds.length) {
-          await tx
-            .insert(regionRelations)
-            .values(
-              region.relatedRegionIds.map((toId) => ({
-                fromId: region.id,
-                toId,
-                kind: 'related',
-              })),
-            )
-            .onConflictDoNothing();
+          await tx.regionRelations.createMany({
+            data: region.relatedRegionIds.map((toId) => ({
+              fromId: region.id,
+              toId,
+              kind: 'related',
+            })),
+            skipDuplicates: true,
+          });
         }
       }
       const pagesById = new Map(pack.pages.map((page) => [page.id, page]));
@@ -1353,35 +1278,26 @@ export function createSourceRepository(
             image.originalCaption.locator,
           );
         }
-        await tx
-          .insert(referenceImages)
-          .values({
+        const imageData = {
+          locatorId: image.id,
+          figureRegionId: image.figureRegionId,
+          storedDerivativeId: image.storedDerivativeId,
+          externalImageUrl: image.externalImageUrl,
+          captionText: image.originalCaption?.textAsPrinted,
+          captionLocatorId,
+          generatedDescriptionZhHant: image.generatedDescriptionZhHant,
+          descriptionJobId: image.descriptionJobId,
+          captionAssociation: image.captionAssociation,
+        };
+        await tx.referenceImages.upsert({
+          where: { id: image.id },
+          create: {
             id: image.id,
             sourceVersionId: image.sourceVersionId,
-            locatorId: image.id,
-            figureRegionId: image.figureRegionId,
-            storedDerivativeId: image.storedDerivativeId,
-            externalImageUrl: image.externalImageUrl,
-            captionText: image.originalCaption?.textAsPrinted,
-            captionLocatorId,
-            generatedDescriptionZhHant: image.generatedDescriptionZhHant,
-            descriptionJobId: image.descriptionJobId,
-            captionAssociation: image.captionAssociation,
-          })
-          .onConflictDoUpdate({
-            target: referenceImages.id,
-            set: {
-              locatorId: image.id,
-              figureRegionId: image.figureRegionId,
-              storedDerivativeId: image.storedDerivativeId,
-              externalImageUrl: image.externalImageUrl,
-              captionText: image.originalCaption?.textAsPrinted,
-              captionLocatorId,
-              generatedDescriptionZhHant: image.generatedDescriptionZhHant,
-              descriptionJobId: image.descriptionJobId,
-              captionAssociation: image.captionAssociation,
-            },
-          });
+            ...imageData,
+          },
+          update: imageData,
+        });
       }
       for (const mapping of pack.mappings) {
         await persistProviderChunkMappings(
@@ -1391,55 +1307,55 @@ export function createSourceRepository(
       }
     },
     addProviderChunkMappings,
+    /**
+     * @param provider
+     * @param indexVersion
+     * @param providerChunkId
+     */
     async resolveProviderChunk(provider, indexVersion, providerChunkId) {
-      const [row] = await tx
-        .select()
-        .from(sourceChunkMappings)
-        .innerJoin(
-          sourceVersions,
-          and(
-            eq(sourceChunkMappings.sourceVersionId, sourceVersions.id),
-            eq(sourceVersions.ownerId, ownerId),
-          ),
-        )
-        .where(
-          and(
-            eq(sourceChunkMappings.provider, provider),
-            eq(sourceChunkMappings.indexId, indexVersionId(indexVersion)),
-            eq(sourceChunkMappings.providerChunkId, providerChunkId),
-          ),
-        );
+      const row = await tx.sourceChunkMappings.findFirst({
+        where: {
+          provider,
+          indexId: indexVersionId(indexVersion),
+          providerChunkId,
+          sourceVersions: { ownerId },
+        },
+      });
       if (!row) {
         return null;
       }
-      const regions = await tx
-        .select({ id: mappingRegions.regionId })
-        .from(mappingRegions)
-        .where(eq(mappingRegions.mappingId, row.source_chunk_mappings.id));
+      const regions = await tx.mappingRegions
+        .findMany({ where: { mappingId: row.id }, select: { regionId: true } })
+        .then((rows) => rows.map((row) => ({ id: row.regionId })));
 
       return {
-        provider: row.source_chunk_mappings.provider,
-        providerChunkId: row.source_chunk_mappings.providerChunkId,
-        providerFigureId: row.source_chunk_mappings.providerFigureId,
-        parseRunId: row.source_chunk_mappings.parseRunId,
+        provider: row.provider,
+        providerChunkId: row.providerChunkId,
+        providerFigureId: row.providerFigureId,
+        parseRunId: row.parseRunId,
         indexVersion,
-        sourceVersionId: row.source_chunk_mappings.sourceVersionId,
+        sourceVersionId: row.sourceVersionId,
         canonicalRegionIds: regions.map((region) => region.id),
       };
     },
+    /** @param id */
     async getCitation(id) {
       return readCitation(tx, ownerId, id);
     },
     addCitation,
+    /**
+     * @param versionId
+     * @param entryId
+     */
     async linkKnowledgeDraft(versionId, entryId) {
       const version = await getVersion(versionId);
       if (!version) {
         throw new Error('Source version is inaccessible');
       }
-      await tx
-        .insert(sourceKnowledgeDrafts)
-        .values({ ownerId, sourceVersionId: versionId, entryId })
-        .onConflictDoNothing();
+      await tx.sourceKnowledgeDrafts.createMany({
+        data: { ownerId, sourceVersionId: versionId, entryId },
+        skipDuplicates: true,
+      });
     },
   };
 }

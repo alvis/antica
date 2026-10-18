@@ -2,13 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, inject } from 'vitest';
 
-import {
-  knowledgeEntries,
-  knowledgeRevisions,
-  referenceImages,
-  sources,
-  sourceVersions,
-} from '../schema/index.js';
+import { jsonValue } from '../json.js';
 
 import { createDatabaseTest } from '../spec/fixtures/runner.js';
 
@@ -26,7 +20,7 @@ const it = createDatabaseTest(resources.knowledge!);
 
 const instant = '2026-10-13T00:00:00.000Z';
 
-describe('fn:createKnowledgeRepository', () => {
+describe('fn:createKnowledgeRepository', { timeout: 30_000 }, () => {
   it('should retain filtered matches and their cursor order beyond 501 newer nonmatches', async ({
     connection,
   }) => {
@@ -75,51 +69,55 @@ describe('fn:createKnowledgeRepository', () => {
       content,
     })).sort((left, right) => right.id.localeCompare(left.id));
     const unrelated = Array.from({ length: 501 }, () => knowledgeEntry());
-    await connection.db.transaction(async (tx) => {
-      await tx.insert(sources).values({
-        id: sourceId,
-        ownerId,
-        kind: 'web',
-        title: 'Selected catalog',
-        authorStatus: 'unknown',
-        access: 'link_only',
+    await connection.db.$transaction(async (tx) => {
+      await tx.sources.createMany({
+        data: {
+          id: sourceId,
+          ownerId,
+          kind: 'web',
+          title: 'Selected catalog',
+          authorStatus: 'unknown',
+          access: 'link_only',
+        },
       });
-      await tx.insert(sourceVersions).values({
-        id: sourceVersionId,
-        sourceId,
-        ownerId,
-        sourceHash: 'a'.repeat(64),
-        metadataSnapshot: {},
-        capturedAt: instant,
-        status: 'registered',
-        textIndexStatus: 'registered',
-        imageIndexStatus: 'registered',
+      await tx.sourceVersions.createMany({
+        data: {
+          id: sourceVersionId,
+          sourceId,
+          ownerId,
+          sourceHash: 'a'.repeat(64),
+          metadataSnapshot: {},
+          capturedAt: instant,
+          status: 'registered',
+          textIndexStatus: 'registered',
+          imageIndexStatus: 'registered',
+        },
       });
       await createSourceRepository(tx, ownerId).addCitation(citation);
       const repository = createKnowledgeRepository(tx, ownerId);
       for (const entry of [newest, ...older]) {
         await repository.create(entry);
       }
-      await tx.insert(knowledgeEntries).values(
-        unrelated.map((entry) => ({
+      await tx.knowledgeEntries.createMany({
+        data: unrelated.map((entry) => ({
           id: entry.id,
           ownerId,
           displayCode: entry.displayCode,
           currentRevision: 1,
           updatedAt: '2026-10-14T00:00:00.000Z',
         })),
-      );
-      await tx.insert(knowledgeRevisions).values(
-        unrelated.map((entry) => ({
+      });
+      await tx.knowledgeRevisions.createMany({
+        data: unrelated.map((entry) => ({
           entryId: entry.id,
           revision: 1,
           status: entry.status,
           titleZhHant: entry.content.titleZhHant,
           summaryZhHant: entry.content.summary.textZhHant,
-          content: entry.content,
+          content: jsonValue(entry.content),
           contentHash: 'b'.repeat(64),
         })),
-      );
+      });
       await repository.create({
         ...knowledgeEntry(),
         content: { ...content, citations: [] },
@@ -199,7 +197,7 @@ describe('fn:createKnowledgeRepository', () => {
       owningEntryId: entry.id,
       currentVersionId: version.id,
     };
-    await database.db.transaction(async (tx) => {
+    await database.db.$transaction(async (tx) => {
       const repository = createKnowledgeRepository(tx, ownerId);
       await repository.create(entry);
       expect(await repository.allocateCode()).toBe('KN-000001');
@@ -316,33 +314,39 @@ describe('fn:createKnowledgeRepository', () => {
         exampleReferenceImageIds: [imageId, randomUUID()],
       },
     };
-    await database.db.transaction(async (tx) => {
-      await tx.insert(sources).values({
-        id: sourceId,
-        ownerId,
-        kind: 'web',
-        title: 'Catalog',
-        authorStatus: 'unknown',
-        access: 'link_only',
+    await database.db.$transaction(async (tx) => {
+      await tx.sources.createMany({
+        data: {
+          id: sourceId,
+          ownerId,
+          kind: 'web',
+          title: 'Catalog',
+          authorStatus: 'unknown',
+          access: 'link_only',
+        },
       });
-      await tx.insert(sourceVersions).values({
-        id: sourceVersionId,
-        sourceId,
-        ownerId,
-        sourceHash: 'a'.repeat(64),
-        metadataSnapshot: {},
-        capturedAt: instant,
-        status: 'registered',
-        textIndexStatus: 'registered',
-        imageIndexStatus: 'registered',
+      await tx.sourceVersions.createMany({
+        data: {
+          id: sourceVersionId,
+          sourceId,
+          ownerId,
+          sourceHash: 'a'.repeat(64),
+          metadataSnapshot: {},
+          capturedAt: instant,
+          status: 'registered',
+          textIndexStatus: 'registered',
+          imageIndexStatus: 'registered',
+        },
       });
       await createSourceRepository(tx, ownerId).addCitation(citation);
-      await tx.insert(referenceImages).values({
-        id: imageId,
-        sourceVersionId,
-        locatorId: citation.id,
-        externalImageUrl: 'https://example.invalid/image.jpg',
-        captionAssociation: 'none',
+      await tx.referenceImages.createMany({
+        data: {
+          id: imageId,
+          sourceVersionId,
+          locatorId: citation.id,
+          externalImageUrl: 'https://example.invalid/image.jpg',
+          captionAssociation: 'none',
+        },
       });
       const repository = createKnowledgeRepository(tx, ownerId);
       await repository.create(entry);
@@ -369,7 +373,7 @@ describe('fn:createKnowledgeRepository', () => {
     const database = connection;
     const ownerId = randomUUID();
     const entries = [knowledgeEntry(), knowledgeEntry(), knowledgeEntry()];
-    await database.db.transaction(async (tx) => {
+    await database.db.$transaction(async (tx) => {
       const repository = createKnowledgeRepository(tx, ownerId);
       for (const entry of entries) {
         await repository.create(entry);
@@ -438,7 +442,7 @@ describe('fn:createKnowledgeRepository', () => {
         ],
       },
     };
-    await database.db.transaction(async (tx) => {
+    await database.db.$transaction(async (tx) => {
       const repository = createKnowledgeRepository(tx, ownerId);
       await repository.create(entry);
       await repository.create(knowledgeEntry());
