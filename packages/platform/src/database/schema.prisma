@@ -507,11 +507,14 @@ model knowledgeEntries {
   citedClaimEntry CitedClaim[] @relation("CitedClaim_entry")
 
   /// retains historical ReviewDiff associations
-  reviewDiffEntry ReviewDiff[] @relation("ReviewDiff_entry")
+  reviewDiffEntry ReviewDiff[]              @relation("ReviewDiff_entry")
+  /// retains every revision and language search projection
+  searchDocuments KnowledgeSearchDocument[] @relation("search_entry")
 
   @@unique([ownerId, displayCode], map: "knowledge_entries_owner_code_uq")
   @@unique([ownerId, id], map: "knowledge_entries_owner_id_uq")
   @@unique([ownerId, contentId], map: "knowledge_entries_owner_content_uq", where: raw("(content_id IS NOT NULL)"))
+  @@index([ownerId, latestSavedRevision, id], map: "knowledge_entries_saved_pointer_idx")
   @@map("knowledge_entries")
 }
 
@@ -600,11 +603,14 @@ model knowledgeRevisions {
   reviewDiffBase ReviewDiff[] @relation("ReviewDiff_base")
 
   /// retains historical ReviewDiff associations
-  reviewDiffCandidate ReviewDiff[] @relation("ReviewDiff_candidate")
+  reviewDiffCandidate ReviewDiff[]              @relation("ReviewDiff_candidate")
+  /// pins text projections to the exact content envelope
+  searchDocuments     KnowledgeSearchDocument[] @relation("search_revision")
 
   @@id([entryId, revision], map: "knowledge_revisions_entry_id_revision_pk")
   @@index([titleZhHant], map: "knowledge_revisions_title_idx")
   @@index([entryId, status, revision(sort: Desc)], map: "knowledge_revisions_status_revision_idx")
+  @@index([entryType, entryId, revision], map: "knowledge_revisions_entry_type_idx")
   @@map("knowledge_revisions")
 }
 
@@ -1506,6 +1512,7 @@ model sourceLanguages {
   sources  sources @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_languages_source_id_sources_id_fk")
 
   @@id([sourceId, language], map: "source_languages_source_id_language_pk")
+  @@index([language, sourceId], map: "source_languages_filter_idx")
   @@map("source_languages")
 }
 
@@ -2571,4 +2578,53 @@ model CorpusInstallItem {
 
   @@id([installId, contentId])
   @@map("corpus_install_items")
+}
+
+/// stores extension-free lexical projections of immutable revision content
+model KnowledgeSearchDocument {
+  // --- IDENTIFIERS --- //
+  /// isolates the search corpus to its collector
+  ownerId  String @map("owner_id")
+  /// identifies the revisioned knowledge entry
+  entryId  String @map("entry_id") @db.Uuid
+  /// pins the exact content envelope
+  revision Int
+  /// BCP47 language of this projection, including preserved source scripts
+  language String
+
+  // --- PROPERTIES --- //
+  /// pins runtime, ICU and curated dictionary versions for reproducible tokens
+  tokenizerVersion            String                  @map("tokenizer_version")
+  /// invalidates cursors when the searchable corpus changes
+  corpusGeneration            BigInt                  @map("corpus_generation")
+  /// stores normalized segmented title tokens in the strongest ranking lane
+  titleTokens                 String                  @map("title_tokens")
+  /// stores reviewed aliases without changing original display text
+  aliasTokens                 String                  @map("alias_tokens")
+  /// stores applicable topic tokens in the second ranking lane
+  topicTokens                 String                  @map("topic_tokens")
+  /// stores supported claim tokens in the third ranking lane
+  claimTokens                 String                  @map("claim_tokens")
+  /// stores selected captured source tokens in the lowest ranking lane
+  sourceTokens                String                  @map("source_tokens")
+  /// bounds substring and optional trigram indexing to compact title, alias and mark text
+  normalizedTitleAliasesMarks String                  @map("normalized_title_aliases_marks")
+  /// computed by PostgreSQL from weighted simple-dictionary tokens, never supplied by clients
+  searchVector                Unsupported("tsvector") @default(dbgenerated()) @map("search_vector")
+
+  // --- TIMESTAMPS --- //
+  /// records initial projection creation in UTC
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // --- RELATIONS --- //
+  /// prevents projections from crossing owner boundaries
+  entry         knowledgeEntries   @relation("search_entry", fields: [ownerId, entryId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_search_documents_entry_fk")
+  /// preserves the exact historical revision dependency
+  entryRevision knowledgeRevisions @relation("search_revision", fields: [entryId, revision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_search_documents_revision_fk")
+
+  @@id([ownerId, entryId, revision, language])
+  @@index([ownerId, entryId, revision], map: "knowledge_search_documents_entry_idx")
+  @@index([ownerId, language, entryId, revision], map: "knowledge_search_documents_language_idx")
+  @@index([searchVector], type: Gin, map: "knowledge_search_documents_vector_idx")
+  @@map("knowledge_search_documents")
 }

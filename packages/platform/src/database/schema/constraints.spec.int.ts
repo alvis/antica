@@ -738,3 +738,35 @@ describe(
     });
   },
 );
+
+describe('persisted knowledge search projection', { timeout: 30_000 }, () => {
+  it('should generate searchable weighted vectors and refresh them when token text changes', async ({
+    connection,
+  }) => {
+    const ownerId = randomUUID();
+    const entryId = randomUUID();
+    await connection.db
+      .$executeRaw`INSERT INTO knowledge_entries (id, owner_id, display_code, current_revision) VALUES (${entryId}::uuid, ${ownerId}, 'KN-SEARCH', 1)`;
+    await connection.db
+      .$executeRaw`INSERT INTO knowledge_revisions (entry_id, revision, status, title_zh_hant, summary_zh_hant, content, content_hash) VALUES (${entryId}::uuid, 1, 'draft', '瓷', '瓷器', '{}', 'hash')`;
+    await connection.db
+      .$executeRaw`INSERT INTO knowledge_search_documents (owner_id, entry_id, revision, language, tokenizer_version, corpus_generation, title_tokens, alias_tokens, topic_tokens, claim_tokens, source_tokens, normalized_title_aliases_marks) VALUES (${ownerId}, ${entryId}::uuid, 1, 'zh-Hant', 'icu-test-1', 1, '青花 porcelain', 'china', 'ceramics', 'bowl', 'museum', '青花 porcelain china')`;
+    expect(
+      await connection.db
+        .$queryRaw`SELECT entry_id, language, search_vector @@ to_tsquery('simple', '青花 & porcelain & museum') AS matches, ts_rank(search_vector, to_tsquery('simple', 'porcelain')) > ts_rank(search_vector, to_tsquery('simple', 'museum')) AS title_ranks_higher FROM knowledge_search_documents WHERE owner_id = ${ownerId}`,
+    ).toEqual([
+      {
+        entry_id: entryId,
+        language: 'zh-Hant',
+        matches: true,
+        title_ranks_higher: true,
+      },
+    ]);
+    await connection.db
+      .$executeRaw`UPDATE knowledge_search_documents SET title_tokens = 'jade' WHERE owner_id = ${ownerId}`;
+    expect(
+      await connection.db
+        .$queryRaw`SELECT search_vector @@ to_tsquery('simple', 'jade') AS new_title_matches, search_vector @@ to_tsquery('simple', 'porcelain') AS old_title_matches FROM knowledge_search_documents WHERE owner_id = ${ownerId}`,
+    ).toEqual([{ new_title_matches: true, old_title_matches: false }]);
+  });
+});
