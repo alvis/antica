@@ -1,13 +1,7 @@
-import {
-  useAudioRecorder,
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-} from 'expo-audio';
-
 import { randomUUID } from 'expo-crypto';
 import { File } from 'expo-file-system';
-import { useState } from 'react';
+
+import { useVoiceRecorder } from '../../../hooks/useVoiceRecorder';
 
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -36,26 +30,17 @@ export function useVoiceNote({
 }: Pick<CaptureRuntime, 'setError' | 't'> & {
   setDraft: Dispatch<SetStateAction<CaptureDraft>>;
 }): VoiceNote {
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const [recording, setRecording] = useState(false);
+  const recorder = useVoiceRecorder();
 
   const startVoice = async (): Promise<void> => {
-    if (!(await requestRecordingPermissionsAsync()).granted) {
+    if (!(await recorder.start())) {
       setError(t('permissionDenied'));
-
-      return;
     }
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-    setRecording(true);
   };
 
   const stopVoice = async (): Promise<void> => {
-    await recorder.stop();
-    setRecording(false);
-    if (recorder.uri) {
-      const uri = recorder.uri;
+    const uri = await recorder.stop();
+    if (uri) {
       const file = new File(uri);
       setDraft((current) => ({
         ...current,
@@ -107,5 +92,10 @@ export function useVoiceNote({
     }
   };
 
-  return { recording, startVoice, stopVoice, importVoice };
+  return {
+    recording: recorder.recording,
+    startVoice,
+    stopVoice,
+    importVoice,
+  };
 }

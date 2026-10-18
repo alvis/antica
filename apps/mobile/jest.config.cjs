@@ -23,6 +23,7 @@ module.exports = {
     '!src/features/collection/containers/RecordContainer.stories.tsx',
     '!src/features/collection/containers/RecordHistoryContainer.stories.tsx',
     '!src/features/capture/containers/CaptureContainer.stories.tsx',
+    '!src/features/collection/messages/containers/RecordMessagesContainer.stories.tsx',
     '!src/components/QueryState.stories.tsx',
     '!src/components/Screen.stories.tsx',
     '!src/mobile.stories.spec.dom.helpers.tsx',

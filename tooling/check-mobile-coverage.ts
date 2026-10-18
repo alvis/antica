@@ -18,6 +18,7 @@ export const domCoverageSources = [
   'features/collection/containers/RecordContainer.stories.tsx',
   'features/collection/containers/RecordHistoryContainer.stories.tsx',
   'features/capture/containers/CaptureContainer.stories.tsx',
+  'features/collection/messages/containers/RecordMessagesContainer.stories.tsx',
   'components/QueryState.stories.tsx',
   'components/Screen.stories.tsx',
   'mobile.stories.spec.dom.helpers.tsx',

@@ -302,6 +302,76 @@ export const messages = {
   periodCollectorClaim: ['collector’s claim', '藏家判斷'],
   periodUnconfirmed: ['unconfirmed', '未確認'],
   refreshFailed: ['Couldn’t refresh.', '無法重新整理。'],
+  messages: ['Messages', '訊息'],
+  openMessages: ['Open messages', '開啟訊息'],
+  noMessages: [
+    'Ask the assistant about this item by typing or speaking.',
+    '可以打字或說話，向助理詢問這件藏品。',
+  ],
+  earlierMessages: ['Show earlier messages', '顯示較早的訊息'],
+  messageFromYou: ['You', '您'],
+  messageFromAssistant: ['Assistant', '助理'],
+  messageInput: ['Message to the assistant', '給助理的訊息'],
+  sendMessage: ['Send', '傳送'],
+  sendAgain: ['Send again', '再次傳送'],
+  assistantThinking: ['The assistant is thinking…', '助理思考中…'],
+  assistantStillWorking: [
+    'Still working on this. You can leave and come back later.',
+    '仍在處理中。您可以先離開，稍後再回來查看。',
+  ],
+  assistantFailed: [
+    'The assistant could not answer this message.',
+    '助理無法回覆這則訊息。',
+  ],
+  recordVoiceMessage: ['Record voice message', '錄製語音訊息'],
+  stopVoiceMessage: ['Stop and transcribe', '停止並轉寫'],
+  voiceRecording: ['Recording…', '錄音中…'],
+  voiceTranscribing: ['Transcribing your voice…', '正在轉寫您的語音…'],
+  voiceReady: [
+    'Check the transcribed words, then send.',
+    '請檢查轉寫文字，然後傳送。',
+  ],
+  voiceFailed: [
+    'The recording could not be transcribed. Type the message or record again.',
+    '這段錄音無法轉寫。請改為打字或重新錄音。',
+  ],
+  editCardTitle: ['Suggested changes', '建議變更'],
+  editCardReady: [
+    'Nothing changes until you tap “Apply selected changes”.',
+    '點選「套用所選變更」之前，不會變更任何內容。',
+  ],
+  editCardPartlyApplied: ['Some changes applied', '已套用部分變更'],
+  editCardApplied: ['All changes applied', '已套用所有變更'],
+  confirmChange: ['Confirm', '確認'],
+  rejectChange: ['Reject', '不採用'],
+  changeApplied: ['Applied', '已套用'],
+  emptyValue: ['(empty)', '（空白）'],
+  messageStale: [
+    'The item changed after this screen loaded. It has been reloaded; send again.',
+    '此畫面載入後藏品已有變更。已重新載入，請再次傳送。',
+  ],
+  requestInProgress: [
+    'This is still being sent. Try again in a moment.',
+    '仍在傳送中，請稍後再試。',
+  ],
+  requestInvalid: [
+    'This could not be accepted. Check it and try again.',
+    '無法接受此內容。請檢查後再試。',
+  ],
+  notFoundError: ['This item is no longer available.', '此項目已無法使用。'],
+  rateLimited: [
+    'Too many requests. Wait a moment and try again.',
+    '請求過多，請稍候再試。',
+  ],
+  serviceUnavailable: [
+    'The service is temporarily unavailable. Try again later.',
+    '服務暫時無法使用，請稍後再試。',
+  ],
+  signInAgain: ['Sign in again to continue.', '請重新登入後繼續。'],
+  changeStale: [
+    'The item changed after this suggestion. The latest values were reloaded; review them before applying.',
+    '這項建議之後藏品已有變更。已重新載入最新內容，請檢查後再套用。',
+  ],
 } as const;
 
 /** key for a localized mobile message */

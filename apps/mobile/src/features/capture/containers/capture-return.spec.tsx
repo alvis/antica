@@ -271,7 +271,7 @@ function readResource(resources: Map<string, unknown>, path: string): unknown {
   if (path.endsWith('/observations')) {
     return resources.get('observations');
   }
-  if (path.endsWith('/references')) {
+  if (path.endsWith('/references') || path.includes('/messages')) {
     return emptyPage;
   }
 

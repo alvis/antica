@@ -1,22 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { randomUUID } from 'expo-crypto';
 import { getItemAsync, setItemAsync } from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 
-import {
-  recordDetailSchema,
-  transcriptionSubmitSchema,
-  transcriptionAcceptedSchema,
-} from '@antica/contracts';
+import { recordDetailSchema } from '@antica/contracts';
 
 import { uploadMedia } from '../../../adapters/media-upload';
-
 import {
-  editDraftQuery,
+  finishedJobStates,
   jobStatusQuery,
+  requestTranscription,
   transcriptionQuery,
-} from '../api/capture-queries';
+} from '../../../adapters/transcription';
+
+import { editDraftQuery } from '../api/capture-queries';
 
 import type { UseQueryResult } from '@tanstack/react-query';
 
@@ -71,7 +68,7 @@ export function useCaptureJobs(
       api,
       transcriptionResourceId,
       Boolean(transcriptionResourceId) &&
-        ['succeeded', 'partial'].includes(transcription.data?.state.kind ?? ''),
+        finishedJobStates.includes(transcription.data?.state.kind ?? ''),
     ),
   );
   const editDetail = useQuery(
@@ -79,7 +76,7 @@ export function useCaptureJobs(
       api,
       editResourceId,
       Boolean(editResourceId) &&
-        ['succeeded', 'partial'].includes(editDraft.data?.state.kind ?? ''),
+        finishedJobStates.includes(editDraft.data?.state.kind ?? ''),
     ),
   );
 
@@ -161,18 +158,7 @@ export function useCaptureJobs(
         recordDetailSchema,
       );
       update({ record: current });
-      const request = transcriptionSubmitSchema.parse({
-        requestKey: randomUUID(),
-        recordId: current.id,
-        expectedRecordRevision: current.recordRevision,
-        audioAssetId: assetId,
-        vocabularyHints: [],
-      });
-      const accepted = await api.post(
-        '/v1/transcriptions',
-        transcriptionAcceptedSchema,
-        { body: request, idempotencyKey: request.requestKey },
-      );
+      const accepted = await requestTranscription(api, current, assetId);
       setTranscriptionJobId(accepted.jobId);
       setTranscriptionResourceId(accepted.transcriptionId);
       void Promise.all([

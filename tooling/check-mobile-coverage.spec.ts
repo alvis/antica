@@ -27,6 +27,10 @@ const runtimeSources = [
     name: 'features/collection/containers/RecordHistoryContainer.stories.tsx',
     runner: 'dom',
   },
+  {
+    name: 'features/collection/messages/containers/RecordMessagesContainer.stories.tsx',
+    runner: 'dom',
+  },
 ];
 
 const covered = {

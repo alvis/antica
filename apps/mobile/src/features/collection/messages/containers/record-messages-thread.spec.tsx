@@ -1,0 +1,393 @@
+import { expect, it, jest } from '@jest/globals';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+
+import RecordRoute from '../../../../app/(private)/collection/[recordId]';
+import RecordMessagesRoute from '../../../../app/(private)/collection/[recordId]/messages';
+import {
+  collectionRecord,
+  renderMobile,
+} from '../../../../mobile.spec.fixtures';
+
+import { stillWorkingAfterMs } from '../api/record-messages';
+
+import {
+  apiError,
+  entry,
+  messagesPath,
+  page,
+  recordId,
+  sentTo,
+} from './record-messages.spec.fixtures';
+
+jest.mock(
+  '../../../../providers/AuthProvider',
+  () =>
+    ({
+      useAuth:
+        jest.fn<typeof import('../../../../providers/AuthProvider').useAuth>(),
+    }) satisfies Partial<typeof import('../../../../providers/AuthProvider')>,
+);
+jest.mock(
+  'expo-router',
+  () =>
+    ({
+      useRouter: jest.fn<typeof import('expo-router').useRouter>(),
+      useLocalSearchParams: jest.fn<
+        typeof import('expo-router').useLocalSearchParams
+      >(() => ({ recordId: '00000000-0000-4000-8000-000000000001' })),
+    }) satisfies Partial<typeof import('expo-router')>,
+);
+jest.mock(
+  'expo-crypto',
+  () =>
+    ({
+      randomUUID:
+        jest.requireActual<typeof import('node:crypto')>('node:crypto')
+          .randomUUID,
+    }) satisfies Partial<typeof import('expo-crypto')>,
+);
+jest.mock(
+  'expo-secure-store',
+  () =>
+    ({
+      getItemAsync: jest.fn(async () => null),
+      setItemAsync: jest.fn(async () => undefined),
+    }) satisfies Partial<typeof import('expo-secure-store')>,
+);
+jest.mock('expo-audio', () => ({
+  useAudioRecorder: () => ({ uri: null }),
+  requestRecordingPermissionsAsync: jest.fn(),
+  setAudioModeAsync: jest.fn(),
+  RecordingPresets: { HIGH_QUALITY: {} },
+}));
+jest.mock(
+  '../../../../adapters/media-upload',
+  () =>
+    ({
+      uploadMedia:
+        jest.fn<
+          typeof import('../../../../adapters/media-upload').uploadMedia
+        >(),
+    }) satisfies Partial<typeof import('../../../../adapters/media-upload')>,
+);
+
+const emptyList = { items: [], nextCursor: null };
+
+it('should invite the first message and open the area from the record screen', async () => {
+  const view = await renderMobile(<RecordRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}` ? collectionRecord : emptyList,
+  });
+
+  const opener = await screen.findByTestId('record-messages-entry');
+  expect(opener).toHaveAccessibleName(
+    'Open messages: Ask the assistant about this item by typing or speaking.',
+  );
+  await fireEvent.press(opener);
+
+  expect(view.router.push).toHaveBeenCalledWith(
+    `/collection/${recordId}/messages`,
+  );
+  expect(view.reads).toHaveBeenCalledWith(
+    `${messagesPath}?limit=1`,
+    expect.anything(),
+    expect.anything(),
+  );
+  await screen.unmount();
+
+  await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}` ? collectionRecord : emptyList,
+  });
+
+  expect(await screen.findByTestId('record-messages-empty')).toHaveTextContent(
+    'Ask the assistant about this item by typing or speaking.',
+  );
+  expect(screen.getByTestId('record-message-send')).toBeDisabled();
+});
+
+it('should preview the newest message on the record screen', async () => {
+  await renderMobile(<RecordRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}`
+        ? collectionRecord
+        : path === `${messagesPath}?limit=1`
+          ? page([entry('assistant', 'The glaze looks even.')])
+          : emptyList,
+  });
+
+  expect(
+    await screen.findByTestId('record-messages-entry'),
+  ).toHaveAccessibleName('Open messages: The glaze looks even.');
+});
+
+it('should show the newest page first and load older messages on request and on scroll-up', async () => {
+  const newest = [
+    entry('collector', 'Is the foot ring worn?'),
+    entry('assistant', 'Yes, lightly.'),
+  ];
+  const middle = [entry('collector', 'What is the glaze?')];
+  const oldest = [entry('assistant', 'Welcome back.')];
+  let releaseMiddle: () => void = () => undefined;
+  const middleLoaded = new Promise<void>((resolve) => {
+    releaseMiddle = resolve;
+  });
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}`
+        ? collectionRecord
+        : path === `${messagesPath}?cursor=older%201`
+          ? middleLoaded.then(() => page(middle, 'older 2'))
+          : path === `${messagesPath}?cursor=older%202`
+            ? page(oldest)
+            : page(newest, 'older 1'),
+  });
+
+  const bubble = await screen.findByTestId(
+    `record-message-bubble-${newest[1]?.id}`,
+  );
+  expect(bubble).toHaveAccessibleName('Assistant: Yes, lightly.');
+  expect(
+    screen.getByTestId(`record-message-bubble-${newest[0]?.id}`),
+  ).toHaveAccessibleName('You: Is the foot ring worn?');
+  expect(screen.queryByText('What is the glaze?')).toBeNull();
+
+  await fireEvent.press(screen.getByTestId('record-messages-load-earlier'));
+  expect(await screen.findByLabelText('Loading…')).toBeTruthy();
+  expect(screen.queryByTestId('record-messages-load-earlier')).toBeNull();
+  releaseMiddle();
+  expect(await screen.findByText('What is the glaze?')).toBeTruthy();
+
+  await fireEvent(screen.getByTestId('record-messages-thread'), 'onEndReached');
+  expect(await screen.findByText('Welcome back.')).toBeTruthy();
+  expect(screen.queryByTestId('record-messages-load-earlier')).toBeNull();
+  expect(view.reads).toHaveBeenCalledWith(
+    `${messagesPath}?cursor=older%202`,
+    expect.anything(),
+    expect.anything(),
+  );
+});
+
+it('should poll while a reply is pending and stop once it arrives', async () => {
+  const question = entry('collector', 'How old is it?', { status: 'pending' });
+  let reads = 0;
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) => {
+      if (path === `/v1/records/${recordId}`) {
+        return collectionRecord;
+      }
+      reads += 1;
+
+      return reads < 2
+        ? page([question])
+        : page([
+            { ...question, draft: { ...question.draft, status: 'ready' } },
+            entry('assistant', 'Probably late Qing.'),
+          ]);
+    },
+  });
+
+  expect(
+    await screen.findByTestId(`record-message-thinking-${question.id}`),
+  ).toHaveAccessibleName('The assistant is thinking…');
+  expect(
+    await screen.findByText('Probably late Qing.', {}, { timeout: 5000 }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByTestId(`record-message-thinking-${question.id}`),
+  ).toBeNull();
+  const settled = reads;
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 2500)));
+
+  expect(reads).toBe(settled);
+  expect(view.commands).not.toHaveBeenCalled();
+});
+
+it('should reassure the collector after a minute without an error', async () => {
+  jest.useFakeTimers();
+  try {
+    const question = entry('collector', 'Any marks?', { status: 'pending' });
+    await renderMobile(<RecordMessagesRoute />, {
+      get: async (path) =>
+        path === `/v1/records/${recordId}`
+          ? collectionRecord
+          : page([question]),
+    });
+    const status = await screen.findByTestId(
+      `record-message-thinking-${question.id}`,
+    );
+    expect(status).toHaveAccessibleName('The assistant is thinking…');
+
+    await act(async () => jest.advanceTimersByTime(stillWorkingAfterMs));
+
+    expect(
+      screen.getByTestId(`record-message-thinking-${question.id}`),
+    ).toHaveAccessibleName(
+      'Still working on this. You can leave and come back later.',
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('should time the reassurance from when the message was stored, not when it was first seen', async () => {
+  const late = entry(
+    'collector',
+    'Any repairs?',
+    { status: 'pending' },
+    new Date(Date.now() - 2 * stillWorkingAfterMs).toISOString(),
+  );
+  const fresh = entry('collector', 'And the base?', { status: 'pending' });
+  await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}`
+        ? collectionRecord
+        : page([late, fresh]),
+  });
+
+  expect(
+    await screen.findByTestId(`record-message-thinking-${late.id}`),
+  ).toHaveAccessibleName(
+    'Still working on this. You can leave and come back later.',
+  );
+  expect(
+    screen.getByTestId(`record-message-thinking-${fresh.id}`),
+  ).toHaveAccessibleName('The assistant is thinking…');
+});
+
+it('should send a failed message again once, under a new key, and lock it while in flight and after acceptance', async () => {
+  const failed = entry('collector', 'Describe the rim', { status: 'failed' });
+  let accept: () => void = () => undefined;
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}` ? collectionRecord : page([failed]),
+    post: async () =>
+      new Promise((resolve) => {
+        accept = () => resolve({});
+      }),
+  });
+
+  expect(
+    await screen.findByText('The assistant could not answer this message.'),
+  ).toBeTruthy();
+  const again = screen.getByTestId(`record-message-send-again-${failed.id}`);
+  await fireEvent.press(again);
+  expect(again).toBeDisabled();
+  await act(async () => {
+    accept();
+    await Promise.resolve();
+  });
+  expect(again).toBeDisabled();
+  await fireEvent.press(again);
+
+  const [post] = sentTo(view.commands, messagesPath);
+  expect(post.body).toMatchObject({
+    body: 'Describe the rim',
+    transcriptionIds: [],
+    expectedRecordRevision: collectionRecord.recordRevision,
+  });
+  expect(post.idempotencyKey).toBe(post.body.requestKey);
+  expect(view.commands).toHaveBeenCalledTimes(1);
+});
+
+it('should retry a resend under its own key without touching the composer', async () => {
+  const failed = entry('collector', 'Describe the rim', { status: 'failed' });
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}` ? collectionRecord : page([failed]),
+  });
+  view.commands
+    .mockRejectedValueOnce(new TypeError('Network request failed'))
+    .mockRejectedValueOnce(new TypeError('Network request failed'))
+    .mockResolvedValue({});
+  await fireEvent.changeText(
+    await screen.findByTestId('record-message-input'),
+    'Composer draft',
+  );
+  await fireEvent.press(screen.getByTestId('record-message-send'));
+  expect(await screen.findByTestId('record-message-error')).toHaveTextContent(
+    'Connect to the internet and retry.',
+  );
+
+  await fireEvent.press(
+    screen.getByTestId(`record-message-send-again-${failed.id}`),
+  );
+  expect(
+    await screen.findByTestId(`record-message-send-again-error-${failed.id}`),
+  ).toHaveTextContent('Connect to the internet and retry.');
+  expect(
+    screen.getByTestId(`record-message-send-again-${failed.id}`),
+  ).toBeEnabled();
+  await fireEvent.press(
+    screen.getByTestId(`record-message-send-again-${failed.id}`),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByTestId(`record-message-send-again-${failed.id}`),
+    ).toBeDisabled(),
+  );
+  await fireEvent.press(screen.getByTestId('record-message-send'));
+  await waitFor(() =>
+    expect(screen.getByTestId('record-message-input')).toHaveDisplayValue(''),
+  );
+
+  const [composed, resent, retried, composedAgain] = sentTo(
+    view.commands,
+    messagesPath,
+  );
+  expect(retried.idempotencyKey).toBe(resent.idempotencyKey);
+  expect(resent.idempotencyKey).not.toBe(composed.idempotencyKey);
+  expect(composedAgain.idempotencyKey).toBe(composed.idempotencyKey);
+});
+
+it('should give a stale resend a new key and reload the record', async () => {
+  const failed = entry('collector', 'Describe the rim', { status: 'failed' });
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}` ? collectionRecord : page([failed]),
+  });
+  view.commands
+    .mockRejectedValueOnce(apiError(422, 'REVISION_CONFLICT', 'Record changed'))
+    .mockResolvedValue({});
+  const again = await screen.findByTestId(
+    `record-message-send-again-${failed.id}`,
+  );
+
+  await fireEvent.press(again);
+  expect(
+    await screen.findByTestId(`record-message-send-again-error-${failed.id}`),
+  ).toHaveTextContent(
+    'The item changed after this screen loaded. It has been reloaded; send again.',
+  );
+  await fireEvent.press(again);
+  await waitFor(() => expect(again).toBeDisabled());
+
+  const [first, second] = sentTo(view.commands, messagesPath);
+  expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
+  expect(
+    view.reads.mock.calls.filter(([path]) => path === `/v1/records/${recordId}`)
+      .length,
+  ).toBeGreaterThan(1);
+});
+
+it('should retry a failed thread read', async () => {
+  let reads = 0;
+  await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) => {
+      if (path === `/v1/records/${recordId}`) {
+        return collectionRecord;
+      }
+      reads += 1;
+      if (reads === 1) {
+        throw new Error('offline');
+      }
+
+      return page([entry('assistant', 'Back online.')]);
+    },
+  });
+
+  await fireEvent.press(await screen.findByRole('button', { name: 'Retry' }));
+
+  expect(await screen.findByText('Back online.')).toBeTruthy();
+});
