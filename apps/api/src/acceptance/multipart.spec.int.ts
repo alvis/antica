@@ -159,7 +159,7 @@ describe('Persistent multipart uploads', () => {
           sha256: input.sha256,
           byteLength: input.byteLength,
         }),
-        'provider-upload',
+        { uploadId: 'provider-upload', layout: parts },
         etags,
       );
       expect(

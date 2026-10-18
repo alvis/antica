@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { OriginalVerificationError } from '../ports/index.js';
+
 import { createMediaService } from './media.js';
 
 import type {
@@ -115,6 +117,9 @@ function fixture(
     readonly multipart?: boolean;
     readonly abort?: boolean;
     readonly completeMultipart?: boolean;
+    readonly resume?: Awaited<
+      ReturnType<NonNullable<MediaStoragePort['resumeMultipart']>>
+    >;
     readonly job?: { readonly id: string } | null;
   } = {},
 ) {
@@ -154,6 +159,9 @@ function fixture(
       throw options.completeMultipartError;
     }
   });
+  const resumeMultipart = vi.fn<
+    NonNullable<MediaStoragePort['resumeMultipart']>
+  >(async () => options.resume ?? { state: 'expired' });
   const verifyOriginal = vi.fn(async () => {
     if (options.verifyError) {
       throw options.verifyError;
@@ -170,6 +178,7 @@ function fixture(
     ...(options.multipart ? { startMultipart } : {}),
     ...(options.abort ? { abortMultipart } : {}),
     ...(options.completeMultipart ? { completeMultipart } : {}),
+    ...(options.resume ? { resumeMultipart } : {}),
   };
   const repositories = {
     records: {
@@ -232,6 +241,7 @@ function fixture(
     startMultipart,
     abortMultipart,
     completeMultipart,
+    resumeMultipart,
     verifyOriginal,
     signRead,
     createUpload,
@@ -293,7 +303,7 @@ describe('fn:createMediaService', () => {
     ).toMatchObject({ success: true, data: { assetId, state: 'uploaded' } });
     expect(ports.completeMultipart).toHaveBeenCalledWith(
       expect.objectContaining({ assetId }),
-      'upload-1',
+      { uploadId: 'upload-1', layout: multipartSession.parts },
       parts,
     );
     expect(ports.verifyOriginal).toHaveBeenCalledTimes(1);
@@ -450,6 +460,29 @@ describe('fn:createMediaService', () => {
     expect(ports.createJob).toHaveBeenCalledTimes(1);
   });
 
+  it.for(['absent', 'mismatch'] as const)(
+    'should reject completion when original verification reports %s',
+    async (reason) => {
+      const cause = new OriginalVerificationError({
+        reason,
+        message: 'Original cannot be verified',
+      });
+      const ports = fixture({ verifyError: cause });
+
+      expect(
+        await ports.service.complete(ownerId, assetId, 'complete-1'),
+      ).toMatchObject({
+        success: false,
+        error: { code: 'UPLOAD_INCOMPLETE', retryable: true },
+        cause,
+      });
+      expect(ports.complete).not.toHaveBeenCalled();
+      expect(ports.createJob).not.toHaveBeenCalled();
+      expect(ports.enqueue).not.toHaveBeenCalled();
+      expect(ports.current.asset).toEqual(asset());
+    },
+  );
+
   it('should sign read access only for uploaded originals and their derivatives', async () => {
     const waiting = fixture();
     expect(await waiting.service.get(ownerId, assetId)).toMatchObject({
@@ -515,5 +548,214 @@ describe('fn:createMediaService', () => {
     expect(
       await fixture({ asset: null }).service.get(ownerId, assetId),
     ).toMatchObject({ success: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  describe('mt:resume', () => {
+    const later = '2026-10-13T12:15:00.000Z';
+    const missing = new OriginalVerificationError({
+      reason: 'absent',
+      message: 'Original is absent',
+    });
+
+    it.for([singleSession, multipartSession])(
+      'should return a retryable verification failure when resuming a $mode upload',
+      async (session) => {
+        const cause = new Error('storage temporarily unavailable');
+        const ports = fixture({
+          session,
+          resume: { state: 'expired' },
+          verifyError: cause,
+        });
+
+        expect(await ports.service.resume(ownerId, assetId)).toMatchObject({
+          success: false,
+          error: { code: 'UPLOAD_INCOMPLETE', retryable: true },
+          cause,
+        });
+        expect(ports.signUpload).not.toHaveBeenCalled();
+        expect(ports.createUpload).not.toHaveBeenCalled();
+        expect(ports.current.asset).toEqual(asset());
+        expect(ports.receipts.size).toBe(0);
+      },
+    );
+
+    it('should re-sign a pending single upload whose bytes have not landed', async () => {
+      const ports = fixture({ verifyError: missing });
+      ports.signUpload.mockResolvedValueOnce({
+        url: 'https://upload.example/fresh',
+        expiresAt: later,
+        headers: singleSession.headers,
+      });
+
+      expect(await ports.service.resume(ownerId, assetId)).toEqual({
+        success: true,
+        data: {
+          assetId,
+          mode: 'single',
+          putUrl: 'https://upload.example/fresh',
+          headers: singleSession.headers,
+          expiresAt: later,
+          uploadedParts: [],
+        },
+      });
+      expect(ports.signUpload).toHaveBeenCalledWith({
+        assetId,
+        key: `originals/${assetId}`,
+        mimeType: 'image/jpeg',
+        byteLength: 4,
+        sha256: 'a'.repeat(64),
+      });
+      expect(ports.createUpload).not.toHaveBeenCalled();
+      expect(ports.receipts.size).toBe(0);
+    });
+
+    it('should tell the client to complete a single upload whose bytes already landed, then complete it once', async () => {
+      const ports = fixture();
+
+      expect(await ports.service.resume(ownerId, assetId)).toEqual({
+        success: false,
+        error: {
+          code: 'UPLOAD_STORED',
+          message: 'The file is already stored; complete the upload.',
+          retryable: false,
+        },
+      });
+      expect(ports.signUpload).not.toHaveBeenCalled();
+      expect(
+        await ports.service.complete(ownerId, assetId, 'complete-1', []),
+      ).toMatchObject({ success: true, data: { state: 'uploaded' } });
+      expect(ports.createJob).toHaveBeenCalledTimes(1);
+    });
+
+    it('should re-sign exactly the stored multipart layout and report the parts storage holds', async () => {
+      const fresh = [
+        { ...multipartSession.parts[0]!, putUrl: 'https://upload.example/1' },
+      ];
+      const ports = fixture({
+        session: multipartSession,
+        resume: {
+          state: 'active',
+          expiresAt: later,
+          parts: fresh,
+          uploadedParts: [{ partNumber: 1, etag: '"part-1"' }],
+        },
+      });
+
+      expect(await ports.service.resume(ownerId, assetId)).toEqual({
+        success: true,
+        data: {
+          assetId,
+          mode: 'multipart',
+          uploadId: 'upload-1',
+          parts: fresh,
+          uploadedParts: [{ partNumber: 1, etag: '"part-1"' }],
+          expiresAt: later,
+        },
+      });
+      expect(ports.resumeMultipart).toHaveBeenCalledWith(
+        expect.objectContaining({ key: `originals/${assetId}` }),
+        'upload-1',
+        [{ partNumber: 1, offset: 0, byteLength: 64 * 1024 * 1024 }],
+      );
+      expect(ports.signUpload).not.toHaveBeenCalled();
+      expect(ports.verifyOriginal).not.toHaveBeenCalled();
+    });
+
+    it.for(['uploaded', 'processing', 'ready', 'failed'] as const)(
+      'should refuse to re-sign an upload whose asset is already %s',
+      async (state) => {
+        const ports = fixture({ asset: asset(state) });
+
+        expect(await ports.service.resume(ownerId, assetId)).toEqual({
+          success: false,
+          error: {
+            code: 'UPLOAD_ALREADY_COMPLETED',
+            message: 'Media upload has already been completed',
+            retryable: false,
+          },
+        });
+        expect(ports.signUpload).not.toHaveBeenCalled();
+      },
+    );
+
+    it("should hide another owner's or an unknown asset and a missing session as not found", async () => {
+      for (const ports of [
+        fixture({ asset: null }),
+        fixture({ session: null }),
+      ]) {
+        expect(await ports.service.resume(ownerId, assetId)).toMatchObject({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Media not found' },
+        });
+        expect(ports.signUpload).not.toHaveBeenCalled();
+      }
+    });
+
+    it('should report a provider-expired multipart upload as expired only when no original landed', async () => {
+      const expired = fixture({
+        session: multipartSession,
+        resume: { state: 'expired' },
+        verifyError: missing,
+      });
+      expect(await expired.service.resume(ownerId, assetId)).toEqual({
+        success: false,
+        error: {
+          code: 'UPLOAD_EXPIRED',
+          message: 'Upload expired; start a new upload',
+          retryable: false,
+        },
+      });
+      const assembled = fixture({
+        session: multipartSession,
+        resume: { state: 'expired' },
+        completeMultipart: true,
+        completeMultipartError: new Error('NoSuchUpload'),
+      });
+      expect(await assembled.service.resume(ownerId, assetId)).toMatchObject({
+        success: false,
+        error: { code: 'UPLOAD_STORED', retryable: false },
+      });
+      expect(
+        await assembled.service.complete(ownerId, assetId, 'complete-1', [
+          { partNumber: 1, etag: '"part-1"' },
+        ]),
+      ).toMatchObject({ success: true, data: { state: 'uploaded' } });
+      expect(assembled.createJob).toHaveBeenCalledTimes(1);
+    });
+
+    it.for([singleSession, multipartSession])(
+      'should preserve mismatch behavior when resuming a $mode upload',
+      async (session) => {
+        const ports = fixture({
+          session,
+          resume: { state: 'expired' },
+          verifyError: new OriginalVerificationError({
+            reason: 'mismatch',
+            message: 'Stored bytes differ from the declaration',
+          }),
+        });
+
+        expect(await ports.service.resume(ownerId, assetId)).toMatchObject(
+          session.mode === 'single'
+            ? { success: true, data: { assetId, mode: 'single' } }
+            : {
+                success: false,
+                error: { code: 'UPLOAD_EXPIRED', retryable: false },
+              },
+        );
+        expect(ports.createUpload).not.toHaveBeenCalled();
+        expect(ports.current.asset).toEqual(asset());
+      },
+    );
+
+    it('should defensively refuse multipart resumption on an adapter that cannot resume', async () => {
+      const unsupported = fixture({ session: multipartSession });
+
+      expect(await unsupported.service.resume(ownerId, assetId)).toMatchObject({
+        success: false,
+        error: { code: 'MEDIA_UNSUPPORTED' },
+      });
+      expect(unsupported.resumeMultipart).not.toHaveBeenCalled();
+    });
   });
 });

@@ -94,6 +94,7 @@ describe('fn:createS3MediaStore', () => {
           /^[a-f0-9]{64}$/,
         );
       }
+      const upload = { uploadId: session.uploadId, layout: session.parts };
       const etags = [
         { partNumber: 1, etag: '"one"' },
         { partNumber: 2, etag: '"two"' },
@@ -105,14 +106,14 @@ describe('fn:createS3MediaStore', () => {
         [{ ...etags[0]!, etag: 'bad\r\nheader' }, etags[1]!],
       ]) {
         await expect(
-          store.completeMultipart(original, session.uploadId, invalid),
+          store.completeMultipart(original, upload, invalid),
         ).rejects.toThrow(Error);
       }
       expect(requests).toHaveLength(1);
       await expect(
         store.completeMultipart(
           { ...original, sha256: '0'.repeat(64) },
-          session.uploadId,
+          upload,
           etags,
         ),
       ).rejects.toThrow(Error);
@@ -123,7 +124,7 @@ describe('fn:createS3MediaStore', () => {
         'GET',
       ]);
       await expect(
-        store.completeMultipart(original, session.uploadId, etags),
+        store.completeMultipart(original, upload, etags),
       ).resolves.toBeUndefined();
       expect(requests.map((request) => request.method)).toEqual([
         'POST',

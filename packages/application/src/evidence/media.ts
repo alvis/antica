@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 
+import { OriginalVerificationError } from '../ports/index.js';
+
 import type {
   MediaCompletion,
   MediaDetail,
   UploadRequest,
+  UploadResume,
   UploadSession,
 } from '@antica/contracts';
 
@@ -52,12 +55,47 @@ export interface MediaStoragePort {
       readonly byteLength: number;
       readonly sha256: string;
     },
-    uploadId: string,
+    upload: {
+      readonly uploadId: string;
+      readonly layout: ReadonlyArray<{ readonly partNumber: number }>;
+    },
     parts: ReadonlyArray<{
       readonly partNumber: number;
       readonly etag: string;
     }>,
   ): Promise<void>;
+  resumeMultipart?(
+    input: {
+      readonly assetId: string;
+      readonly key: string;
+      readonly mimeType: string;
+      readonly byteLength: number;
+      readonly sha256: string;
+    },
+    uploadId: string,
+    layout: ReadonlyArray<{
+      readonly partNumber: number;
+      readonly offset: number;
+      readonly byteLength: number;
+    }>,
+  ): Promise<
+    | { readonly state: 'expired' }
+    | {
+        readonly state: 'active';
+        readonly expiresAt: string;
+        readonly parts: ReadonlyArray<{
+          readonly partNumber: number;
+          readonly offset: number;
+          readonly byteLength: number;
+          readonly putUrl: string;
+          readonly headers: Readonly<Record<string, string>>;
+        }>;
+        readonly uploadedParts: ReadonlyArray<{
+          readonly partNumber: number;
+          readonly etag: string;
+        }>;
+      }
+  >;
   abortMultipart?(
     input: {
       readonly assetId: string;
@@ -68,6 +106,7 @@ export interface MediaStoragePort {
     },
     uploadId: string,
   ): Promise<void>;
+  /** rejects with OriginalVerificationError for definite absence or mismatch; other failures remain unclassified */
   verifyOriginal(input: {
     readonly assetId: string;
     readonly key: string;
@@ -96,6 +135,11 @@ export interface MediaService {
     }>,
   ): Promise<OperationResult<MediaCompletion>>;
   get(ownerId: string, assetId: string): Promise<OperationResult<MediaDetail>>;
+  /** re-signs a pending upload so an interrupted transfer continues without a new asset */
+  resume(
+    ownerId: string,
+    assetId: string,
+  ): Promise<OperationResult<UploadResume>>;
 }
 
 /**
@@ -317,7 +361,7 @@ export function createMediaService(
             try {
               await storage.completeMultipart(
                 original,
-                session.uploadId,
+                { uploadId: session.uploadId, layout: session.parts },
                 parts!,
               );
             } catch {
@@ -423,6 +467,8 @@ export function createMediaService(
         return { success: true, data: completion };
       });
     },
+    resume: async (ownerId, assetId) =>
+      resumeUpload({ transaction, storage }, ownerId, assetId),
     get: async (ownerId, assetId) => {
       const found = await transaction.run(ownerId, async (unit) => {
         const asset = await unit.media.get(assetId);
@@ -498,6 +544,212 @@ export function createMediaService(
           versions,
         },
       };
+    },
+  };
+}
+
+/**
+ * re-signs an owned pending upload without changing persisted state
+ * @param ports owner-scoped persistence and the original's storage signer
+ * @param ports.transaction owner-scoped persistence boundary
+ * @param ports.storage signer for the original's provider upload
+ * @param ownerId authenticated collector
+ * @param assetId asset whose upload is resumed
+ * @returns fresh transfer authority, or a stable reason it cannot resume
+ */
+async function resumeUpload(
+  ports: {
+    readonly transaction: TransactionPort;
+    readonly storage: MediaStoragePort;
+  },
+  ownerId: string,
+  assetId: string,
+): Promise<OperationResult<UploadResume>> {
+  const found = await ports.transaction.run(ownerId, async (unit) => {
+    const asset = await unit.media.get(assetId);
+    const session = asset ? await unit.media.getUploadSession(assetId) : null;
+
+    return asset && session
+      ? { success: true, data: { asset, session } }
+      : {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Media not found',
+            retryable: false,
+          },
+        };
+  });
+  if (!found.success) {
+    return found;
+  }
+  const { asset, session } = found.data;
+  if (asset.state !== 'awaiting_upload') {
+    return {
+      success: false,
+      error: {
+        code: 'UPLOAD_ALREADY_COMPLETED',
+        message: 'Media upload has already been completed',
+        retryable: false,
+      },
+    };
+  }
+  const original = {
+    assetId,
+    key: `originals/${assetId}`,
+    mimeType: asset.mimeType,
+    byteLength: asset.byteLength,
+    sha256: asset.sha256,
+  };
+
+  return session.mode === 'single'
+    ? resumeSingle(ports.storage, original)
+    : resumeMultipart(ports.storage, original, session);
+}
+
+/**
+ * reports whether the verified original already landed, so resumption must complete instead
+ * @param storage verifier of stored originals
+ * @param original immutable original awaiting upload completion
+ * @returns whether the stored bytes match, or a retryable failure to inspect storage
+ */
+async function isOriginalStored(
+  storage: MediaStoragePort,
+  original: Parameters<MediaStoragePort['verifyOriginal']>[0],
+): Promise<OperationResult<boolean>> {
+  try {
+    await storage.verifyOriginal(original);
+
+    return { success: true, data: true };
+  } catch (cause) {
+    if (cause instanceof OriginalVerificationError) {
+      return { success: true, data: false };
+    }
+
+    return {
+      success: false,
+      error: {
+        code: 'UPLOAD_INCOMPLETE',
+        message: 'Original upload could not be verified',
+        retryable: true,
+      },
+      cause,
+    };
+  }
+}
+
+/** stable failure telling a resuming client to complete its already-stored original */
+const uploadStored = {
+  success: false,
+  error: {
+    code: 'UPLOAD_STORED',
+    message: 'The file is already stored; complete the upload.',
+    retryable: false,
+  },
+} as const;
+
+/**
+ * re-signs a single upload unless its bytes already landed
+ * @param storage signer and verifier for the original
+ * @param original immutable original awaiting upload completion
+ * @returns fresh upload authority, or the already-stored signal
+ */
+async function resumeSingle(
+  storage: MediaStoragePort,
+  original: Parameters<MediaStoragePort['signUpload']>[0],
+): Promise<OperationResult<UploadResume>> {
+  const stored = await isOriginalStored(storage, original);
+  if (!stored.success) {
+    return stored;
+  }
+  if (stored.data) {
+    return uploadStored;
+  }
+  const signed = await storage.signUpload(original);
+
+  return {
+    success: true,
+    data: {
+      assetId: original.assetId,
+      mode: 'single',
+      putUrl: signed.url,
+      headers: { ...signed.headers },
+      expiresAt: signed.expiresAt,
+      uploadedParts: [],
+    },
+  };
+}
+
+/**
+ * re-signs the stored multipart layout, or explains why the provider upload is gone;
+ * the MEDIA_UNSUPPORTED branch is defensive, since only adapters that start multipart
+ * uploads can hold one and the local adapter never does
+ * @param storage signer and verifier for the original
+ * @param original immutable original awaiting upload completion
+ * @param session multipart session persisted when the upload started
+ * @returns fresh part authority with provider-held parts, or why it cannot resume
+ */
+async function resumeMultipart(
+  storage: MediaStoragePort,
+  original: Parameters<MediaStoragePort['signUpload']>[0],
+  session: Extract<UploadSession, { mode: 'multipart' }>,
+): Promise<OperationResult<UploadResume>> {
+  if (!storage.resumeMultipart) {
+    return {
+      success: false,
+      error: {
+        code: 'MEDIA_UNSUPPORTED',
+        message: 'Multipart resumption is unavailable',
+        retryable: false,
+      },
+    };
+  }
+  const resumed = await storage.resumeMultipart(
+    original,
+    session.uploadId,
+    session.parts.map(({ partNumber, offset, byteLength }) => ({
+      partNumber,
+      offset,
+      byteLength,
+    })),
+  );
+  if (resumed.state === 'expired') {
+    // the provider assembles and drops the upload when completion reached storage before persistence
+    const stored = await isOriginalStored(storage, original);
+    if (!stored.success) {
+      return stored;
+    }
+
+    return stored.data
+      ? uploadStored
+      : {
+          success: false,
+          error: {
+            code: 'UPLOAD_EXPIRED',
+            message: 'Upload expired; start a new upload',
+            retryable: false,
+          },
+        };
+  }
+
+  return {
+    success: true,
+    data: {
+      assetId: original.assetId,
+      mode: 'multipart',
+      uploadId: session.uploadId,
+      parts: resumed.parts.map((part) => ({
+        partNumber: part.partNumber,
+        offset: part.offset,
+        byteLength: part.byteLength,
+        putUrl: part.putUrl,
+        headers: { ...part.headers },
+      })),
+      uploadedParts: resumed.uploadedParts.map((part) => ({
+        partNumber: part.partNumber,
+        etag: part.etag,
+      })),
+      expiresAt: resumed.expiresAt,
     },
   };
 }

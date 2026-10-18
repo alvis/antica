@@ -1,12 +1,16 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { OriginalVerificationError } from '@antica/application/ports';
+
 import { createLocalMediaStore } from './local.js';
+
+vi.mock('node:fs/promises', { spy: true });
 
 const png = Uint8Array.from(
   Buffer.from(
@@ -144,11 +148,76 @@ describe('fn:createLocalMediaStore', () => {
 
       await expect(
         store.verifyOriginal({ ...original, byteLength: png.byteLength + 1 }),
-      ).rejects.toThrow();
+      ).rejects.toEqual(
+        expect.objectContaining({
+          constructor: OriginalVerificationError,
+          reason: 'mismatch',
+        }),
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it.each([
+    { operation: 'stat', fail: vi.mocked(stat) },
+    { operation: 'readFile', fail: vi.mocked(readFile) },
+  ])(
+    'should classify ENOENT during $operation as absent and retain its cause',
+    async ({ fail }) => {
+      const root = await mkdtemp(join(tmpdir(), 'antica-media-'));
+      const store = createLocalMediaStore({ ...config, root });
+      const cause = Object.assign(new Error('Original vanished'), {
+        code: 'ENOENT',
+      });
+      try {
+        const signed = await store.signUpload(original);
+        await store.acceptUploadToken(
+          new URL(signed.url).pathname.split('/').at(-1)!,
+          png,
+          original.mimeType,
+        );
+        fail.mockRejectedValueOnce(cause);
+
+        await expect(store.verifyOriginal(original)).rejects.toEqual(
+          expect.objectContaining({
+            constructor: OriginalVerificationError,
+            reason: 'absent',
+            cause,
+          }),
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([
+    { operation: 'stat', fail: vi.mocked(stat) },
+    { operation: 'readFile', fail: vi.mocked(readFile) },
+  ])(
+    'should propagate a non-ENOENT $operation failure unchanged',
+    async ({ fail }) => {
+      const root = await mkdtemp(join(tmpdir(), 'antica-media-'));
+      const store = createLocalMediaStore({ ...config, root });
+      const cause = Object.assign(new Error('Permission denied'), {
+        code: 'EACCES',
+      });
+      try {
+        const signed = await store.signUpload(original);
+        await store.acceptUploadToken(
+          new URL(signed.url).pathname.split('/').at(-1)!,
+          png,
+          original.mimeType,
+        );
+        fail.mockRejectedValueOnce(cause);
+
+        await expect(store.verifyOriginal(original)).rejects.toBe(cause);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('should reopen immutable original bytes with a new store instance after a restart', async () => {
     const root = await mkdtemp(join(tmpdir(), 'antica-media-'));
@@ -234,6 +303,34 @@ describe('fn:createLocalMediaStore', () => {
         new Date(signed.expiresAt).getTime(),
       );
       await expect(store.openReadToken(token)).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('should accept a re-signed upload for a resumed original after its first token expires', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'antica-media-'));
+    try {
+      const store = createLocalMediaStore({ ...config, root });
+      const first = await store.signUpload(original);
+      const expired = new URL(first.url).pathname.split('/').at(-1)!;
+      vi.spyOn(Date, 'now').mockReturnValue(
+        new Date(first.expiresAt).getTime(),
+      );
+      await expect(
+        store.acceptUploadToken(expired, png, original.mimeType),
+      ).rejects.toThrow('Expired media token');
+      const resumed = await store.signUpload(original);
+
+      expect(Date.parse(resumed.expiresAt)).toBeGreaterThan(
+        Date.parse(first.expiresAt),
+      );
+      await store.acceptUploadToken(
+        new URL(resumed.url).pathname.split('/').at(-1)!,
+        png,
+        original.mimeType,
+      );
+      await expect(store.verifyOriginal(original)).resolves.toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

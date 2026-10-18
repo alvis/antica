@@ -28,3 +28,19 @@ describe('public error validation', () => {
     ).toMatchObject({ code: 'REQUEST_IN_PROGRESS', retryable: true });
   });
 });
+
+describe('resumed upload failures', () => {
+  it.for(['UPLOAD_ALREADY_COMPLETED', 'UPLOAD_EXPIRED', 'UPLOAD_STORED'])(
+    'should accept the stable %s code a resuming client branches on',
+    (code) => {
+      expect(
+        publicErrorSchema.parse({
+          code,
+          message: 'Upload cannot be resumed',
+          retryable: false,
+          requestId: 'request-3',
+        }),
+      ).toMatchObject({ code });
+    },
+  );
+});

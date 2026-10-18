@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdir, open, readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
+import { OriginalVerificationError } from '@antica/application/ports';
+
 import { assertStorageKey } from './media-store.js';
 import { sniffMime, verifyBytes } from './verify.js';
 
@@ -62,13 +64,11 @@ export class LocalMediaStore implements MediaStore {
     this.#publicBaseUrl = config.publicBaseUrl;
     this.#secret = config.signingSecret;
   }
-
   #path(key: string): string {
     assertStorageKey(key);
 
     return join(this.#root, key);
   }
-
   #token(input: LocalToken): string {
     const body = Buffer.from(JSON.stringify(input)).toString('base64url');
     const signature = createHmac('sha256', this.#secret)
@@ -184,11 +184,25 @@ export class LocalMediaStore implements MediaStore {
    */
   public async verifyOriginal(input: OriginalObject): Promise<void> {
     const path = this.#path(input.key);
-    const metadata = await stat(path);
-    if (metadata.size !== input.byteLength) {
-      throw new Error('Stored media size mismatch');
+    try {
+      const metadata = await stat(path);
+      if (metadata.size !== input.byteLength) {
+        throw new OriginalVerificationError({
+          reason: 'mismatch',
+          message: 'Stored media size mismatch',
+        });
+      }
+      verifyBytes(await readFile(path), input);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new OriginalVerificationError({
+          reason: 'absent',
+          message: 'Original media object not found',
+          cause,
+        });
+      }
+      throw cause;
     }
-    verifyBytes(await readFile(path), input);
   }
 
   /**

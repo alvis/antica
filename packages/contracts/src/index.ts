@@ -80,7 +80,9 @@ export {
   signedReadSchema,
   transcriptionRequestSchema,
   transcriptionResultSchema,
+  uploadedPartSchema,
   uploadRequestSchema,
+  uploadResumeSchema,
   uploadSessionSchema,
 } from './media.js';
 export type {
@@ -107,7 +109,9 @@ export type {
   SignedRead,
   TranscriptionRequest,
   TranscriptionResult,
+  UploadedPart,
   UploadRequest,
+  UploadResume,
   UploadSession,
 } from './media.js';
 export {

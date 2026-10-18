@@ -12,7 +12,7 @@ import type { MediaService } from '@antica/application/server';
 import type { ApiEnv } from '../http.js';
 
 /**
- * registers private media metadata and upload commands
+ * registers private media metadata, upload commands, and upload resumption
  * @param service
  */
 export function createMediaRoutes(service: MediaService): Hono<ApiEnv> {
@@ -47,6 +47,12 @@ export function createMediaRoutes(service: MediaService): Hono<ApiEnv> {
       ),
     );
   });
+  router.get('/:id/upload', async (context) =>
+    respond(
+      context,
+      await service.resume(context.get('ownerId'), context.req.param('id')),
+    ),
+  );
   router.get('/:id', async (context) =>
     respond(
       context,

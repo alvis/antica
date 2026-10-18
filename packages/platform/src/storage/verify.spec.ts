@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
+import { OriginalVerificationError } from '@antica/application/ports';
+
 import { sniffMime, verifyBytes } from './verify.js';
 
 const png = Uint8Array.from(
@@ -48,7 +50,12 @@ describe('fn:verifyBytes', () => {
     const corrupted = Uint8Array.from(png);
     corrupted[corrupted.length - 1] = 0;
 
-    expect(() => verifyBytes(corrupted, declaration)).toThrow();
+    expect(() => verifyBytes(corrupted, declaration)).toThrow(
+      expect.objectContaining({
+        constructor: OriginalVerificationError,
+        reason: 'mismatch',
+      }),
+    );
   });
 
   it('should reject a PDF relabeled as an image even with its real checksum', () => {
@@ -60,7 +67,12 @@ describe('fn:verifyBytes', () => {
         sha256: createHash('sha256').update(pdf).digest('hex'),
         mimeType: 'image/png',
       }),
-    ).toThrow();
+    ).toThrow(
+      expect.objectContaining({
+        constructor: OriginalVerificationError,
+        reason: 'mismatch',
+      }),
+    );
   });
 
   it('should reject an incomplete upload before considering its checksum valid', () => {
@@ -70,6 +82,11 @@ describe('fn:verifyBytes', () => {
         ...declaration,
         sha256: createHash('sha256').update(truncated).digest('hex'),
       }),
-    ).toThrow();
+    ).toThrow(
+      expect.objectContaining({
+        constructor: OriginalVerificationError,
+        reason: 'mismatch',
+      }),
+    );
   });
 });
