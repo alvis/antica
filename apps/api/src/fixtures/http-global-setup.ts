@@ -22,6 +22,7 @@ const suites = new Set([
   'cloud-jobs',
   'routes/location',
   'routes/record',
+  'routes/record-history',
   'routes/evidence',
   'routes/voice',
   'routes/knowledge-http',

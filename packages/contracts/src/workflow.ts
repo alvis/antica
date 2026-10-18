@@ -101,6 +101,8 @@ export type EditDraftDetail = z.infer<typeof editDraftDetailSchema>;
 export const editDraftApplySchema = z.strictObject({
   requestKey: entityIdSchema,
   expectedDraftRevision: revisionSchema,
+  // revision displayed when the collector tapped apply (stale-screen guard);
+  // each proposal's `before` guards against stale proposals per field
   expectedRecordRevision: revisionSchema,
   selectedProposalIds: z.array(entityIdSchema).min(1),
 });

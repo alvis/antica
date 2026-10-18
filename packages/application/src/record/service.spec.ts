@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ComponentInUseError } from '../ports/index.js';
+import { ComponentInUseError, InvalidCursorError } from '../ports/index.js';
 
 import { createRecordService } from './service.js';
 
 import type {
   RecordCreate,
   RecordDetail,
+  RecordHistoryEntry,
   RecordPatch,
   CursorPage,
   RecordSummary,
@@ -25,6 +26,20 @@ import type {
 const ownerId = 'collector-1';
 const now = '2026-10-13T12:00:00.000Z';
 const createInput = { unitKind: 'single' } satisfies RecordCreate;
+const historyEntry: RecordHistoryEntry = {
+  id: '00000000-0000-4000-8000-000000000001',
+  occurredAt: now,
+  field: 'name',
+  before: 'Vase',
+  after: 'Blue vase',
+  status: 'accepted',
+  source: {
+    kind: 'editDraft',
+    editDraftId: '00000000-0000-4000-8000-000000000002',
+    proposalId: '00000000-0000-4000-8000-000000000003',
+    recordMessageId: null,
+  },
+};
 
 function createFixture(
   options: {
@@ -84,6 +99,10 @@ function createFixture(
     create,
     patch,
     bumpVersions: vi.fn(async () => null),
+    queryHistory: vi.fn(async () => ({
+      items: [historyEntry],
+      nextCursor: 'next-page',
+    })),
   };
   const commands: CommandRepository = {
     get: vi.fn(
@@ -239,6 +258,53 @@ describe('fn:createRecordService', () => {
       text: 'Vase',
     });
     expect(fixture.owners).toHaveBeenCalledWith(ownerId);
+  });
+
+  it('should page an owned record history and hide a missing or foreign record', async () => {
+    const fixture = createFixture({ record: existingRecord() });
+
+    expect(
+      await fixture.service.history(ownerId, 'record-1', { limit: 1 }),
+    ).toEqual({
+      success: true,
+      data: { items: [historyEntry], nextCursor: 'next-page' },
+    });
+    expect(fixture.recordRepository.queryHistory).toHaveBeenCalledWith(
+      'record-1',
+      { limit: 1 },
+    );
+    expect(fixture.owners).toHaveBeenCalledWith(ownerId);
+    expect(await fixture.service.history(ownerId, 'absent', {})).toEqual({
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Record not found',
+        retryable: false,
+      },
+    });
+    expect(fixture.recordRepository.queryHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('should answer an invalid history cursor with a validation failure and rethrow other failures', async () => {
+    const fixture = createFixture({ record: existingRecord() });
+    const outage = new Error('Database unavailable');
+    vi.mocked(fixture.recordRepository.queryHistory)
+      .mockRejectedValueOnce(new InvalidCursorError())
+      .mockRejectedValueOnce(outage);
+
+    expect(
+      await fixture.service.history(ownerId, 'record-1', { cursor: 'x' }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Invalid cursor',
+        retryable: false,
+      },
+    });
+    await expect(
+      fixture.service.history(ownerId, 'record-1', { cursor: 'x' }),
+    ).rejects.toBe(outage);
   });
 
   it('should sign ready thumbnail targets after the list transaction and preserve page order', async () => {

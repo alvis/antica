@@ -243,5 +243,49 @@ export function createEditDraftRepository(
 
       return (await get(id))!.detail;
     },
+    /**
+     * stores one adopted proposal with its values at the record's current revision
+     * @param id edit draft identifier
+     * @param proposalId proposal within the draft result
+     * @param status collector decision, which must match the draft's applied set
+     * @param eventId history entry identifier
+     */
+    async appendAdoption(id, proposalId, status, eventId) {
+      const draft = (await get(id))?.detail;
+      const proposal = draft?.result?.proposedChanges.find(
+        (change) => change.id === proposalId,
+      );
+      if (
+        !draft ||
+        !proposal ||
+        draft.appliedProposalIds.includes(proposalId) !==
+          (status === 'accepted')
+      ) {
+        throw new Error('Edit draft proposal is not available for history');
+      }
+      const [record] = await tx.records
+        .findMany({
+          select: { recordRevision: true },
+          where: { AND: [{ id: draft.snapshot.recordId }, { ownerId }] },
+        })
+        .then((rows) => rows.map((row) => ({ revision: row.recordRevision })));
+      if (!record) {
+        throw new Error('Record not found');
+      }
+      await tx.editDraftAdoptionEvents.createMany({
+        data: {
+          id: eventId,
+          ownerId,
+          editDraftId: id,
+          recordId: draft.snapshot.recordId,
+          proposalId,
+          field: proposal.field,
+          before: jsonValue(proposal.before),
+          after: jsonValue(proposal.proposed),
+          status,
+          recordRevision: record.revision,
+        },
+      });
+    },
   };
 }

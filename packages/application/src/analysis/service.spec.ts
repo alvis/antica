@@ -1229,3 +1229,266 @@ describe('fn:createAnalysisService', () => {
     expect(ports.bumpVersions).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('fn:createAnalysisService adoption guardrails', () => {
+  const descriptionId = '00000000-0000-4000-8000-000000000012';
+  const tagsId = '00000000-0000-4000-8000-000000000013';
+  const pending = (id: string) => ({
+    proposalId: id,
+    status: 'pending' as const,
+    latestAdoptionEventId: null,
+  });
+  const threeFieldRun = (): AnalysisRunRecord => ({
+    ...completedRun(),
+    output: {
+      ...output,
+      proposedChanges: [
+        ...output.proposedChanges,
+        {
+          id: descriptionId,
+          field: 'description',
+          before: '',
+          proposed: 'Blue glaze',
+          findingIds: [],
+        },
+        {
+          id: tagsId,
+          field: 'tags',
+          before: [],
+          proposed: ['blue'],
+          findingIds: [],
+        },
+      ],
+    },
+  });
+  const threeFieldStates = [
+    pending(proposalId),
+    pending(descriptionId),
+    pending(tagsId),
+  ];
+
+  it('should reject a stale displayed revision as retryable without writing', async () => {
+    const ports = fixture({
+      run: completedRun(),
+      record: { ...record, recordRevision: 2 },
+    });
+
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-1', {
+        expectedRecordRevision: 1,
+        selectedProposalIds: [proposalId],
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'REVISION_CONFLICT',
+        message: 'Record changed before adoption',
+        retryable: true,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+    expect(ports.adoptions).toEqual([]);
+    expect(ports.receipts.size).toBe(0);
+  });
+
+  it('should reject an adopted field changed since the analysis even when the revision matches', async () => {
+    const ports = fixture({
+      run: threeFieldRun(),
+      record: { ...record, recordRevision: 4, description: 'Collector edit' },
+      proposalStates: threeFieldStates,
+    });
+
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-1', {
+        expectedRecordRevision: 4,
+        selectedProposalIds: [proposalId, descriptionId],
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'REVISION_CONFLICT',
+        message: 'A proposed field changed since analysis',
+        retryable: true,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+    expect(ports.adoptions).toEqual([]);
+  });
+
+  it('should adopt unchanged fields while unadopted fields changed after the analysis (A7)', async () => {
+    const ports = fixture({
+      run: threeFieldRun(),
+      record: {
+        ...record,
+        recordRevision: 4,
+        description: 'Collector edit',
+        tags: ['collector'],
+      },
+      proposalStates: threeFieldStates,
+    });
+
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-1', {
+        expectedRecordRevision: 4,
+        selectedProposalIds: [proposalId],
+        skippedProposalIds: [descriptionId],
+      }),
+    ).toMatchObject({ success: true, data: { recordRevision: 5 } });
+    expect(ports.patch).toHaveBeenCalledWith(
+      recordId,
+      { expectedRevision: 4, fields: { name: 'Blue vase' } },
+      { recordRevision: 5, analysisInputVersion: 2, evidenceVersion: 3 },
+    );
+    expect(ports.adoptions).toEqual([
+      { proposalId, status: 'accepted' },
+      { proposalId: descriptionId, status: 'skipped' },
+    ]);
+  });
+
+  it('should answer a foreign or missing run with a not-found result that leaks no record data', async () => {
+    const ports = fixture({ run: null });
+
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-1', {
+        expectedRecordRevision: 1,
+        selectedProposalIds: [proposalId],
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Completed analysis not found',
+        retryable: false,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+  });
+
+  it.for(['accepted', 'skipped'] as const)(
+    'should refuse to apply or skip a proposal that was already %s',
+    async (status) => {
+      const decided = {
+        proposalId,
+        status,
+        latestAdoptionEventId: 'adoption-0',
+      };
+      const reapply = fixture({
+        run: completedRun(),
+        proposalStates: [decided],
+      });
+      const reskip = fixture({
+        run: completedRun(),
+        proposalStates: [decided],
+      });
+
+      expect(
+        await reapply.service.apply(ownerId, runId, 'apply-1', {
+          expectedRecordRevision: 1,
+          selectedProposalIds: [proposalId],
+        }),
+      ).toEqual({
+        success: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Selected proposal is unavailable',
+          retryable: false,
+        },
+      });
+      expect(
+        await reskip.service.apply(ownerId, runId, 'apply-1', {
+          expectedRecordRevision: 1,
+          selectedProposalIds: [],
+          skippedProposalIds: [proposalId],
+        }),
+      ).toMatchObject({
+        success: false,
+        error: { code: 'VALIDATION_FAILED' },
+      });
+      expect(reapply.patch).not.toHaveBeenCalled();
+      expect([...reapply.adoptions, ...reskip.adoptions]).toEqual([]);
+    },
+  );
+
+  it('should reject a proposal decided twice in one request before writing history', async () => {
+    const ports = fixture({
+      run: threeFieldRun(),
+      proposalStates: threeFieldStates,
+    });
+
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-1', {
+        expectedRecordRevision: 1,
+        selectedProposalIds: [proposalId],
+        skippedProposalIds: [descriptionId, descriptionId],
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Select or skip each proposal once',
+        retryable: false,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+    expect(ports.adoptions).toEqual([]);
+  });
+
+  it('should reject two selected proposals for the same field', async () => {
+    const otherNameId = '00000000-0000-4000-8000-000000000014';
+    const ports = fixture({
+      run: {
+        ...completedRun(),
+        output: {
+          ...output,
+          proposedChanges: [
+            ...output.proposedChanges,
+            {
+              id: otherNameId,
+              field: 'name',
+              before: 'Vase',
+              proposed: 'Green vase',
+              findingIds: [],
+            },
+          ],
+        },
+      },
+      proposalStates: [pending(proposalId), pending(otherNameId)],
+    });
+
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-1', {
+        expectedRecordRevision: 1,
+        selectedProposalIds: [proposalId, otherNameId],
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Select only one change per field',
+        retryable: false,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+  });
+
+  it('should write one history entry for every adopted and skipped field with distinct identifiers', async () => {
+    const ports = fixture({
+      run: threeFieldRun(),
+      proposalStates: threeFieldStates,
+    });
+
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-1', {
+        expectedRecordRevision: 1,
+        selectedProposalIds: [proposalId, descriptionId],
+        skippedProposalIds: [tagsId],
+      }),
+    ).toMatchObject({ success: true });
+    expect(ports.adoptions).toEqual([
+      { proposalId, status: 'accepted' },
+      { proposalId: descriptionId, status: 'accepted' },
+      { proposalId: tagsId, status: 'skipped' },
+    ]);
+    expect(ports.ids.create).toHaveBeenCalledTimes(3);
+  });
+});

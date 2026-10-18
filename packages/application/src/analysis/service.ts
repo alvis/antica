@@ -41,6 +41,20 @@ export interface AnalysisService {
     ownerId: string,
     runId: string,
   ): Promise<OperationResult<AnalysisRunDetail>>;
+  /**
+   * adopts and skips proposals field by field and records one history entry per decision
+   *
+   * `input.expectedRecordRevision` is the record revision the collector saw when
+   * tapping apply, not the revision frozen when the analysis ran: it rejects a
+   * stale screen once (retryable). Each proposal's `before` is the
+   * stale-proposal guard, so only a selected field that changed since the
+   * analysis blocks adoption (A7); unselected and skipped fields may change.
+   * @param ownerId authenticated collector
+   * @param runId completed analysis run
+   * @param requestKey idempotency key of the adoption
+   * @param input selected and skipped proposals with the displayed record revision
+   * @returns updated record, or a typed failure
+   */
   apply(
     ownerId: string,
     runId: string,
@@ -362,16 +376,27 @@ export function createAnalysisService(
             },
           };
         }
+        const decided = [
+          ...input.selectedProposalIds,
+          ...(input.skippedProposalIds ?? []),
+        ];
+        if (new Set(decided).size !== decided.length) {
+          return {
+            success: false,
+            error: {
+              code: 'VALIDATION_FAILED',
+              message: 'Select or skip each proposal once',
+              retryable: false,
+            },
+          };
+        }
         const states = await unit.analyses.getProposalStates(runId);
         const selected = run.output.proposedChanges.filter((change) =>
           input.selectedProposalIds.includes(change.id),
         );
         if (
           selected.length !== input.selectedProposalIds.length ||
-          [
-            ...input.selectedProposalIds,
-            ...(input.skippedProposalIds ?? []),
-          ].some(
+          decided.some(
             (id) =>
               !states.some(
                 (state) =>
@@ -384,6 +409,19 @@ export function createAnalysisService(
             error: {
               code: 'VALIDATION_FAILED',
               message: 'Selected proposal is unavailable',
+              retryable: false,
+            },
+          };
+        }
+        if (
+          new Set(selected.map((proposal) => proposal.field)).size !==
+          selected.length
+        ) {
+          return {
+            success: false,
+            error: {
+              code: 'VALIDATION_FAILED',
+              message: 'Select only one change per field',
               retryable: false,
             },
           };

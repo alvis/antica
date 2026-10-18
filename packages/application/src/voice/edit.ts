@@ -26,6 +26,18 @@ export interface EditDraftService {
     input: EditDraftRequest,
   ): Promise<OperationResult<EditDraftAccepted>>;
   get(ownerId: string, id: string): Promise<OperationResult<EditDraftDetail>>;
+  /**
+   * adopts selected proposals and records one history entry per adopted field
+   *
+   * `input.expectedRecordRevision` is the record revision the collector saw when
+   * tapping apply: it rejects a stale screen once (retryable). Each proposal's
+   * `before` is the stale-proposal guard: only a selected field that changed
+   * since the draft blocks adoption, so unselected fields may change freely.
+   * @param ownerId authenticated collector
+   * @param id edit draft identifier
+   * @param input selected proposals with draft and displayed record revisions
+   * @returns applied draft and updated record, or a typed failure
+   */
   apply(
     ownerId: string,
     id: string,
@@ -38,7 +50,7 @@ export interface EditDraftService {
  * @param transaction provides owner-scoped records, drafts, jobs, and receipts
  * @param selection identifies the model used for queued drafts
  * @param clock timestamps draft and adoption changes
- * @param ids creates job and outbox identifiers
+ * @param ids creates job, outbox, and history entry identifiers
  * @returns service that submits drafts, reads results, and applies selected proposals with typed outcomes
  */
 export function createEditDraftService(
@@ -334,6 +346,14 @@ export function createEditDraftService(
             return failure(
               'REVISION_CONFLICT',
               'Edit draft changed during adoption',
+            );
+          }
+          for (const change of selected) {
+            await unit.editDrafts.appendAdoption(
+              id,
+              change.id,
+              'accepted',
+              ids.create(),
             );
           }
           const result = { draft: next, record: updated };

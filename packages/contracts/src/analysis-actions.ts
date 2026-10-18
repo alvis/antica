@@ -14,6 +14,8 @@ import { sourceCitationSchema } from './source.js';
 
 export const applyAnalysisChangesSchema = z
   .strictObject({
+    // revision displayed when the collector tapped apply (stale-screen guard);
+    // each proposal's `before` guards against stale proposals per field
     expectedRecordRevision: revisionSchema,
     selectedProposalIds: z.array(entityIdSchema),
     skippedProposalIds: z.array(entityIdSchema).optional(),

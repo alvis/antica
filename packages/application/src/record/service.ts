@@ -1,5 +1,5 @@
 import { requestFingerprint } from '../knowledge/receipt.js';
-import { ComponentInUseError } from '../ports/index.js';
+import { ComponentInUseError, InvalidCursorError } from '../ports/index.js';
 
 import type { MediaStoragePort } from '../evidence/media.js';
 import type {
@@ -8,6 +8,8 @@ import type {
   RecordPatch,
   CollectionQuery,
   CursorPage,
+  RecordHistoryEntry,
+  RecordHistoryQuery,
   RecordSummary,
 } from '@antica/contracts';
 
@@ -39,6 +41,18 @@ export interface RecordService {
     requestKey: string,
     input: RecordPatch,
   ): Promise<OperationResult<RecordDetail>>;
+  /**
+   * lists adopted and skipped suggestions for one of the collector's records, newest first
+   * @param ownerId authenticated collector
+   * @param recordId record whose history is requested
+   * @param query opaque cursor and page size
+   * @returns one history page, NOT_FOUND for a missing or foreign record, or VALIDATION_FAILED for an invalid cursor
+   */
+  history(
+    ownerId: string,
+    recordId: string,
+    query: RecordHistoryQuery,
+  ): Promise<OperationResult<CursorPage<RecordHistoryEntry>>>;
 }
 
 /**
@@ -114,6 +128,37 @@ export function createRecordService(
 
         return { success: true, data: record };
       }),
+    history: async (ownerId, recordId, query) => {
+      try {
+        return await transaction.run(ownerId, async (unit) =>
+          (await unit.records.get(recordId))
+            ? {
+                success: true,
+                data: await unit.records.queryHistory(recordId, query),
+              }
+            : {
+                success: false,
+                error: {
+                  code: 'NOT_FOUND',
+                  message: 'Record not found',
+                  retryable: false,
+                },
+              },
+        );
+      } catch (error) {
+        if (error instanceof InvalidCursorError) {
+          return {
+            success: false,
+            error: {
+              code: 'VALIDATION_FAILED',
+              message: 'Invalid cursor',
+              retryable: false,
+            },
+          };
+        }
+        throw error;
+      }
+    },
     get: async (ownerId, recordId) =>
       transaction.run(ownerId, async (unit) => {
         const record = await unit.records.get(recordId);

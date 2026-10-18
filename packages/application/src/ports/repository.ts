@@ -10,6 +10,8 @@ import type {
   RecordDetail,
   RecordFields,
   RecordPatch,
+  RecordHistoryEntry,
+  RecordHistoryQuery,
   CollectionQuery,
   RecordSummary,
   CursorPage,
@@ -37,6 +39,7 @@ import type {
   Region,
 } from '@antica/domain';
 
+import type { InvalidCursorError } from './cursor.js';
 import type { OperationResult } from './result.js';
 import type { RetrievalSnapshot } from './retrieval.js';
 import type {
@@ -121,6 +124,17 @@ export interface RecordRepository {
     expectedRevision: number,
     changes: { readonly analysisInput: boolean; readonly evidence: boolean },
   ): Promise<RecordVersions | null>;
+  /**
+   * reads adoption decisions from analysis runs and edit drafts, newest first
+   * @param id record identifier
+   * @param query opaque cursor and page size
+   * @returns one page of history entries and the cursor of the next page
+   * @throws {InvalidCursorError} when the cursor is malformed or tampered with
+   */
+  queryHistory(
+    id: string,
+    query: RecordHistoryQuery,
+  ): Promise<CursorPage<RecordHistoryEntry>>;
 }
 /** collector location label lookup and persistence */
 export interface LocationRepository {
