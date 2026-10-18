@@ -282,6 +282,27 @@ model comparisonResults {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model editDraftAdoptionEvents {
+  id             String        @id @db.Uuid
+  ownerId        String        @map("owner_id")
+  editDraftId    String        @map("edit_draft_id") @db.Uuid
+  recordId       String        @map("record_id") @db.Uuid
+  proposalId     String        @map("proposal_id") @db.Uuid
+  field          String
+  before         Json
+  after          Json
+  status         String
+  recordRevision Int           @map("record_revision")
+  createdAt      DateTime      @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  editDraftRuns  editDraftRuns @relation(fields: [ownerId, editDraftId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_adoption_events_owner_draft_fk")
+  records        records       @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_adoption_events_record_id_records_id_fk")
+
+  @@unique([editDraftId, proposalId], map: "edit_draft_adoption_events_proposal_uq")
+  @@index([ownerId, recordId, createdAt, id], map: "edit_draft_adoption_events_record_idx")
+  @@map("edit_draft_adoption_events")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model editDraftRuns {
   id                      String                    @id @db.Uuid
   ownerId                 String                    @map("owner_id")
@@ -297,6 +318,7 @@ model editDraftRuns {
   appliedProposalIds      Json                      @default("[]") @map("applied_proposal_ids")
   createdAt               DateTime                  @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime                  @map("updated_at") @db.Timestamptz(6)
+  editDraftAdoptionEvents editDraftAdoptionEvents[]
   jobs                    jobs                      @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_runs_job_id_jobs_id_fk")
   records                 records                   @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_runs_record_id_records_id_fk")
 
@@ -1022,6 +1044,7 @@ model records {
   actionStates                                               actionStates[]
   analysisRuns                                               analysisRuns[]
   analysisSnapshots                                          analysisSnapshots[]
+  editDraftAdoptionEvents                                    editDraftAdoptionEvents[]
   editDraftRuns                                              editDraftRuns[]
   evidenceAnchors                                            evidenceAnchors[]
   mediaAssets                                                mediaAssets[]
