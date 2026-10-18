@@ -14,6 +14,8 @@ import {
   revisionSchema,
 } from '@antica/contracts';
 
+import { inProposalOrder, listSkippedProposalIds } from './edit-draft-skips.js';
+
 import type {
   ListedRecordMessage,
   RecordMessageRepository,
@@ -249,6 +251,11 @@ export function createRecordMessageRepository(
         jobState: message.editDraftRuns.jobs.state,
       }));
       const page = rows.slice(0, size);
+      const skipped = await listSkippedProposalIds(
+        tx,
+        ownerId,
+        page.map(({ draft }) => draft.id),
+      );
       const newestFirst = page.map(
         ({ message, draft, jobState }): ListedRecordMessage => {
           const facts = draftSchema.parse({
@@ -265,6 +272,10 @@ export function createRecordMessageRepository(
               revision: facts.revision,
               proposedChanges: facts.result?.proposedChanges ?? [],
               appliedProposalIds: facts.appliedProposalIds,
+              skippedProposalIds: inProposalOrder(
+                facts.result,
+                skipped.get(draft.id) ?? [],
+              ),
               jobFailed: jobState === 'failed',
             },
           };

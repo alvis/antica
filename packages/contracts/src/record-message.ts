@@ -78,6 +78,8 @@ export const recordMessageDraftSchema = z.strictObject({
   proposedChanges: z.array(proposedChangeSchema),
   /** proposals already written to the record */
   appliedProposalIds: z.array(entityIdSchema),
+  /** proposals the collector rejected, which can no longer be applied */
+  skippedProposalIds: z.array(entityIdSchema),
 });
 export type RecordMessageDraft = z.infer<typeof recordMessageDraftSchema>;
 

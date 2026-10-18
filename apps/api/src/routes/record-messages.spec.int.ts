@@ -252,6 +252,37 @@ async function conversation(
   return recordMessagePageSchema.parse(await response.json());
 }
 
+/**
+ * posts a message and runs its job so the conversation shows a ready edit card with two proposals
+ * @param fixture authenticated HTTP fixture
+ * @returns the record, collector message, ready entry, its name proposal, and an apply call against the card
+ */
+async function readyCard(fixture: HttpFixture) {
+  const record = await createRecord(fixture);
+  await fixture.request(
+    `/v1/records/${record.id}/messages`,
+    'POST',
+    post('整理描述'),
+  );
+  await fixture.runtime.drain();
+  const [collector, ready] = (await conversation(fixture, record.id)).items;
+  const name = ready!.draft.proposedChanges.find(
+    (change) => change.field === 'name',
+  )!;
+  const apply = async (
+    decision: Record<string, unknown>,
+    expectedDraftRevision = ready!.draft.revision,
+  ): Promise<Response> =>
+    fixture.request(`/v1/edit-drafts/${ready!.editDraftId}/apply`, 'POST', {
+      requestKey: randomUUID(),
+      expectedDraftRevision,
+      expectedRecordRevision: 1,
+      ...decision,
+    });
+
+  return { record, collector: collector!, ready: ready!, name, apply };
+}
+
 describe('fn:createRecordMessageRoutes', () => {
   it('should answer a posted message once its job has run and show the draft as ready', async ({
     fixture,
@@ -304,6 +335,7 @@ describe('fn:createRecordMessageRoutes', () => {
         status: 'ready',
         revision: 2,
         appliedProposalIds: [],
+        skippedProposalIds: [],
         proposedChanges: [
           { field: 'description', proposed: '請把描述改成青瓷瓶' },
           { field: 'name', proposed: 'Celadon vase' },
@@ -364,6 +396,186 @@ describe('fn:createRecordMessageRoutes', () => {
         (item) => item.draft.status,
       ),
     ).toEqual(['applied', 'applied']);
+  });
+
+  it('should answer a decision that overlaps, repeats, or decides nothing with 422', async ({
+    fixture,
+  }) => {
+    const { name, apply } = await readyCard(fixture);
+
+    for (const invalid of [
+      { selectedProposalIds: [name.id], skippedProposalIds: [name.id] },
+      { selectedProposalIds: [], skippedProposalIds: [name.id, name.id] },
+      { selectedProposalIds: [], skippedProposalIds: [] },
+    ]) {
+      const response = await apply(invalid);
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({
+        code: 'VALIDATION_FAILED',
+      });
+    }
+  });
+
+  it('should record a reject-only apply as skipped without writing the record', async ({
+    fixture,
+  }) => {
+    const { record, ready, name, apply } = await readyCard(fixture);
+
+    const rejected = await apply({
+      selectedProposalIds: [],
+      skippedProposalIds: [name.id],
+    });
+
+    expect(rejected.status).toBe(200);
+    expect(await rejected.json()).toMatchObject({
+      draft: {
+        status: 'partially_applied',
+        revision: 3,
+        appliedProposalIds: [],
+        skippedProposalIds: [name.id],
+      },
+      record: { recordRevision: 1, name: 'Plain vase' },
+    });
+    expect(
+      recordDetailSchema.parse(
+        await (await fixture.request(`/v1/records/${record.id}`)).json(),
+      ),
+    ).toMatchObject({ recordRevision: 1, name: 'Plain vase' });
+    expect(
+      await (
+        await fixture.request(`/v1/edit-drafts/${ready.editDraftId}`)
+      ).json(),
+    ).toMatchObject({
+      status: 'partially_applied',
+      skippedProposalIds: [name.id],
+    });
+    for (const item of (await conversation(fixture, record.id)).items) {
+      expect(item.draft).toMatchObject({
+        status: 'partially_applied',
+        revision: 3,
+        appliedProposalIds: [],
+        skippedProposalIds: [name.id],
+      });
+    }
+  });
+
+  it('should refuse to apply or skip a rejected proposal again', async ({
+    fixture,
+  }) => {
+    const { name, apply } = await readyCard(fixture);
+    await apply({ selectedProposalIds: [], skippedProposalIds: [name.id] });
+
+    for (const again of [
+      { selectedProposalIds: [name.id] },
+      { selectedProposalIds: [], skippedProposalIds: [name.id] },
+    ]) {
+      const response = await apply(again, 3);
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        message: 'Selected proposal is unavailable',
+      });
+    }
+  });
+
+  it('should list a rejected proposal in history as skipped and linked to its message', async ({
+    fixture,
+  }) => {
+    const { record, collector, name, apply } = await readyCard(fixture);
+    await apply({ selectedProposalIds: [], skippedProposalIds: [name.id] });
+
+    const history = recordHistoryPageSchema.parse(
+      await (await fixture.request(`/v1/records/${record.id}/history`)).json(),
+    );
+
+    expect(history.items).toEqual([
+      expect.objectContaining({
+        field: 'name',
+        before: name.before,
+        after: name.proposed,
+        status: 'skipped',
+        source: {
+          kind: 'editDraft',
+          editDraftId: collector.editDraftId,
+          proposalId: name.id,
+          recordMessageId: collector.id,
+        },
+      }),
+    ]);
+  });
+
+  it('should adopt a confirmed proposal and skip a rejected one in one apply', async ({
+    fixture,
+  }) => {
+    const record = await createRecord(fixture);
+    await fixture.request(
+      `/v1/records/${record.id}/messages`,
+      'POST',
+      post('整理描述'),
+    );
+    await fixture.runtime.drain();
+    const [collector, ready] = (await conversation(fixture, record.id)).items;
+    const [description, name] = ready!.draft.proposedChanges;
+
+    const applied = await fixture.request(
+      `/v1/edit-drafts/${ready!.editDraftId}/apply`,
+      'POST',
+      {
+        requestKey: randomUUID(),
+        expectedDraftRevision: ready!.draft.revision,
+        expectedRecordRevision: 1,
+        selectedProposalIds: [description!.id],
+        skippedProposalIds: [name!.id],
+      },
+    );
+
+    expect(applied.status).toBe(200);
+    expect(await applied.json()).toMatchObject({
+      draft: {
+        status: 'applied',
+        appliedProposalIds: [description!.id],
+        skippedProposalIds: [name!.id],
+      },
+      record: {
+        recordRevision: 2,
+        description: '整理描述',
+        name: 'Plain vase',
+      },
+    });
+    const history = recordHistoryPageSchema.parse(
+      await (await fixture.request(`/v1/records/${record.id}/history`)).json(),
+    );
+    expect(
+      history.items.map(({ field, status, source }) => ({
+        field,
+        status,
+        source,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          field: 'description',
+          status: 'accepted',
+          source: {
+            kind: 'editDraft',
+            editDraftId: collector!.editDraftId,
+            proposalId: description!.id,
+            recordMessageId: collector!.id,
+          },
+        },
+        {
+          field: 'name',
+          status: 'skipped',
+          source: {
+            kind: 'editDraft',
+            editDraftId: collector!.editDraftId,
+            proposalId: name!.id,
+            recordMessageId: collector!.id,
+          },
+        },
+      ]),
+    );
+    expect(history.items).toHaveLength(2);
   });
 
   it('should link the history of an adopted proposal to the collector message once', async ({

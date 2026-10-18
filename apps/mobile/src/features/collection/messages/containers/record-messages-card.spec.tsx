@@ -122,16 +122,14 @@ function checked(testID: string): boolean | undefined {
   return accessibilityState?.checked;
 }
 
-it('should show every proposed field with nothing preselected and apply only confirmed fields', async () => {
+it('should show every proposed field with nothing preselected, apply confirmed fields, and skip rejected ones', async () => {
   const view = await renderCard(
     entry('assistant', 'Here are some changes.', { proposedChanges: changes }),
   );
   const card = screen.getByTestId(`record-message-card-${draftId}`);
 
   expect(
-    within(card).getByText(
-      'Nothing changes until you tap “Apply selected changes”.',
-    ),
+    within(card).getByText('Nothing changes until you tap “Apply decisions”.'),
   ).toBeTruthy();
   expect(within(card).getByText('Blue vase')).toBeTruthy();
   expect(within(card).getByText('Kangxi · 1662–1722')).toBeTruthy();
@@ -147,7 +145,7 @@ it('should show every proposed field with nothing preselected and apply only con
   }
   const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
   expect(apply).toBeDisabled();
-  expect(apply).toHaveAccessibleName('Apply selected changes (0)');
+  expect(apply).toHaveAccessibleName('Apply decisions (0)');
 
   await fireEvent.press(
     screen.getByTestId(`record-message-card-confirm-${nameChangeId}`),
@@ -167,7 +165,7 @@ it('should show every proposed field with nothing preselected and apply only con
   expect(checked(`record-message-card-reject-${periodChangeId}`)).toBe(true);
   expect(checked(`record-message-card-confirm-${periodChangeId}`)).toBe(false);
   expect(checked(`record-message-card-confirm-${tagsChangeId}`)).toBe(false);
-  expect(apply).toHaveAccessibleName('Apply selected changes (1)');
+  expect(apply).toHaveAccessibleName('Apply decisions (2)');
 
   await fireEvent.press(apply);
   await waitFor(() => expect(sentTo(view.commands, applyPath)).toHaveLength(1));
@@ -178,6 +176,7 @@ it('should show every proposed field with nothing preselected and apply only con
     expectedDraftRevision: 4,
     expectedRecordRevision: collectionRecord.recordRevision,
     selectedProposalIds: [nameChangeId],
+    skippedProposalIds: [periodChangeId],
   });
   await waitFor(() =>
     expect(checked(`record-message-card-confirm-${nameChangeId}`)).toBe(false),
@@ -219,12 +218,13 @@ it('should lock the choices while an apply is in flight', async () => {
   );
 });
 
-it('should mark applied rows of a partly applied card as applied and untoggleable', async () => {
+it('should mark applied and skipped rows of a partly settled card as locked', async () => {
   await renderCard(
     entry('assistant', 'Two changes.', {
       status: 'partially_applied',
-      proposedChanges: [nameChange, tagsChange],
+      proposedChanges: [nameChange, periodChange, tagsChange],
       appliedProposalIds: [nameChangeId],
+      skippedProposalIds: [periodChangeId],
     }),
   );
 
@@ -233,11 +233,124 @@ it('should mark applied rows of a partly applied card as applied and untoggleabl
     screen.getByTestId(`record-message-card-applied-${nameChangeId}`),
   ).toHaveTextContent('✓ Applied');
   expect(
-    screen.queryByTestId(`record-message-card-confirm-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-skipped-${periodChangeId}`),
+  ).toHaveTextContent('✕ Not applied');
+  expect(
+    screen.getByTestId(`record-message-card-skipped-${periodChangeId}`),
+  ).toHaveAccessibleName('Not applied');
+  for (const locked of [nameChangeId, periodChangeId]) {
+    expect(
+      screen.queryByTestId(`record-message-card-confirm-${locked}`),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(`record-message-card-reject-${locked}`),
+    ).toBeNull();
+  }
+  expect(
+    screen.queryByTestId(`record-message-card-skipped-${tagsChangeId}`),
   ).toBeNull();
   expect(
     screen.getByTestId(`record-message-card-confirm-${tagsChangeId}`),
   ).toBeEnabled();
+  expect(
+    screen.getByTestId(`record-message-card-apply-${draftId}`),
+  ).toBeDisabled();
+});
+
+it.each([
+  {
+    status: 'applied',
+    appliedProposalIds: [nameChangeId],
+    skippedProposalIds: [periodChangeId],
+    text: 'All changes decided; some not applied',
+  },
+  {
+    status: 'applied',
+    appliedProposalIds: [nameChangeId, periodChangeId],
+    skippedProposalIds: [],
+    text: 'All changes applied',
+  },
+  {
+    status: 'partially_applied',
+    appliedProposalIds: [nameChangeId],
+    skippedProposalIds: [],
+    text: 'Some changes applied',
+  },
+  {
+    status: 'partially_applied',
+    appliedProposalIds: [],
+    skippedProposalIds: [periodChangeId],
+    text: 'Some changes decided',
+  },
+] as const)(
+  'should say “$text” for a $status card with $appliedProposalIds.length applied and $skippedProposalIds.length skipped',
+  async ({ status, appliedProposalIds, skippedProposalIds, text }) => {
+    await renderCard(
+      entry('assistant', 'Two changes.', {
+        status,
+        proposedChanges: [nameChange, periodChange, tagsChange],
+        appliedProposalIds: [...appliedProposalIds],
+        skippedProposalIds: [...skippedProposalIds],
+      }),
+    );
+
+    expect(
+      screen.getByTestId(`record-message-card-status-${draftId}`),
+    ).toHaveTextContent(text);
+  },
+);
+
+it('should enable the apply action only while a field is confirmed or rejected', async () => {
+  await renderCard(
+    entry('assistant', 'Two changes.', {
+      proposedChanges: [nameChange, periodChange],
+    }),
+  );
+  const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
+  const reject = screen.getByTestId(
+    `record-message-card-reject-${periodChangeId}`,
+  );
+
+  expect(apply).toBeDisabled();
+  await fireEvent.press(reject);
+  expect(apply).toBeEnabled();
+  expect(apply).toHaveAccessibleName('Apply decisions (1)');
+  await fireEvent.press(reject);
+  expect(apply).toBeDisabled();
+  expect(apply).toHaveAccessibleName('Apply decisions (0)');
+});
+
+it('should skip rejected fields without selecting any and reload only the messages', async () => {
+  const view = await renderCard(
+    entry('assistant', 'Two changes.', {
+      proposedChanges: [nameChange, periodChange],
+    }),
+  );
+  const reads = (path: string): number =>
+    view.reads.mock.calls.filter(([called]) => called === path).length;
+  const recordPath = `/v1/records/${recordId}`;
+  await waitFor(() => expect(reads(recordPath)).toBe(1));
+  const threadBefore = reads(messagesPath);
+  await fireEvent.press(
+    screen.getByTestId(`record-message-card-reject-${periodChangeId}`),
+  );
+
+  await fireEvent.press(
+    screen.getByTestId(`record-message-card-apply-${draftId}`),
+  );
+  await waitFor(() =>
+    expect(reads(messagesPath)).toBeGreaterThan(threadBefore),
+  );
+
+  const [request] = sentTo(view.commands, applyPath);
+  expect(request.body).toEqual({
+    requestKey: request.idempotencyKey,
+    expectedDraftRevision: 4,
+    expectedRecordRevision: collectionRecord.recordRevision,
+    selectedProposalIds: [],
+    skippedProposalIds: [periodChangeId],
+  });
+  expect(reads(recordPath)).toBe(1);
 });
 
 it('should show a fully applied card without an apply action', async () => {
@@ -324,6 +437,7 @@ it('should retry an interrupted apply under the same key until the choice change
   expect(second.idempotencyKey).toBe(first.idempotencyKey);
   expect(third.idempotencyKey).not.toBe(first.idempotencyKey);
   expect(third.body.selectedProposalIds).toEqual([nameChangeId, tagsChangeId]);
+  expect(third.body.skippedProposalIds).toEqual([]);
 });
 
 it('should show replies without proposals as text only', async () => {

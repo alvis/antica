@@ -258,6 +258,7 @@ function toEntry({ message, draft }: ListedRecordMessage): RecordMessageEntry {
       revision: draft.revision,
       proposedChanges: [...draft.proposedChanges],
       appliedProposalIds: [...draft.appliedProposalIds],
+      skippedProposalIds: [...draft.skippedProposalIds],
     },
   };
 }

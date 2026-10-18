@@ -13,11 +13,14 @@ import type { MessageKey } from '../../../../i18n/messages';
 
 import type { ProposalDecision } from '../hooks/useEditCardStates';
 
+/** how the server settled a proposal; an unsettled proposal still takes a choice */
+export type ProposalOutcome = 'applied' | 'skipped';
+
 /** properties for one proposed field of an edit card */
 export type EditCardRowProps = {
   change: ProposedChange;
-  /** whether the proposal is already written to the record */
-  applied: boolean;
+  /** whether the proposal is already written to the record or recorded as not applied */
+  outcome: ProposalOutcome | undefined;
   decision: ProposalDecision | undefined;
   /** records the collector's choice; absent while the card is applying */
   onDecide?: (decision: ProposalDecision) => void;
@@ -53,14 +56,14 @@ export function formatProposalValue(
  * renders one field's previous and proposed value with its confirm and reject choices
  * @param props row properties
  * @param props.change proposed field change
- * @param props.applied whether the change is already applied
+ * @param props.outcome whether the change is already applied or recorded as not applied
  * @param props.decision the collector's current choice, if any
  * @param props.onDecide records a choice, absent while unavailable
  * @returns the proposal row
  */
 export const EditCardRow: FC<EditCardRowProps> = ({
   change,
-  applied,
+  outcome,
   decision,
   onDecide,
 }) => {
@@ -97,13 +100,21 @@ export const EditCardRow: FC<EditCardRowProps> = ({
           {formatProposalValue(change.proposed, t)}
         </Text>
       </View>
-      {applied ? (
+      {outcome === 'applied' ? (
         <Text
           testID={`record-message-card-applied-${change.id}`}
           // the check mark is decoration; screen readers hear only the status
           accessibilityLabel={t('changeApplied')}
           style={[styles.label, { color: colors.jade }]}>
           ✓ {t('changeApplied')}
+        </Text>
+      ) : outcome === 'skipped' ? (
+        <Text
+          testID={`record-message-card-skipped-${change.id}`}
+          // the cross is decoration; screen readers hear only the status
+          accessibilityLabel={t('changeSkipped')}
+          style={[styles.label, { color: colors.muted }]}>
+          ✕ {t('changeSkipped')}
         </Text>
       ) : (
         <View accessibilityRole="radiogroup" style={styles.row}>

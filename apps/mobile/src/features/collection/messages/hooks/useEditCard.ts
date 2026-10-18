@@ -26,16 +26,18 @@ import type {
   ProposalDecision,
 } from './useEditCardStates';
 
-/** per-field choices on an edit card and the action that applies the confirmed ones */
+/** per-field choices on an edit card and the action that settles the decided ones */
 export interface EditCard {
   decisions: EditCardState['decisions'];
   /** sets a field's choice, or clears it when the same choice is made again */
   decide: (proposalId: string, decision: ProposalDecision) => void;
-  /** proposals confirmed and not yet applied */
+  /** proposals confirmed and not yet settled */
   confirmedIds: string[];
+  /** proposals rejected and not yet settled */
+  rejectedIds: string[];
   applying: boolean;
   error: string;
-  /** applies the confirmed proposals; absent while none is confirmed or the record is not shown */
+  /** applies the confirmed proposals and skips the rejected ones; absent while none is decided or the record is not shown */
   apply?: () => Promise<void>;
 }
 
@@ -54,7 +56,7 @@ export interface EditCardOptions {
 }
 
 /**
- * keeps the collector's per-field choices and applies only the confirmed proposals
+ * keeps the collector's per-field choices, applies the confirmed proposals, and records the rejected ones as skipped
  * @param options API transport, the reply's draft, the shown record revision, the card state, and translations
  * @param options.api authenticated API transport
  * @param options.recordId record the proposals change
@@ -63,7 +65,7 @@ export interface EditCardOptions {
  * @param options.state the card's lifted state
  * @param options.update replaces the card's lifted state
  * @param options.t translation function for message keys
- * @returns choices, the confirmed proposals, and the apply action
+ * @returns choices, the confirmed and rejected proposals, and the apply action
  */
 export function useEditCard({
   api,
@@ -76,13 +78,20 @@ export function useEditCard({
 }: EditCardOptions): EditCard {
   const queryClient = useQueryClient();
   const { draft } = entry;
-  const confirmedIds = draft.proposedChanges
+  // proposals the server already settled take no further choice
+  const openIds = draft.proposedChanges
     .map((change) => change.id)
     .filter(
       (id) =>
-        state.decisions[id] === 'confirmed' &&
-        !draft.appliedProposalIds.includes(id),
+        !draft.appliedProposalIds.includes(id) &&
+        !draft.skippedProposalIds.includes(id),
     );
+  const confirmedIds = openIds.filter(
+    (id) => state.decisions[id] === 'confirmed',
+  );
+  const rejectedIds = openIds.filter(
+    (id) => state.decisions[id] === 'rejected',
+  );
 
   const decide = (proposalId: string, decision: ProposalDecision): void => {
     update((current) => ({
@@ -105,10 +114,14 @@ export function useEditCard({
         expectedDraftRevision: draft.revision,
         expectedRecordRevision: revision,
         selectedProposalIds: confirmedIds,
+        skippedProposalIds: rejectedIds,
       });
     update((current) => ({ ...current, request, applying: true, error: '' }));
+    // a reject-only apply that succeeds leaves the record untouched
+    let recordUnchanged = false;
     try {
       await applyRecordMessageDraft(api, entry.editDraftId, request);
+      recordUnchanged = request.selectedProposalIds.length === 0;
       update((current) => ({ ...current, request: null, decisions: {} }));
     } catch (cause) {
       // a stale request can never succeed; any other failure retries under the same key
@@ -123,8 +136,9 @@ export function useEditCard({
     } finally {
       await Promise.all(
         [
-          recordQuery(api, recordId).queryKey,
-          ['records'],
+          ...(recordUnchanged
+            ? []
+            : [recordQuery(api, recordId).queryKey, ['records']]),
           recordMessagesKey(recordId),
         ].map(async (queryKey) => queryClient.invalidateQueries({ queryKey })),
       );
@@ -136,10 +150,13 @@ export function useEditCard({
     decisions: state.decisions,
     decide,
     confirmedIds,
+    rejectedIds,
     applying: state.applying,
     error: state.error,
     apply:
-      recordRevision !== undefined && confirmedIds.length > 0 && !state.applying
+      recordRevision !== undefined &&
+      confirmedIds.length + rejectedIds.length > 0 &&
+      !state.applying
         ? async () => apply(recordRevision)
         : undefined,
   };

@@ -28,6 +28,11 @@ jest.mock('expo-audio', () => ({
   RecordingPresets: { HIGH_QUALITY: {} },
 }));
 
+/** pause the thread waits for rows to be measured before retrying */
+const retryDelayMs = 50;
+/** failures after which the thread settles on the estimated position */
+const failuresUntilSettled = 11;
+
 const question = entry('collector', 'What is the mark?');
 const answer = entry('assistant', 'It reads Kangxi.');
 const followUp = entry('collector', 'Rename it then');
@@ -50,7 +55,7 @@ async function openThread(messageId?: string): ReturnType<typeof renderMobile> {
   });
 }
 
-it('should scroll to and mark the message opened from the change history once', async () => {
+it('should bring the whole message opened from the change history to the top of the thread once', async () => {
   const scrollToIndex = jest.spyOn(FlatList.prototype, 'scrollToIndex');
   await openThread(question.id);
 
@@ -59,7 +64,8 @@ it('should scroll to and mark the message opened from the change history once', 
     expect(scrollToIndex).toHaveBeenCalledWith({
       index: 2,
       animated: false,
-      viewPosition: 0.5,
+      // the far edge of an inverted list is its top, so the message shows above its reply
+      viewPosition: 1,
     }),
   );
   expect(scrollToIndex).toHaveBeenCalledTimes(1);
@@ -85,16 +91,87 @@ it('should not scroll when no message is named', async () => {
   expect(scrollToIndex).not.toHaveBeenCalled();
 });
 
-it('should move near a message the list has not measured yet', async () => {
+it('should move near a message the list has not measured yet and retry the exact position', async () => {
   const scrollToOffset = jest.spyOn(FlatList.prototype, 'scrollToOffset');
+  const scrollToIndex = jest
+    .spyOn(FlatList.prototype, 'scrollToIndex')
+    .mockImplementation(() => undefined);
   await openThread(question.id);
   await screen.findByText('Opened from change history');
+  await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(1));
+  jest.useFakeTimers();
 
-  await fireEvent(
-    screen.getByTestId('record-messages-thread'),
-    'scrollToIndexFailed',
-    { index: 2, averageItemLength: 80, highestMeasuredFrameIndex: 0 },
-  );
+  try {
+    await fireEvent(
+      screen.getByTestId('record-messages-thread'),
+      'scrollToIndexFailed',
+      { index: 2, averageItemLength: 80, highestMeasuredFrameIndex: 0 },
+    );
 
-  expect(scrollToOffset).toHaveBeenCalledWith({ offset: 160, animated: false });
+    expect(scrollToOffset).toHaveBeenCalledWith({
+      offset: 160,
+      animated: false,
+    });
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(retryDelayMs);
+    expect(scrollToIndex).toHaveBeenCalledTimes(2);
+    expect(scrollToIndex).toHaveBeenLastCalledWith({
+      index: 2,
+      animated: false,
+      viewPosition: 1,
+    });
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('should settle on the estimate once the exact position keeps failing', async () => {
+  const scrollToOffset = jest.spyOn(FlatList.prototype, 'scrollToOffset');
+  const scrollToIndex = jest
+    .spyOn(FlatList.prototype, 'scrollToIndex')
+    .mockImplementation(() => undefined);
+  await openThread(question.id);
+  await screen.findByText('Opened from change history');
+  await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(1));
+  jest.useFakeTimers();
+
+  try {
+    for (let attempt = 0; attempt < failuresUntilSettled; attempt += 1) {
+      await fireEvent(
+        screen.getByTestId('record-messages-thread'),
+        'scrollToIndexFailed',
+        { index: 2, averageItemLength: 80, highestMeasuredFrameIndex: 0 },
+      );
+      jest.advanceTimersByTime(retryDelayMs);
+    }
+
+    expect(scrollToOffset).toHaveBeenCalledTimes(failuresUntilSettled);
+    expect(scrollToIndex).toHaveBeenCalledTimes(failuresUntilSettled);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('should drop a pending retry when the thread closes', async () => {
+  const scrollToIndex = jest
+    .spyOn(FlatList.prototype, 'scrollToIndex')
+    .mockImplementation(() => undefined);
+  await openThread(question.id);
+  await screen.findByText('Opened from change history');
+  await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(1));
+  jest.useFakeTimers();
+
+  try {
+    await fireEvent(
+      screen.getByTestId('record-messages-thread'),
+      'scrollToIndexFailed',
+      { index: 2, averageItemLength: 80, highestMeasuredFrameIndex: 0 },
+    );
+    await screen.unmount();
+    jest.advanceTimersByTime(retryDelayMs);
+
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.useRealTimers();
+  }
 });

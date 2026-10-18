@@ -357,4 +357,8 @@ function expectSelectedRequests(
       }),
     },
   ]);
+  // the voice step has no reject choice, so it never records skipped proposals
+  expect(view.commands.mock.calls.at(-1)?.[2].body).not.toHaveProperty(
+    'skippedProposalIds',
+  );
 }

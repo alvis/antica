@@ -191,6 +191,7 @@ describe('record message draft validation', () => {
       },
     ],
     appliedProposalIds: [],
+    skippedProposalIds: [],
   } as const;
 
   it.for(['pending', 'ready', 'partially_applied', 'applied', 'failed'])(
@@ -234,6 +235,21 @@ describe('record message draft validation', () => {
     ).toBe(false);
   });
 
+  it('should accept rejected proposals and require the skipped list', () => {
+    const { skippedProposalIds: _skipped, ...withoutSkipped } = draft;
+
+    expect(
+      recordMessageDraftSchema.safeParse({
+        ...draft,
+        status: 'applied',
+        skippedProposalIds: [id],
+      }).success,
+    ).toBe(true);
+    expect(recordMessageDraftSchema.safeParse(withoutSkipped).success).toBe(
+      false,
+    );
+  });
+
   it('should carry the draft on a message entry and require it', () => {
     expect(
       recordMessageEntrySchema.safeParse({ ...message, draft }).success,
@@ -272,6 +288,7 @@ describe('record message page validation', () => {
       revision: 1,
       proposedChanges: [],
       appliedProposalIds: [],
+      skippedProposalIds: [],
     },
   };
 

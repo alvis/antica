@@ -789,6 +789,7 @@ describe('fn:createRecordMessageRepository', { timeout: 30_000 }, () => {
           revision: 1,
           proposedChanges: [],
           appliedProposalIds: [],
+          skippedProposalIds: [],
           jobFailed: false,
         })),
       );
@@ -797,7 +798,7 @@ describe('fn:createRecordMessageRepository', { timeout: 30_000 }, () => {
       );
     });
 
-    it('should carry the proposals, applied proposals and revision of a saved result', async ({
+    it('should carry the proposals, applied and skipped proposals and revision of a saved result', async ({
       connection,
     }) => {
       const { ownerId, recordId, draftIds } = await seedConversation(
@@ -811,7 +812,7 @@ describe('fn:createRecordMessageRepository', { timeout: 30_000 }, () => {
         proposed,
         findingIds: [],
       });
-      const [first, second] = [randomUUID(), randomUUID()];
+      const [first, second, third] = [randomUUID(), randomUUID(), randomUUID()];
       await connection.db.editDraftRuns.updateMany({
         data: {
           status: 'partially_applied',
@@ -828,18 +829,48 @@ describe('fn:createRecordMessageRepository', { timeout: 30_000 }, () => {
             sourceTranscriptionIds: [],
             sourceObservationIds: [],
             suggestedDescriptionZhHant: 'text',
-            proposedChanges: [proposal(first, 'one'), proposal(second, 'two')],
+            proposedChanges: [
+              proposal(first, 'one'),
+              proposal(second, 'two'),
+              proposal(third, 'three'),
+            ],
           },
         },
         where: { id: draftIds[0]! },
       });
+      // the skipped entries are written out of proposal order on purpose
+      for (const [proposalId, proposed] of [
+        [third, 'three'],
+        [second, 'two'],
+      ] as const) {
+        await connection.db.editDraftAdoptionEvents.createMany({
+          data: {
+            id: randomUUID(),
+            ownerId,
+            editDraftId: draftIds[0]!,
+            recordId,
+            proposalId,
+            field: 'description',
+            before: '',
+            after: proposed,
+            status: 'skipped',
+            recordRevision: 1,
+          },
+        });
+      }
+
       const page = await list(connection, ownerId, { recordId });
 
       expect(page.items[1]!.draft).toEqual({
         status: 'partially_applied',
         revision: 3,
-        proposedChanges: [proposal(first, 'one'), proposal(second, 'two')],
+        proposedChanges: [
+          proposal(first, 'one'),
+          proposal(second, 'two'),
+          proposal(third, 'three'),
+        ],
         appliedProposalIds: [first],
+        skippedProposalIds: [second, third],
         jobFailed: false,
       });
     });

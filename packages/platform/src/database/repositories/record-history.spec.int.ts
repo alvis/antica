@@ -224,6 +224,7 @@ async function createReadyDraft(
       result: null,
       invocation: null,
       appliedProposalIds: [],
+      skippedProposalIds: [],
       createdAt: now,
       updatedAt: now,
     },
@@ -546,6 +547,61 @@ describe('fn:queryRecordHistory', { timeout: 30_000 }, () => {
       ).rejects.toThrow(InvalidCursorError);
     },
   );
+  it('should list a rejected edit-draft proposal as skipped at the unchanged record revision', async ({
+    connection,
+  }) => {
+    const transaction = createTransactionPort(connection.db);
+    const ownerId = randomUUID();
+    const skippedId = randomUUID();
+    const seeded = await inUnit(transaction, ownerId, async (unit) => {
+      const recordId = await createRecord(unit);
+      const editDraftId = await createReadyDraft(unit, recordId, [
+        {
+          id: skippedId,
+          field: 'name',
+          before: 'Vase',
+          proposed: 'Blue vase',
+          findingIds: [],
+        },
+      ]);
+      const eventId = randomUUID();
+      await unit.editDrafts.markApplied(editDraftId, 2, [], now, [skippedId]);
+      await unit.editDrafts.appendAdoption(
+        editDraftId,
+        skippedId,
+        'skipped',
+        eventId,
+      );
+
+      return { recordId, editDraftId, eventId };
+    });
+
+    const page = await inUnit(transaction, ownerId, async (unit) =>
+      unit.records.queryHistory(seeded.recordId, {}),
+    );
+    const [row] = await connection.db.editDraftAdoptionEvents.findMany({
+      select: { recordRevision: true },
+      where: { id: seeded.eventId },
+    });
+
+    expect(page.items).toEqual([
+      {
+        id: seeded.eventId,
+        occurredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
+        field: 'name',
+        before: 'Vase',
+        after: 'Blue vase',
+        status: 'skipped',
+        source: {
+          kind: 'editDraft',
+          editDraftId: seeded.editDraftId,
+          proposalId: skippedId,
+          recordMessageId: null,
+        },
+      },
+    ]);
+    expect(row).toEqual({ recordRevision: 1 });
+  });
 });
 
 describe(
@@ -613,6 +669,9 @@ describe(
         attempt(randomUUID(), appliedId, 'accepted'),
       ).rejects.toThrow('Edit draft proposal is not available for history');
       await attempt(ownerId, pendingId, 'skipped');
+      await expect(attempt(ownerId, pendingId, 'skipped')).rejects.toThrow(
+        'Edit draft proposal is not available for history',
+      );
       await attempt(ownerId, appliedId, 'accepted');
       await expect(attempt(ownerId, appliedId, 'accepted')).rejects.toThrow();
 

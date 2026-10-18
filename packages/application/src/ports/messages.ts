@@ -63,6 +63,8 @@ export interface RecordMessageDraftFacts {
   readonly proposedChanges: readonly ProposedChange[];
   /** proposals already written to the record */
   readonly appliedProposalIds: readonly string[];
+  /** proposals the collector rejected, in proposal order */
+  readonly skippedProposalIds: readonly string[];
   /** whether the draft's job ended in failure */
   readonly jobFailed: boolean;
 }

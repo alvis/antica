@@ -92,6 +92,7 @@ export function entry(
       revision: 4,
       proposedChanges: [],
       appliedProposalIds: [],
+      skippedProposalIds: [],
       ...draft,
     },
   });

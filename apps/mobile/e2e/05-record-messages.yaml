@@ -1,8 +1,9 @@
 # Proves SC-10 on the camera record from 04: a question gets a reply without a
 # card; a labelled 「」 request gets one card with name and period rows; the
-# collector confirms the name, rejects the period, and applies; the record and
-# its change history reflect only the confirmed field, and the history links
-# back to the requesting message. Replies come from the deterministic
+# collector confirms the name, rejects the period, and applies; the period row
+# stays locked as not applied, the record reflects only the confirmed field, its
+# change history lists the name as accepted and the period as skipped, and the
+# history links back to the requesting message, which opens fully in view. Replies come from the deterministic
 # development model through the local drain loop.
 appId: ${APP_ID}
 ---
@@ -55,18 +56,19 @@ appId: ${APP_ID}
       id: 'record-message-card-apply-.*'
     direction: DOWN
 - assertVisible: Suggested changes
-- assertVisible: Nothing changes until you tap “Apply selected changes”.
+- assertVisible: Nothing changes until you tap “Apply decisions”.
 - assertVisible: 'Confirm: Name'
 - assertVisible: 'Reject: Period'
 - assertNotVisible:
     id: 'record-message-card-applied-.*'
 
-# 3. Confirm the name, reject the period, then apply.
+# 3. Confirm the name, reject the period, then apply both decisions. The name
+#    is applied, the period stays locked as not applied, and no toggle remains.
 - tapOn: 'Confirm: Name'
 - tapOn: 'Reject: Period'
-- tapOn: Apply selected changes \(1\)
+- tapOn: Apply decisions \(2\)
 - extendedWaitUntil:
-    visible: Some changes applied
+    visible: All changes decided; some not applied
     timeout: 60000
 - assertVisible:
     id: 'record-message-card-applied-.*'
@@ -74,6 +76,14 @@ appId: ${APP_ID}
 - assertNotVisible:
     id: 'record-message-card-applied-.*'
     index: 1
+- assertVisible:
+    id: 'record-message-card-skipped-.*'
+- assertNotVisible:
+    id: 'record-message-card-confirm-.*'
+- assertNotVisible:
+    id: 'record-message-card-reject-.*'
+- assertNotVisible:
+    id: 'record-message-card-apply-.*'
 
 # 4. The record shows the new name; the period was not applied.
 - back
@@ -82,7 +92,8 @@ appId: ${APP_ID}
     timeout: 60000
 - assertNotVisible: .*${NEW_PERIOD}.*
 
-# 5. The change history lists the name and links back to the requesting message.
+# 5. The change history lists the accepted name and the skipped period, and
+#    links back to the requesting message.
 - scrollUntilVisible:
     element:
       id: record-open-history
@@ -93,16 +104,10 @@ appId: ${APP_ID}
     visible:
       id: record-history
     timeout: 60000
-- assertVisible: 'Name · .*'
+- assertVisible: 'Name · Accepted.*'
+- assertVisible: 'Period · Skipped.*'
 - tapOn: 'Open the suggestion: Name.*'
 - extendedWaitUntil:
-    visible:
-      id: record-messages-thread
+    visible: Opened from change history
     timeout: 60000
-# The focused row can sit just above the viewport once the card below it lays
-# out, so bring it into view before asserting its marker.
-- scrollUntilVisible:
-    element: Opened from change history
-    direction: UP
-    timeout: 30000
 - assertVisible: '名稱改成「${NEW_NAME}」.*'

@@ -86,6 +86,7 @@ export const editing = editDraftDetailSchema.parse({
   },
   invocation: null,
   appliedProposalIds: [],
+  skippedProposalIds: [],
   createdAt: collectionRecord.createdAt,
   updatedAt: collectionRecord.updatedAt,
 });

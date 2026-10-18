@@ -22,7 +22,7 @@ export type EditCardContainerProps = {
 };
 
 /**
- * keeps an assistant reply's per-field choices and applies the confirmed ones
+ * keeps an assistant reply's per-field choices and settles the decided ones
  * @param props card properties
  * @param props.recordId record the proposals change
  * @param props.entry assistant reply whose draft proposes the changes
@@ -56,7 +56,7 @@ export const EditCardContainer: FC<EditCardContainerProps> = ({
       editDraftId={entry.editDraftId}
       draft={entry.draft}
       decisions={card.decisions}
-      confirmedCount={card.confirmedIds.length}
+      decisionCount={card.confirmedIds.length + card.rejectedIds.length}
       applying={card.applying}
       error={card.error}
       onDecide={card.decide}

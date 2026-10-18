@@ -758,10 +758,12 @@ describe('fn:createRecordMessageService', () => {
       revision: 1,
       proposedChanges: [],
       appliedProposalIds: [],
+      skippedProposalIds: [],
       jobFailed: false,
     } satisfies ListedRecordMessage['draft'];
 
     it('should return the page with the cursor and the paging inputs it was given', async () => {
+      const skippedId = '00000000-0000-4000-8000-000000000007';
       const proposal: ProposedChange = {
         id: requestKey,
         field: 'description',
@@ -777,8 +779,9 @@ describe('fn:createRecordMessageService', () => {
               ...facts,
               status: 'partially_applied',
               revision: 3,
-              proposedChanges: [proposal],
+              proposedChanges: [proposal, { ...proposal, id: skippedId }],
               appliedProposalIds: [requestKey],
+              skippedProposalIds: [skippedId],
             },
           },
         ],
@@ -798,8 +801,9 @@ describe('fn:createRecordMessageService', () => {
               draft: {
                 status: 'partially_applied',
                 revision: 3,
-                proposedChanges: [proposal],
+                proposedChanges: [proposal, { ...proposal, id: skippedId }],
                 appliedProposalIds: [requestKey],
+                skippedProposalIds: [skippedId],
               },
             },
           ],

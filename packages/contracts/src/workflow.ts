@@ -94,18 +94,43 @@ export const editDraftDetailSchema = z.strictObject({
   result: editDraftResultSchema.nullable(),
   invocation: modelInvocationSchema.nullable(),
   appliedProposalIds: z.array(entityIdSchema),
+  /** proposals the collector rejected; they stay out of the record and cannot be applied later */
+  skippedProposalIds: z.array(entityIdSchema),
   createdAt: instantSchema,
   updatedAt: instantSchema,
 });
 export type EditDraftDetail = z.infer<typeof editDraftDetailSchema>;
-export const editDraftApplySchema = z.strictObject({
-  requestKey: entityIdSchema,
-  expectedDraftRevision: revisionSchema,
-  // revision displayed when the collector tapped apply (stale-screen guard);
-  // each proposal's `before` guards against stale proposals per field
-  expectedRecordRevision: revisionSchema,
-  selectedProposalIds: z.array(entityIdSchema).min(1),
-});
+export const editDraftApplySchema = z
+  .strictObject({
+    requestKey: entityIdSchema,
+    expectedDraftRevision: revisionSchema,
+    // revision displayed when the collector tapped apply (stale-screen guard);
+    // each selected proposal's `before` guards against stale proposals per field
+    expectedRecordRevision: revisionSchema,
+    selectedProposalIds: z.array(entityIdSchema),
+    // rejected proposals, recorded as skipped without writing the record
+    skippedProposalIds: z.array(entityIdSchema).optional(),
+  })
+  .refine(
+    (value) =>
+      value.selectedProposalIds.length +
+        (value.skippedProposalIds?.length ?? 0) >
+      0,
+    {
+      message: 'Select or skip at least one proposal',
+      path: ['selectedProposalIds'],
+    },
+  )
+  .refine(
+    (value) =>
+      !value.skippedProposalIds?.some((id) =>
+        value.selectedProposalIds.includes(id),
+      ),
+    {
+      message: 'A proposal cannot be both selected and skipped',
+      path: ['skippedProposalIds'],
+    },
+  );
 export type EditDraftApply = z.infer<typeof editDraftApplySchema>;
 export const editDraftAppliedSchema = z.strictObject({
   draft: editDraftDetailSchema,

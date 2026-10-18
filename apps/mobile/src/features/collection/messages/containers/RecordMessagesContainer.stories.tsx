@@ -76,6 +76,7 @@ function storyEntry(
       revision: 2,
       proposedChanges: [],
       appliedProposalIds: [],
+      skippedProposalIds: [],
       ...draft,
     },
   };
@@ -85,18 +86,43 @@ const failedQuestion = storyEntry(6, 'collector', 'Describe the rim', {
   status: 'failed',
 });
 
+/** proposals the story fixture has settled so far */
+interface SettledProposals {
+  appliedProposalIds: string[];
+  skippedProposalIds: string[];
+}
+
+/**
+ * derives the draft status the server reports for the settled proposals
+ * @param settled applied and skipped proposals
+ * @param settled.appliedProposalIds proposals written to the record
+ * @param settled.skippedProposalIds proposals recorded as not applied
+ * @returns applied once every proposal is settled, partially applied once any is
+ */
+function settledStatus({
+  appliedProposalIds,
+  skippedProposalIds,
+}: SettledProposals): RecordMessageDraft['status'] {
+  const count = appliedProposalIds.length + skippedProposalIds.length;
+  if (count === proposedChanges.length) {
+    return 'applied';
+  }
+
+  return count ? 'partially_applied' : 'ready';
+}
+
 /**
  * builds the stored draft the apply endpoint returns
- * @param appliedProposalIds proposals written to the record
+ * @param settled proposals written to the record and proposals skipped
  * @returns a contract-valid apply response
  */
-function appliedResponse(appliedProposalIds: string[]): object {
+function appliedResponse(settled: SettledProposals): object {
   return editDraftAppliedSchema.parse({
     draft: {
       editDraftId: draftId,
       jobId: '00000000-0000-4000-8000-000000000702',
       revision: 3,
-      status: 'partially_applied',
+      status: settledStatus(settled),
       snapshot: {
         recordId: storyRecord.id,
         versions: {
@@ -112,7 +138,7 @@ function appliedResponse(appliedProposalIds: string[]): object {
       },
       result: null,
       invocation: null,
-      appliedProposalIds,
+      ...settled,
       createdAt: storyRecord.createdAt,
       updatedAt: storyRecord.updatedAt,
     },
@@ -162,14 +188,17 @@ function MessagesStory({
 }
 
 /**
- * renders a card whose fixture applies the confirmed proposals to the stored draft
+ * renders a card whose fixture applies the confirmed proposals and skips the rejected ones on the stored draft
  * @param args container properties
  * @returns stateful edit-card story surface
  */
 function ApplyingCardStory(
   args: Readonly<RecordMessagesContainerProps>,
 ): ReactElement {
-  const applied = useRef<string[]>([]);
+  const settled = useRef<SettledProposals>({
+    appliedProposalIds: [],
+    skippedProposalIds: [],
+  });
   const responses = useMemo<StoryResponses>(
     () => ({
       [`GET /v1/records/${storyRecord.id}`]: storyRecord,
@@ -180,21 +209,24 @@ function ApplyingCardStory(
             ...answer,
             draft: {
               ...answer.draft,
-              status: applied.current.length
-                ? 'partially_applied'
-                : answer.draft.status,
-              appliedProposalIds: applied.current,
+              ...settled.current,
+              status: settledStatus(settled.current),
             },
           },
         ],
         nextCursor: null,
       }),
       [`POST /v1/edit-drafts/${draftId}/apply`]: async (request) => {
-        applied.current = editDraftApplySchema.parse(
-          await request.json(),
-        ).selectedProposalIds;
+        const decided = {
+          skippedProposalIds: [],
+          ...editDraftApplySchema.parse(await request.json()),
+        };
+        settled.current = {
+          appliedProposalIds: decided.selectedProposalIds,
+          skippedProposalIds: decided.skippedProposalIds,
+        };
 
-        return appliedResponse(applied.current);
+        return appliedResponse(settled.current);
       },
     }),
     [],
@@ -304,7 +336,13 @@ export const AssistantThinking = {
     <MessagesStory
       {...args}
       responses={threadResponses([
-        storyEntry(5, 'collector', 'How old is it?', { status: 'pending' }),
+        {
+          ...storyEntry(5, 'collector', 'How old is it?', {
+            status: 'pending',
+          }),
+          // a fixed past time would turn the thinking state into the still-working one
+          createdAt: new Date().toISOString(),
+        },
       ])}
     />
   ),
@@ -352,13 +390,50 @@ export const EditCardReady = {
       `[data-testid="record-message-card-confirm-${nameChangeId}"]`,
     );
     confirm.click();
+    (
+      await findStoryElement(
+        canvasElement,
+        `[data-testid="record-message-card-reject-${descriptionChangeId}"]`,
+      )
+    ).click();
     const apply = await findStoryElement(
       canvasElement,
       `[data-testid="record-message-card-apply-${draftId}"]`,
     );
-    await findStoryText(canvasElement, 'Apply selected changes (1)');
+    await findStoryText(canvasElement, 'Apply decisions (2)');
     apply.click();
-    await findStoryText(canvasElement, 'Some changes applied');
+    await findStoryText(canvasElement, 'All changes decided; some not applied');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-applied-${nameChangeId}"]`,
+    );
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-skipped-${descriptionChangeId}"]`,
+    );
+  },
+} satisfies Story;
+
+export const RejectOnly = {
+  render: (args) => <ApplyingCardStory {...args} />,
+  play: async ({ canvasElement }) => {
+    const reject = await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-reject-${descriptionChangeId}"]`,
+    );
+    reject.click();
+    await findStoryText(canvasElement, 'Apply decisions (1)');
+    (
+      await findStoryElement(
+        canvasElement,
+        `[data-testid="record-message-card-apply-${draftId}"]`,
+      )
+    ).click();
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-skipped-${descriptionChangeId}"]`,
+    );
+    await findStoryText(canvasElement, 'Some changes decided');
   },
 } satisfies Story;
 
@@ -406,6 +481,48 @@ export const AllApplied = {
   },
 } satisfies Story;
 
+/** the name was applied and the description rejected, so every change is settled */
+const resolvedAnswer: RecordMessageEntry = {
+  ...answer,
+  draft: {
+    ...answer.draft,
+    status: 'applied',
+    appliedProposalIds: [nameChangeId],
+    skippedProposalIds: [descriptionChangeId],
+  },
+};
+
+export const ResolvedWithSkipped = {
+  render: (args) => (
+    <MessagesStory
+      {...args}
+      responses={threadResponses([question, resolvedAnswer])}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    await findStoryText(canvasElement, 'All changes decided; some not applied');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-skipped-${descriptionChangeId}"]`,
+    );
+    await findStoryText(canvasElement, 'Not applied');
+  },
+} satisfies Story;
+
+export const ResolvedWithSkippedInTraditionalChinese = {
+  render: (args) => (
+    <MessagesStory
+      {...args}
+      locale="zh-Hant"
+      responses={threadResponses([question, resolvedAnswer])}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    await findStoryText(canvasElement, '所有變更均已處理，部分未套用');
+    await findStoryText(canvasElement, '未套用');
+  },
+} satisfies Story;
+
 export const StaleChangeInTraditionalChinese = {
   render: (args) => (
     <MessagesStory
@@ -429,7 +546,7 @@ export const StaleChangeInTraditionalChinese = {
       `[data-testid="record-message-card-confirm-${descriptionChangeId}"]`,
     );
     confirm.click();
-    await findStoryText(canvasElement, '套用所選變更 (1)');
+    await findStoryText(canvasElement, '套用決定 (1)');
     (
       await findStoryElement(
         canvasElement,

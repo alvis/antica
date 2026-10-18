@@ -4,6 +4,7 @@ import { describe, expect, inject, it } from 'vitest';
 
 import { createDatabase } from '../connection.js';
 
+import { listSkippedProposalIds } from './edit-draft-skips.js';
 import { createEditDraftRepository } from './edit-drafts.js';
 
 import type {
@@ -119,6 +120,7 @@ describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
           result: null,
           invocation: null,
           appliedProposalIds: [],
+          skippedProposalIds: [],
           createdAt: now,
           updatedAt: now,
         },
@@ -194,6 +196,12 @@ describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
           detail: { ...run.detail, status: 'ready' },
         }),
       ).rejects.toThrow(Error);
+      await expect(
+        repository.create({
+          ...run,
+          detail: { ...run.detail, skippedProposalIds: [descriptionId] },
+        }),
+      ).rejects.toThrow(Error);
       await expect(foreign.create(run)).rejects.toThrow(Error);
       await repository.create(run);
       expect(await repository.get(editDraftId)).toEqual(run);
@@ -251,6 +259,9 @@ describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
         appliedProposalIds: [descriptionId],
       });
       expect(
+        await repository.markApplied(editDraftId, 4, [], now, [descriptionId]),
+      ).toBeNull();
+      expect(
         await repository.markApplied(editDraftId, 4, [nameId], now),
       ).toMatchObject({
         status: 'applied',
@@ -266,6 +277,323 @@ describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
         invocation,
         appliedProposalIds: [descriptionId, nameId],
       });
+    });
+  });
+});
+
+/**
+ * creates a ready draft with name, description, and tags proposals inside the caller's transaction
+ * @param tx transaction that is rolled back after the test
+ * @returns the repository, owner, draft, proposal IDs, and adoption time
+ */
+async function seedThreeProposalDraft(tx: Transaction) {
+  const ownerId = randomUUID();
+  const recordId = randomUUID();
+  const editDraftId = randomUUID();
+  const jobId = randomUUID();
+  const [nameId, descriptionId, tagsId] = [
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+  ];
+  const now = '2026-10-17T04:00:00.000Z';
+  const versions = {
+    recordRevision: 1,
+    analysisInputVersion: 1,
+    evidenceVersion: 1,
+  };
+  await tx.records.createMany({
+    data: {
+      id: recordId,
+      ownerId,
+      code: `TEST-${recordId}`,
+      unitKind: 'single',
+      name: 'Vase',
+    },
+  });
+  await tx.jobs.createMany({
+    data: {
+      id: jobId,
+      ownerId,
+      kind: 'recordEditing',
+      resourceId: editDraftId,
+      state: 'queued',
+      stage: 'draft',
+    },
+  });
+  const repository = createEditDraftRepository(tx, ownerId);
+  await repository.create({
+    detail: {
+      editDraftId,
+      jobId,
+      revision: 1,
+      status: 'pending',
+      snapshot: {
+        recordId,
+        versions,
+        fields: {
+          name: 'Vase',
+          unitKind: 'single',
+          components: [],
+          pieceCount: null,
+          categoryIds: [],
+          materialIds: [],
+          period: null,
+          dimensions: {},
+          location: { locationId: null, detail: '' },
+          acquisition: { receiptAssetIds: [] },
+          tags: [],
+          description: '',
+          collectorJudgment: null,
+        },
+        transcriptionVersions: [],
+        observationIds: [],
+        sourceText: [],
+        createdAt: now,
+      },
+      result: null,
+      invocation: null,
+      appliedProposalIds: [],
+      skippedProposalIds: [],
+      createdAt: now,
+      updatedAt: now,
+    },
+    request: {
+      requestKey: editDraftId,
+      recordId,
+      expectedRecordRevision: 1,
+      transcriptionIds: [],
+      observationIds: [],
+      instructionZhHant: '整理記錄',
+    },
+    modelSelection: {
+      role: 'recordEditing',
+      modelId: 'development:evidence-v1',
+      profileVersion: '1',
+    },
+  });
+  const result: EditDraftResult = {
+    editDraftId,
+    recordId,
+    baseVersions: versions,
+    sourceTranscriptionIds: [],
+    sourceObservationIds: [],
+    replyZhHant: '已整理',
+    suggestedDescriptionZhHant: '青瓷瓶',
+    proposedChanges: [
+      {
+        id: nameId,
+        field: 'name',
+        before: 'Vase',
+        proposed: 'Celadon vase',
+        findingIds: [],
+      },
+      {
+        id: descriptionId,
+        field: 'description',
+        before: '',
+        proposed: '青瓷瓶',
+        findingIds: [],
+      },
+      {
+        id: tagsId,
+        field: 'tags',
+        before: [],
+        proposed: ['celadon'],
+        findingIds: [],
+      },
+    ],
+  };
+  await repository.saveResult(
+    editDraftId,
+    result,
+    {
+      requestedModelId: 'development:evidence-v1',
+      effectiveModelId: 'development:evidence-v1',
+      provider: 'development',
+      providerModelVersion: '1',
+      adapterKind: 'development',
+      capabilities: {
+        textInput: true,
+        imageInput: false,
+        audioInput: false,
+        structuredOutput: true,
+        toolCalling: false,
+      },
+      role: 'recordEditing',
+      profileVersion: '1',
+      promptVersion: '1',
+      schemaVersion: '1',
+      effectiveOptions: {},
+      latencyMs: 0,
+      usage: { inputTokens: null, outputTokens: null },
+      finishReason: 'stop',
+      citationCheck: { valid: true, rejectedReferenceIds: [] },
+    },
+    1,
+    now,
+  );
+
+  return {
+    repository,
+    ownerId,
+    editDraftId,
+    nameId,
+    descriptionId,
+    tagsId,
+    now,
+  };
+}
+
+describe(
+  'fn:createEditDraftRepository skipped proposals',
+  { timeout: 30_000 },
+  () => {
+    it('should refuse a decision that repeats, overlaps, or names an unknown proposal', async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const { repository, editDraftId, nameId, tagsId, now } =
+          await seedThreeProposalDraft(tx);
+
+        expect(
+          await repository.markApplied(editDraftId, 2, [], now, [
+            tagsId,
+            tagsId,
+          ]),
+        ).toBeNull();
+        expect(
+          await repository.markApplied(editDraftId, 2, [nameId], now, [nameId]),
+        ).toBeNull();
+        expect(
+          await repository.markApplied(editDraftId, 2, [], now, [randomUUID()]),
+        ).toBeNull();
+        expect((await repository.get(editDraftId))?.detail).toMatchObject({
+          status: 'ready',
+          revision: 2,
+        });
+      });
+    });
+
+    it('should mark a reject-only adoption partially applied and read the skip back from history', async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const { repository, editDraftId, tagsId, now } =
+          await seedThreeProposalDraft(tx);
+
+        expect(
+          await repository.markApplied(editDraftId, 2, [], now, [tagsId]),
+        ).toMatchObject({
+          status: 'partially_applied',
+          revision: 3,
+          appliedProposalIds: [],
+          skippedProposalIds: [],
+        });
+        await repository.appendAdoption(
+          editDraftId,
+          tagsId,
+          'skipped',
+          randomUUID(),
+        );
+        expect((await repository.get(editDraftId))?.detail).toMatchObject({
+          status: 'partially_applied',
+          appliedProposalIds: [],
+          skippedProposalIds: [tagsId],
+        });
+      });
+    });
+
+    it('should refuse to apply or skip a skipped proposal again', async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const { repository, editDraftId, tagsId, now } =
+          await seedThreeProposalDraft(tx);
+        await repository.markApplied(editDraftId, 2, [], now, [tagsId]);
+        await repository.appendAdoption(
+          editDraftId,
+          tagsId,
+          'skipped',
+          randomUUID(),
+        );
+
+        expect(
+          await repository.markApplied(editDraftId, 3, [tagsId], now),
+        ).toBeNull();
+        expect(
+          await repository.markApplied(editDraftId, 3, [], now, [tagsId]),
+        ).toBeNull();
+      });
+    });
+
+    it('should report the draft applied once every proposal is applied or skipped, listing skips in proposal order', async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const { repository, editDraftId, nameId, descriptionId, tagsId, now } =
+          await seedThreeProposalDraft(tx);
+        await repository.markApplied(editDraftId, 2, [], now, [tagsId]);
+        await repository.appendAdoption(
+          editDraftId,
+          tagsId,
+          'skipped',
+          randomUUID(),
+        );
+
+        expect(
+          await repository.markApplied(editDraftId, 3, [nameId], now, [
+            descriptionId,
+          ]),
+        ).toMatchObject({ status: 'applied', revision: 4 });
+        await repository.appendAdoption(
+          editDraftId,
+          descriptionId,
+          'skipped',
+          randomUUID(),
+        );
+        expect(
+          await repository.markApplied(editDraftId, 4, [], now, [
+            descriptionId,
+          ]),
+        ).toBeNull();
+        expect((await repository.get(editDraftId))?.detail).toMatchObject({
+          status: 'applied',
+          revision: 4,
+          appliedProposalIds: [nameId],
+          // proposal order, not history order
+          skippedProposalIds: [descriptionId, tagsId],
+        });
+      });
+    });
+  },
+);
+
+describe('fn:listSkippedProposalIds', { timeout: 30_000 }, () => {
+  it('should list the skips of the requested drafts of the owner only', async () => {
+    await inRolledBackTransaction(async (tx) => {
+      const { repository, ownerId, editDraftId, descriptionId, tagsId, now } =
+        await seedThreeProposalDraft(tx);
+      await repository.markApplied(editDraftId, 2, [], now, [
+        tagsId,
+        descriptionId,
+      ]);
+      for (const proposalId of [tagsId, descriptionId]) {
+        await repository.appendAdoption(
+          editDraftId,
+          proposalId,
+          'skipped',
+          randomUUID(),
+        );
+      }
+
+      const skipped = await listSkippedProposalIds(tx, ownerId, [
+        editDraftId,
+        randomUUID(),
+      ]);
+
+      // one transaction shares its timestamp, so only membership is stable here
+      expect([...skipped.keys()]).toEqual([editDraftId]);
+      expect(skipped.get(editDraftId)).toHaveLength(2);
+      expect(skipped.get(editDraftId)).toEqual(
+        expect.arrayContaining([tagsId, descriptionId]),
+      );
+      expect(
+        await listSkippedProposalIds(tx, randomUUID(), [editDraftId]),
+      ).toEqual(new Map());
+      expect(await listSkippedProposalIds(tx, ownerId, [])).toEqual(new Map());
     });
   });
 });

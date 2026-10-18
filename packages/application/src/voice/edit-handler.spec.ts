@@ -112,6 +112,7 @@ function pendingRun(): EditDraftRunRecord {
       result: null,
       invocation: null,
       appliedProposalIds: [],
+      skippedProposalIds: [],
       createdAt: now,
       updatedAt: now,
     },

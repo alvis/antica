@@ -337,14 +337,21 @@ export const messages = {
   ],
   editCardTitle: ['Suggested changes', '建議變更'],
   editCardReady: [
-    'Nothing changes until you tap “Apply selected changes”.',
-    '點選「套用所選變更」之前，不會變更任何內容。',
+    'Nothing changes until you tap “Apply decisions”.',
+    '點選「套用決定」之前，不會變更任何內容。',
   ],
   editCardPartlyApplied: ['Some changes applied', '已套用部分變更'],
+  editCardPartlyDecided: ['Some changes decided', '已處理部分變更'],
   editCardApplied: ['All changes applied', '已套用所有變更'],
+  editCardResolved: [
+    'All changes decided; some not applied',
+    '所有變更均已處理，部分未套用',
+  ],
+  applyDecisions: ['Apply decisions', '套用決定'],
   confirmChange: ['Confirm', '確認'],
   rejectChange: ['Reject', '不採用'],
   changeApplied: ['Applied', '已套用'],
+  changeSkipped: ['Not applied', '未套用'],
   messageStale: [
     'The item changed after this screen loaded. It has been reloaded; send again.',
     '此畫面載入後藏品已有變更。已重新載入，請再次傳送。',
