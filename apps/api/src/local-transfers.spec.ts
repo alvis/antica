@@ -135,3 +135,36 @@ describe('fn:mountLocalTransfers', () => {
     );
   });
 });
+
+describe('fn:mountLocalTransfers:invalid stream', () => {
+  it('should reject a non-byte upload chunk without accepting it', async () => {
+    const app = new Hono<ApiEnv>();
+    const acceptUploadToken = vi.fn();
+    mountLocalTransfers(app, {
+      validateUploadToken: async () => ({
+        byteLength: 4,
+        mimeType: 'image/png',
+      }),
+      acceptUploadToken,
+      openReadToken: vi.fn(),
+    });
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue('invalid bytes');
+        controller.close();
+      },
+    });
+    const init = {
+      method: 'PUT',
+      body,
+      duplex: 'half',
+    } satisfies RequestInit & { duplex: 'half' };
+    const response = await app.fetch(
+      new Request('http://localhost/v1/storage/uploads/valid', init),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'UPLOAD_INCOMPLETE' });
+    expect(acceptUploadToken).not.toHaveBeenCalled();
+  });
+});

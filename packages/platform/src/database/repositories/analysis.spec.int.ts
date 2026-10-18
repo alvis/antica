@@ -69,6 +69,37 @@ const failureInvocation: ModelInvocation = {
 };
 
 describe('fn:createAnalysisRepository', { timeout: 30_000 }, () => {
+  it('should refuse adoption when the run no longer owns its record', async () => {
+    const database = await createIsolatedDatabase();
+    const transaction = createTransactionPort(database.db);
+    try {
+      const runId = await createQueuedRun(transaction, database.ownerId);
+      const run = await database.db.analysisRuns.findUniqueOrThrow({
+        where: { id: runId },
+      });
+      await database.db.records.update({
+        where: { id: run.recordId },
+        data: { ownerId: randomUUID() },
+      });
+
+      await expect(
+        transaction.run(database.ownerId, async (unit) => {
+          await unit.analyses.appendAdoption(
+            runId,
+            randomUUID(),
+            'accepted',
+            randomUUID(),
+          );
+
+          return { success: true as const, data: undefined };
+        }),
+      ).rejects.toThrow('Record not found');
+      expect(await database.db.adoptionEvents.count()).toBe(0);
+    } finally {
+      await database.close();
+    }
+  });
+
   it('should reject adopting a real proposal through a different run without leaving an event', async () => {
     const database = await createIsolatedDatabase();
     const transaction = createTransactionPort(database.db);

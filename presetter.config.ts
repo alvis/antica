@@ -152,6 +152,7 @@ export default preset(name, {
             ...(context.packageJson.name === '@antica/api'
               ? {
                   globalSetup: ['src/fixtures/http-global-setup.ts'],
+                  testTimeout: 30_000,
                 }
               : {}),
             ...(context.packageJson.name === '@antica/platform'

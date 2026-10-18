@@ -87,7 +87,8 @@ platform runner does not migrate or truncate the supplied administrative
 database. API acceptance suites also use that isolated base directly: migrate
 it explicitly with `DATABASE_URL="$ANTICA_TEST_DATABASE_URL" pnpm --filter
 @antica/platform db:migrate` before running API integration tests. The strict
-migration-refusal fixture requires PostgreSQL 16. The migration drift test uses
+migration-refusal fixture requires PostgreSQL 16. API integration cases allow
+30 seconds for migration subprocess startup and database-backed workflows. The migration drift test uses
 an independently owned shadow database and `prisma migrate diff` to compare the
 committed migrations with the Prisma schema.
 
