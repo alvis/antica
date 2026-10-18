@@ -1,18 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { setItemAsync } from 'expo-secure-store';
 import { useEffect, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { recordDetailSchema } from '@antica/contracts';
 
-import { LocaleProvider } from './i18n/LocaleProvider';
+import { savedPreferences } from './i18n/preferences.spec.fixtures';
 import { AuthProvider } from './providers/AuthProvider';
+import { LocaleProvider } from './providers/LocaleProvider';
 
 import type { PropsWithChildren, ReactElement } from 'react';
 
-import type { Locale } from './i18n/resources';
+import type { InterfaceLanguagePreference } from './i18n/preferences';
 
 export const storyRecordId = '00000000-0000-4000-8000-000000000001';
 export const storyRunId = '00000000-0000-4000-8000-000000000010';
@@ -54,7 +54,7 @@ export type StoryResponses = Readonly<Partial<Record<string, StoryResponse>>>;
 
 export type MobileStoryShellProps = PropsWithChildren<{
   responses: StoryResponses;
-  locale?: Locale;
+  locale?: InterfaceLanguagePreference;
   delayMs?: number;
 }>;
 
@@ -134,8 +134,9 @@ export function MobileStoryShell({
     [delayMs, responses],
   );
 
+  // a story device that already saved its interface language
+  const [preferences] = useState(() => savedPreferences(locale));
   globalThis.fetch = fixtureFetch;
-  void setItemAsync('antica.locale', locale);
 
   useEffect(
     () => () => {
@@ -151,7 +152,7 @@ export function MobileStoryShell({
     <SafeAreaProvider initialMetrics={storySafeAreaMetrics}>
       <View style={storySurfaceStyle}>
         <QueryClientProvider client={client}>
-          <LocaleProvider>
+          <LocaleProvider preferences={preferences}>
             <AuthProvider client={storyAuthClient}>{children}</AuthProvider>
           </LocaleProvider>
         </QueryClientProvider>

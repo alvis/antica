@@ -11,6 +11,9 @@ export const journeyLocales = ['en', 'zh-Hant', 'zh-Hans'] as const;
 /** interface language the journeys run in */
 export type JourneyLocale = (typeof journeyLocales)[number];
 
+/** interface language of a fresh install, and of a run that names none */
+export const defaultJourneyLocale: JourneyLocale = 'zh-Hant';
+
 /** settings for one local Maestro journey run against the emulator */
 export interface MaestroRun {
   /** Android application ID installed on the emulator */
@@ -62,13 +65,13 @@ const secondsTimestampLength = 19;
 const galleryIndexPolling = { attempts: 10, intervalMs: 500 } as const;
 
 /**
- * reads the journey language from the environment, defaulting to English
+ * reads the journey language from the environment, defaulting to the app's own default
  * @param value requested language tag, if any
  * @returns the supported journey language
  * @throws {Error} when the value names an unsupported language
  */
 export function journeyLocale(value: string | undefined): JourneyLocale {
-  const locale = value ?? 'en';
+  const locale = value ?? defaultJourneyLocale;
   const supported = journeyLocales.find((candidate) => candidate === locale);
   if (!supported) {
     throw new Error(
@@ -232,7 +235,39 @@ export function waitForGalleryIndex(
 }
 
 /**
- * runs journeys 01–05 in one interface language: request a code, sign in, import and reopen, camera capture, then record messages
+ * runs flow 06 in two stages around a newly issued code: language choices before sign-in, then after it
+ * @param run app, phone, inbox and flow locations of this run
+ * @param io process, file and clock effects
+ */
+export function runLanguageSettingsJourney(
+  run: MaestroRun,
+  io: RunnerIO,
+): void {
+  const flowPath = resolve(run.flowDirectory, '06-language-settings.yaml');
+  const requestedAt = io.now();
+  io.run(
+    maestroStep(run.deviceId, flowPath, {
+      APP_ID: run.appId,
+      STAGE: 'pre-login',
+      PHONE_NUMBER: run.phoneNumber,
+    }),
+  );
+  const otpCode = latestOtp(io.readText(run.otpInboxPath), {
+    phoneNumber: run.phoneNumber,
+    since: requestedAt,
+    source: run.otpInboxPath,
+  });
+  io.run(
+    maestroStep(run.deviceId, flowPath, {
+      APP_ID: run.appId,
+      STAGE: 'signed-in',
+      OTP_CODE: otpCode,
+    }),
+  );
+}
+
+/**
+ * runs journeys 01–05 in one interface language: request a code, sign in, import and reopen, camera capture, then record messages; a run in the default language then adds flow 06
  * @param run journey settings
  * @param io side effects
  */
@@ -284,6 +319,10 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
       NEW_PERIOD: '清代',
     }),
   );
+  // flow 06 clears state, so a fresh install starts in the default language
+  if (run.locale === defaultJourneyLocale) {
+    runLanguageSettingsJourney(run, io);
+  }
 }
 
 /**

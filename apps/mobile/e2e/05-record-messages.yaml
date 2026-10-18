@@ -36,6 +36,8 @@ appId: ${APP_ID}
 - tapOn:
     id: record-message-input
 - inputText: 這件器物的年代可以怎麼判斷？
+# a soft keyboard covers the composer on edge-to-edge Android; close it before sending
+- hideKeyboard
 - tapOn:
     id: record-message-send
 - extendedWaitUntil:
@@ -48,6 +50,7 @@ appId: ${APP_ID}
 - tapOn:
     id: record-message-input
 - inputText: 名稱改成「${NEW_NAME}」，年代改成「${NEW_PERIOD}」
+- hideKeyboard
 - tapOn:
     id: record-message-send
 - extendedWaitUntil:

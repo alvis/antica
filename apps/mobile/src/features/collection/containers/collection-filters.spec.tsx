@@ -1,17 +1,11 @@
 import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
-import { getItemAsync } from 'expo-secure-store';
-
 import CollectionRoute from '../../../app/(private)/(tabs)/collection';
-import { renderMobile } from '../../../mobile.spec.fixtures';
+import { renderMobile, savedLanguage } from '../../../mobile.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
-}));
 
 const categoryId = '00000000-0000-4000-8000-000000000041';
 const materialId = '00000000-0000-4000-8000-000000000042';
@@ -267,25 +261,30 @@ it('should retry a collection read error and restore the collection rows', async
 });
 
 it('should expose the selected freshness and recover filtered results in Traditional Chinese', async () => {
-  jest.mocked(getItemAsync).mockResolvedValueOnce('zh-Hant');
-  await renderMobile(<CollectionRoute />, {
-    get: async (path) => ({
-      items: new URL(path, 'https://api.example').searchParams.has('freshness')
-        ? []
-        : [
-            {
-              id: categoryId,
-              code: 'A-041',
-              name: 'Collector-authored bowl',
-              coverThumbnail: null,
-              locationLabel: null,
-              analysisFreshness: 'current',
-              pendingCheckCount: 0,
-            },
-          ],
-      nextCursor: null,
-    }),
-  });
+  await renderMobile(
+    <CollectionRoute />,
+    {
+      get: async (path) => ({
+        items: new URL(path, 'https://api.example').searchParams.has(
+          'freshness',
+        )
+          ? []
+          : [
+              {
+                id: categoryId,
+                code: 'A-041',
+                name: 'Collector-authored bowl',
+                coverThumbnail: null,
+                locationLabel: null,
+                analysisFreshness: 'current',
+                pendingCheckCount: 0,
+              },
+            ],
+        nextCursor: null,
+      }),
+    },
+    savedLanguage('zh-Hant'),
+  );
   await waitFor(() =>
     expect(
       screen.getByRole('button', { name: 'A-041, Collector-authored bowl' }),

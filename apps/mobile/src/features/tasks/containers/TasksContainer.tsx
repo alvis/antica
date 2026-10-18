@@ -9,9 +9,10 @@ import { ActionButton, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { SettingsAction } from '../../../components/SettingsAction';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -26,7 +27,7 @@ export const TasksContainer: FC = () => {
   });
 
   return (
-    <Screen title={t('tasks')}>
+    <Screen title={t('tasks')} action={<SettingsAction />}>
       <QueryState
         loading={tasks.isPending}
         error={tasks.error}

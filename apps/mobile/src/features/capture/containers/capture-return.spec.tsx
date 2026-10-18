@@ -11,8 +11,8 @@ import {
 } from '@antica/contracts';
 
 import CollectionRoute from '../../../app/(private)/(tabs)/collection';
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { RecordContainer } from '../../collection/containers/RecordContainer';
 

@@ -2,7 +2,7 @@ import { Pressable, Text } from 'react-native';
 
 import { styles } from '@antica/ui';
 
-import { useLocale } from '../../../../i18n/LocaleProvider';
+import { useLocale } from '../../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 

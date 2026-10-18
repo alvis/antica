@@ -7,15 +7,30 @@ import { useRouter } from 'expo-router';
 import { ApiTransport } from '@antica/client';
 import { recordDetailSchema } from '@antica/contracts';
 
-import { LocaleProvider } from './i18n/LocaleProvider';
+import { savedPreferences } from './i18n/preferences.spec.fixtures';
 import { useAuth } from './providers/AuthProvider';
+import {
+  LocaleProvider,
+  useInterfaceLanguage,
+} from './providers/LocaleProvider';
 
-import type { ReactNode } from 'react';
+import type { PropsWithChildren, ReactElement, ReactNode } from 'react';
+
+import type {
+  InterfaceLanguagePreference,
+  LocalPreferencesPort,
+} from './i18n/preferences';
 
 export interface MobileResponses {
   get?: (path: string) => Promise<unknown>;
   post?: (path: string) => Promise<unknown>;
   patch?: (path: string) => Promise<unknown>;
+}
+
+/** device-local state a journey starts from */
+export interface MobileDevice {
+  /** preference storage; defaults to a device that saved English */
+  preferences?: LocalPreferencesPort;
 }
 
 export interface MobileHarness {
@@ -55,15 +70,44 @@ export const collectionRecord = recordDetailSchema.parse({
 });
 
 /**
+ * describes a device that already saved an interface-language choice
+ * @param interfaceLanguage saved choice
+ * @returns device state for renderMobile
+ */
+export function savedLanguage(
+  interfaceLanguage: InterfaceLanguagePreference,
+): MobileDevice {
+  return { preferences: savedPreferences(interfaceLanguage) };
+}
+
+/**
+ * starts a journey once the saved language is read, as a collector meets the app after startup;
+ * the provider's own specs cover the screens it keeps mounted while reading
+ * @param props journey content
+ * @param props.children journey content
+ * @returns the content once the saved language is known
+ */
+function AfterLanguageLoads({
+  children,
+}: Readonly<PropsWithChildren>): ReactElement {
+  const { status } = useInterfaceLanguage();
+
+  return <>{status === 'loading' ? null : children}</>;
+}
+
+/**
  * renders a native journey with isolated API, navigation, and query state
  * @param element native route or feature to render.
  * @param responses API replies for this journey.
+ * @param device device-local state; defaults to a device that saved English
  * @returns isolated query state and observable network/navigation boundaries
  */
 export async function renderMobile(
   element: ReactNode,
   responses: MobileResponses,
+  device: MobileDevice = {},
 ): Promise<MobileHarness> {
+  const { preferences = savedPreferences('en') } = device;
   const api = new ApiTransport({
     baseUrl: 'https://api.example',
     session: {
@@ -109,7 +153,9 @@ export async function renderMobile(
   });
   await render(
     <QueryClientProvider client={client}>
-      <LocaleProvider>{element}</LocaleProvider>
+      <LocaleProvider preferences={preferences}>
+        <AfterLanguageLoads>{element}</AfterLanguageLoads>
+      </LocaleProvider>
     </QueryClientProvider>,
   );
 

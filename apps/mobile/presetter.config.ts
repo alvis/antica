@@ -94,6 +94,8 @@ export default preset('@antica/mobile', {
               'src/features/collection/messages/containers/*.stories.tsx',
               'src/components/QueryState.stories.tsx',
               'src/components/Screen.stories.tsx',
+              'src/components/SettingsAction.stories.tsx',
+              'src/features/settings/*/*.stories.tsx',
               'src/mobile.stories.spec.dom.helpers.tsx',
             ],
           },

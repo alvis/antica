@@ -2,8 +2,8 @@ import { Pressable, Text, View } from 'react-native';
 
 import { colors, styles } from '@antica/ui';
 
-import { useLocale } from '../../../../i18n/LocaleProvider';
 import { localizeProposalField } from '../../../../i18n/messages';
+import { useLocale } from '../../../../providers/LocaleProvider';
 
 import { proposalFieldTestId } from '../../proposal-field-test-id';
 

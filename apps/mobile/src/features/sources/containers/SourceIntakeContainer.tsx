@@ -16,9 +16,9 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 import { uploadMedia } from '../../../adapters/media-upload';
 import { Screen } from '../../../components/Screen';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import { SourcePagePreview } from '../components/SourcePagePreview';
 

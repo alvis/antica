@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
+import { savedPreferences } from '../../../i18n/preferences.spec.fixtures';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { SourcePagePreview } from './SourcePagePreview';
 
@@ -42,7 +43,13 @@ const meta = {
   title: 'Mobile/Features/Knowledge/SourcePagePreview',
   component: PreviewDemo,
   tags: ['autodocs'],
-  decorators: [(story) => <LocaleProvider>{story()}</LocaleProvider>],
+  decorators: [
+    (story) => (
+      <LocaleProvider preferences={savedPreferences('en')}>
+        {story()}
+      </LocaleProvider>
+    ),
+  ],
   args: {
     uri: imageUri,
     name: 'Book page',

@@ -26,6 +26,10 @@ module.exports = {
     '!src/features/collection/messages/containers/RecordMessagesContainer.stories.tsx',
     '!src/components/QueryState.stories.tsx',
     '!src/components/Screen.stories.tsx',
+    '!src/features/settings/components/LanguageOption.stories.tsx',
+    '!src/features/settings/containers/LanguageSettingsContainer.stories.tsx',
+    '!src/features/settings/containers/SettingsContainer.stories.tsx',
+    '!src/components/SettingsAction.stories.tsx',
     '!src/mobile.stories.spec.dom.helpers.tsx',
   ],
   coverageThreshold: {

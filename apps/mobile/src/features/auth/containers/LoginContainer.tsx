@@ -1,20 +1,26 @@
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 
 import { useEffect, useState } from 'react';
 
-import { Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ActionButton, TextField, styles } from '@antica/ui';
+import { ActionButton, TextField, colors, styles } from '@antica/ui';
 
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { authClient, useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
 type Stage = 'welcome' | 'phone' | 'code' | 'expired';
 
+const layout = StyleSheet.create({
+  language: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 4 },
+  languageText: { color: colors.jade, fontSize: 16, fontWeight: '700' },
+});
+
 export const LoginContainer: FC = () => {
+  const router = useRouter();
   const { authenticated, refresh } = useAuth();
   const { t } = useLocale();
   const [stage, setStage] = useState<Stage>('welcome');
@@ -89,7 +95,22 @@ export const LoginContainer: FC = () => {
   };
 
   return (
-    <Screen title="antica" subtitle={t('privateCollection')}>
+    <Screen
+      title="antica"
+      subtitle={t('privateCollection')}
+      action={
+        // opens only the language selector, never Settings or account content
+        <Pressable
+          testID="login-language"
+          accessibilityRole="button"
+          accessibilityLabel={t('languageScreenTitle')}
+          onPress={() => router.push('/settings/language')}
+          style={layout.language}>
+          <Text style={layout.languageText}>
+            {'\u{1F310}'} {t('languageScreenTitle')}
+          </Text>
+        </Pressable>
+      }>
       <View style={styles.card}>
         {stage === 'welcome' && (
           <>

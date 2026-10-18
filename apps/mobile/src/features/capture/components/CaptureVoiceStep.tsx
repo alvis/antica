@@ -2,8 +2,8 @@ import { Text, View } from 'react-native';
 
 import { ActionButton, TextField, styles } from '@antica/ui';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 

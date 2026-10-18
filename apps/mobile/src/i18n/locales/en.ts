@@ -134,6 +134,20 @@ export const en = {
   citationCount_other: '{{count}} Citations',
   saveNote: 'Save note',
   language: 'Language',
+  done: 'Done',
+  cancel: 'Cancel',
+  languageScreenTitle: 'Language / 語言',
+  languageScopeHint:
+    "Changes this device's interface language only. Collection content is not translated or reanalysed.",
+  defaultLanguage: 'Default',
+  followSystem: 'Follow system',
+  systemLanguageFallback: 'No supported system language; using {{language}}',
+  languagePreview: 'Preview',
+  languageUpdated: 'Interface language updated',
+  languageSaveFailed:
+    'The language could not be saved. Your previous choice is still in use.',
+  languageReadFailed:
+    'The saved language could not be read. Traditional Chinese is used for now.',
   session: 'Session',
   signOut: 'Sign out',
   loading: 'Loading…',

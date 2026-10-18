@@ -6,8 +6,8 @@ import { colors } from '@antica/ui';
 
 import { SessionNavigator } from '../features/auth/containers/SessionNavigator';
 import { DevLocaleLink } from '../i18n/DevLocaleLink';
-import { LocaleProvider } from '../i18n/LocaleProvider';
 import { AuthProvider } from '../providers/AuthProvider';
+import { LocaleProvider } from '../providers/LocaleProvider';
 
 import type { ReactElement } from 'react';
 

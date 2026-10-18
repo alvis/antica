@@ -5,7 +5,8 @@ import { Text, View } from 'react-native';
 import { ActionButton, styles } from '@antica/ui';
 
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { SettingsAction } from '../../../components/SettingsAction';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -14,7 +15,7 @@ export const ResearchContainer: FC = () => {
   const { t } = useLocale();
 
   return (
-    <Screen title={t('research')}>
+    <Screen title={t('research')} action={<SettingsAction />}>
       <View style={styles.card}>
         <Text style={styles.heading}>{t('imageSearch')}</Text>
         <Text style={styles.body}>{t('chooseItemForSearch')}</Text>

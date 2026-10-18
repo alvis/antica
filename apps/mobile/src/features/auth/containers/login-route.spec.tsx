@@ -12,8 +12,9 @@ import { Redirect } from 'expo-router';
 import { ApiTransport } from '@antica/client';
 
 import LoginRoute from '../../../app/login';
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
+import { savedPreferences } from '../../../i18n/preferences.spec.fixtures';
 import { authClient, useAuth } from '../../../providers/AuthProvider';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 jest.mock('@better-auth/expo/client', () => ({ expoClient: () => ({}) }));
 jest.mock('better-auth/client/plugins', () => ({
@@ -49,6 +50,7 @@ jest.mock(
   () =>
     ({
       Redirect: jest.fn<typeof import('expo-router').Redirect>(() => null),
+      useRouter: jest.fn<typeof import('expo-router').useRouter>(),
     }) satisfies Partial<typeof import('expo-router')>,
 );
 
@@ -70,7 +72,7 @@ const resendCooldownMilliseconds = 60_000;
 describe('rc:LoginRoute', () => {
   it('should move from welcome to phone entry and require a number', async () => {
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -96,7 +98,7 @@ describe('rc:LoginRoute', () => {
     const refresh = jest.fn(async () => undefined);
     jest.mocked(useAuth).mockReturnValue({ ...authValue, refresh });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -135,7 +137,7 @@ describe('rc:LoginRoute', () => {
       error: { code: 'OTP_EXPIRED', message: 'Expired' },
     });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -180,7 +182,7 @@ describe('Login recovery and session navigation', () => {
     const refresh = jest.fn(async () => undefined);
     jest.mocked(useAuth).mockReturnValue({ ...authValue, refresh });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -224,7 +226,7 @@ describe('Login recovery and session navigation', () => {
       error: { message: 'Service unavailable' },
     });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -252,7 +254,7 @@ describe('Login recovery and session navigation', () => {
     jest.useFakeTimers();
     try {
       await render(
-        <LocaleProvider>
+        <LocaleProvider preferences={savedPreferences('en')}>
           <LoginRoute />
         </LocaleProvider>,
       );
@@ -291,7 +293,7 @@ describe('Login recovery and session navigation', () => {
       .mocked(useAuth)
       .mockReturnValueOnce({ ...authValue, authenticated: true });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );

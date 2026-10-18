@@ -8,8 +8,8 @@ import { ActionButton, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import { historySourceRoute, recordHistoryQuery } from '../api/record-history';
 import { RecordHistoryEntry } from '../components/RecordHistoryEntry';

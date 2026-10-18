@@ -15,9 +15,6 @@ export type Locale = keyof typeof resources;
 /** every supported interface language, Traditional Chinese first */
 export const locales = Object.keys(resources) as readonly Locale[];
 
-/** language used until the collector saves a choice */
-export const defaultLocale: Locale = 'en';
-
 /**
  * tells whether a stored or requested value names a supported locale
  * @param value candidate language tag

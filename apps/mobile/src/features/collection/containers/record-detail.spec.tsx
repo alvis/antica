@@ -14,8 +14,11 @@ import { analysisRunDetailSchema } from '@antica/contracts';
 
 import AnalysisRoute from '../../../app/(private)/analysis/[runId]';
 import RecordRoute from '../../../app/(private)/collection/[recordId]';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import {
+  useInterfaceLanguage,
+  useLocale,
+} from '../../../providers/LocaleProvider';
 import { createReferencedRun } from '../../../saved-analysis.spec.fixtures';
 
 import { media } from '../../media/containers/media.spec.fixtures';
@@ -125,12 +128,13 @@ const InLocale: FC<InLocaleProps> = ({
   locale,
   children,
 }): ReactElement | null => {
-  const { locale: currentLocale, setLocale } = useLocale();
+  const { locale: currentLocale } = useLocale();
+  const { save } = useInterfaceLanguage();
   useEffect(() => {
     if (currentLocale !== locale) {
-      void setLocale(locale);
+      void save(locale);
     }
-  }, [currentLocale, locale, setLocale]);
+  }, [currentLocale, locale, save]);
 
   return currentLocale === locale ? <>{children}</> : null;
 };

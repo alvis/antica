@@ -4,7 +4,7 @@ import { Image, Platform, Pressable, Text, View } from 'react-native';
 
 import { ActionButton, styles } from '@antica/ui';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 import type { GestureResponderEvent } from 'react-native';

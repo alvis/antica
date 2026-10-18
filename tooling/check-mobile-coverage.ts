@@ -21,6 +21,10 @@ export const domCoverageSources = [
   'features/collection/messages/containers/RecordMessagesContainer.stories.tsx',
   'components/QueryState.stories.tsx',
   'components/Screen.stories.tsx',
+  'features/settings/components/LanguageOption.stories.tsx',
+  'features/settings/containers/LanguageSettingsContainer.stories.tsx',
+  'features/settings/containers/SettingsContainer.stories.tsx',
+  'components/SettingsAction.stories.tsx',
   'mobile.stories.spec.dom.helpers.tsx',
 ] as const;
 

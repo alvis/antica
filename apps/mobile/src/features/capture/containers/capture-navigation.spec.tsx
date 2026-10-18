@@ -10,8 +10,8 @@ import {
   transcriptionConfirmedSchema,
 } from '@antica/contracts';
 
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { CaptureContainer } from './CaptureContainer';
 import { transcript, transcriptionId, jobId } from './transcript.spec.fixtures';

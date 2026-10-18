@@ -8,10 +8,13 @@ import {
 } from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
-import { getItemAsync } from 'expo-secure-store';
 
 import RecordHistoryRoute from '../../../app/(private)/collection/[recordId]/history';
-import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import {
+  collectionRecord,
+  renderMobile,
+  savedLanguage,
+} from '../../../mobile.spec.fixtures';
 
 import {
   dated,
@@ -38,10 +41,6 @@ jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
   useLocalSearchParams: jest.fn(),
-}));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
 }));
 
 /**
@@ -284,13 +283,16 @@ it('should retry a history that could not be read', async () => {
 });
 
 it('should show the history of the routed record in Traditional Chinese', async () => {
-  jest.mocked(getItemAsync).mockResolvedValueOnce('zh-Hant');
   jest
     .mocked(useLocalSearchParams)
     .mockReturnValue({ recordId: collectionRecord.id });
-  const view = await renderMobile(<RecordHistoryRoute />, {
-    get: async () => page([describedByVoice, tagged], 'older'),
-  });
+  const view = await renderMobile(
+    <RecordHistoryRoute />,
+    {
+      get: async () => page([describedByVoice, tagged], 'older'),
+    },
+    savedLanguage('zh-Hant'),
+  );
 
   await waitFor(() =>
     expect(entryText(describedByVoice)).toContain('描述 · 已略過'),

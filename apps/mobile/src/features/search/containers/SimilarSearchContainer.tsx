@@ -28,8 +28,8 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 

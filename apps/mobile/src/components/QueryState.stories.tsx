@@ -5,7 +5,10 @@ import { Button, Text, View } from 'react-native';
 
 import { expect, fn } from 'storybook/test';
 
-import { LocaleProvider, useLocale } from '../i18n/LocaleProvider';
+import {
+  LocaleProvider,
+  useInterfaceLanguage,
+} from '../providers/LocaleProvider';
 
 import { QueryState } from './QueryState';
 
@@ -359,13 +362,13 @@ const languageLabels = {
 } as const satisfies Record<Locale, string>;
 
 const LocaleControls: FC = () => {
-  const { locale, setLocale } = useLocale();
+  const { resolved, save } = useInterfaceLanguage();
 
   return (
     <View>
-      <Button title="English" onPress={async () => setLocale('en')} />
-      <Button title="繁體中文" onPress={async () => setLocale('zh-Hant')} />
-      <Text>{languageLabels[locale]}</Text>
+      <Button title="English" onPress={async () => save('en')} />
+      <Button title="繁體中文" onPress={async () => save('zh-Hant')} />
+      <Text>{languageLabels[resolved.locale]}</Text>
     </View>
   );
 };

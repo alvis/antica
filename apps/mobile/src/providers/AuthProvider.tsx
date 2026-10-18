@@ -1,6 +1,15 @@
+import { useQueryClient } from '@tanstack/react-query';
+
 import * as SecureStore from 'expo-secure-store';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { ApiTransport } from '@antica/client';
 
@@ -52,6 +61,23 @@ type AuthProviderProps = PropsWithChildren<{
 
 const authContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * clears cached private data whenever a signed-in collector becomes signed out, however the
+ * session ends: sign-out, expiry, a rejected cookie or a restore that no longer finds it
+ * @param authenticated whether a collector is signed in now
+ */
+function useClearCacheWhenSessionEnds(authenticated: boolean): void {
+  const queryClient = useQueryClient();
+  const wasAuthenticated = useRef(false);
+
+  useEffect(() => {
+    if (wasAuthenticated.current && !authenticated) {
+      queryClient.clear();
+    }
+    wasAuthenticated.current = authenticated;
+  }, [authenticated, queryClient]);
+}
+
 export const AuthProvider: FC<AuthProviderProps> = ({
   children,
   client = authClient,
@@ -59,6 +85,7 @@ export const AuthProvider: FC<AuthProviderProps> = ({
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [phone, setPhone] = useState<string | null>(null);
+  useClearCacheWhenSessionEnds(authenticated);
 
   const refresh = async (): Promise<void> => {
     const result = await client.getSession();
@@ -82,9 +109,13 @@ export const AuthProvider: FC<AuthProviderProps> = ({
       phone,
       refresh,
       signOut: async (): Promise<void> => {
-        await client.signOut();
-        setAuthenticated(false);
-        setPhone(null);
+        try {
+          await client.signOut();
+        } finally {
+          // the device forgets the collector even when the server cannot be told
+          setAuthenticated(false);
+          setPhone(null);
+        }
       },
       expire: (): void => {
         setAuthenticated(false);

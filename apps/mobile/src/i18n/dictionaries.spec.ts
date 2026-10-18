@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { defaultLocale, isLocale, locales, resources } from './resources';
+import { isLocale, locales, resources } from './resources';
 
 /**
  * lists the interpolation placeholders a text uses
@@ -15,9 +15,8 @@ const source = resources['zh-Hant'].translation;
 const sourceKeys = Object.keys(source).sort();
 
 describe('fn:dictionaries', () => {
-  it('should offer Traditional Chinese, Simplified Chinese, and English, starting in English', () => {
+  it('should offer Traditional Chinese, Simplified Chinese, and English', () => {
     expect(locales).toEqual(['zh-Hant', 'zh-Hans', 'en']);
-    expect(defaultLocale).toBe('en');
     expect(locales.every(isLocale)).toBe(true);
     expect(isLocale('zh')).toBe(false);
   });

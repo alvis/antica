@@ -10,8 +10,9 @@ import {
 import { manipulateAsync } from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
+import { savedPreferences } from '../../../i18n/preferences.spec.fixtures';
 import { renderMobile } from '../../../mobile.spec.fixtures';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { SourcePagePreview } from './SourcePagePreview';
 
@@ -180,12 +181,12 @@ it('should ignore stale preparation results after the requested transform change
     .mockImplementationOnce(async () => second.promise);
   const onCrop = jest.fn<(x: number, y: number) => void>();
   const view = await render(
-    <LocaleProvider>
+    <LocaleProvider preferences={savedPreferences('en')}>
       <SourcePagePreview {...base} rotationQuarterTurns={1} onCrop={onCrop} />
     </LocaleProvider>,
   );
   await view.rerender(
-    <LocaleProvider>
+    <LocaleProvider preferences={savedPreferences('en')}>
       <SourcePagePreview {...base} rotationQuarterTurns={2} onCrop={onCrop} />
     </LocaleProvider>,
   );
@@ -197,7 +198,7 @@ it('should ignore stale preparation results after the requested transform change
     screen.queryByLabelText('Page one, Crop and rotation preview'),
   ).toBeNull();
   await view.rerender(
-    <LocaleProvider>
+    <LocaleProvider preferences={savedPreferences('en')}>
       <SourcePagePreview {...base} rotationQuarterTurns={3} onCrop={onCrop} />
     </LocaleProvider>,
   );

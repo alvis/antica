@@ -7,6 +7,8 @@
   "scripts": {
     "android": "expo run:android",
     "dev": "expo start",
+    "e2e:android": "node ../../tooling/run-maestro.ts",
+    "e2e:android:en": "ANTICA_E2E_LOCALE=en node ../../tooling/run-maestro.ts",
     "lint": "run lint --",
     "start": "expo start",
     "test": "pnpm run test:native && pnpm run test:dom",

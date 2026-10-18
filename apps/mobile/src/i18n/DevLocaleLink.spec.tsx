@@ -2,22 +2,16 @@ import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { render, screen, waitFor } from '@testing-library/react-native';
 
 import { useURL } from 'expo-linking';
-import { setItemAsync } from 'expo-secure-store';
 import { Text } from 'react-native';
 
+import { LocaleProvider, useLocale } from '../providers/LocaleProvider';
+
 import { DevLocaleLink, devLocaleFromUrl } from './DevLocaleLink';
-import { LocaleProvider, useLocale } from './LocaleProvider';
 
 import type { FC } from 'react';
 
-jest.mock(
-  'expo-secure-store',
-  () =>
-    ({
-      getItemAsync: jest.fn(async () => null),
-      setItemAsync: jest.fn(async () => undefined),
-    }) satisfies Partial<typeof import('expo-secure-store')>,
-);
+import type { LocalPreferencesPort } from './preferences';
+
 jest.mock(
   'expo-linking',
   () =>
@@ -35,16 +29,25 @@ const ActiveLocale: FC = () => {
 };
 
 /**
- * renders the link listener with a visible active locale
- * @returns the rendered tree
+ * renders the link listener with a visible active locale on a new installation
+ * @returns the device's preference storage
  */
-async function renderLink(): Promise<void> {
+async function renderLink(): Promise<{
+  read: jest.Mock<LocalPreferencesPort['read']>;
+  write: jest.Mock<LocalPreferencesPort['write']>;
+}> {
+  const preferences = {
+    read: jest.fn<LocalPreferencesPort['read']>(async () => null),
+    write: jest.fn<LocalPreferencesPort['write']>(async () => undefined),
+  };
   await render(
-    <LocaleProvider>
+    <LocaleProvider preferences={preferences}>
       <DevLocaleLink />
       <ActiveLocale />
     </LocaleProvider>,
   );
+
+  return preferences;
 }
 
 afterEach(() => {
@@ -55,6 +58,7 @@ describe('fn:devLocaleFromUrl', () => {
   it.each([
     { url: 'antica://?devLocale=zh-Hant', expected: 'zh-Hant' },
     { url: 'antica://login?devLocale=zh-Hans', expected: 'zh-Hans' },
+    { url: 'antica://?devLocale=system', expected: 'system' },
     { url: 'antica://?devLocale=fr', expected: undefined },
     { url: 'antica://?other=1&devLocale=en#top', expected: 'en' },
     { url: 'antica://collection', expected: undefined },
@@ -65,13 +69,15 @@ describe('fn:devLocaleFromUrl', () => {
 });
 
 describe('cp:DevLocaleLink', () => {
-  it('should save the language a development link requests', async () => {
-    jest.mocked(useURL).mockReturnValue('antica://?devLocale=zh-Hant');
+  it('should save the requested language once through the preference operation', async () => {
+    jest.mocked(useURL).mockReturnValue('antica://?devLocale=en');
 
-    await renderLink();
+    const preferences = await renderLink();
 
-    expect(await screen.findByText('zh-Hant')).toBeTruthy();
-    expect(setItemAsync).toHaveBeenCalledWith('antica.locale', 'zh-Hant');
+    expect(await screen.findByText('en')).toBeTruthy();
+    expect(preferences.write.mock.calls).toEqual([
+      [{ schemaVersion: 1, interfaceLanguage: 'en' }],
+    ]);
   });
 
   it('should report a requested language that could not be saved', async () => {
@@ -79,36 +85,45 @@ describe('cp:DevLocaleLink', () => {
       .spyOn(console, 'warn')
       .mockImplementation(() => undefined);
     const failure = new Error('Keychain unavailable.');
-    jest.mocked(setItemAsync).mockRejectedValueOnce(failure);
-    jest.mocked(useURL).mockReturnValue('antica://?devLocale=zh-Hant');
+    jest.mocked(useURL).mockReturnValue('antica://?devLocale=en');
+    const preferences = {
+      read: async () => null,
+      write: jest.fn<LocalPreferencesPort['write']>(async () => {
+        throw failure;
+      }),
+    };
 
-    await renderLink();
+    await render(
+      <LocaleProvider preferences={preferences}>
+        <DevLocaleLink />
+        <ActiveLocale />
+      </LocaleProvider>,
+    );
 
     await waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(
-        'The development locale could not be saved.',
-        failure,
-      ),
+      expect(warn.mock.calls).toEqual([
+        ['The development locale could not be saved.', failure],
+      ]),
     );
-    expect(screen.getByText('en')).toBeTruthy();
+    expect(screen.getByText('zh-Hant')).toBeTruthy();
   });
 
   it('should leave the language alone for links without a request', async () => {
     jest.mocked(useURL).mockReturnValue('antica://collection');
 
-    await renderLink();
+    const preferences = await renderLink();
 
-    expect(screen.getByText('en')).toBeTruthy();
-    expect(setItemAsync).not.toHaveBeenCalled();
+    expect(screen.getByText('zh-Hant')).toBeTruthy();
+    expect(preferences.write).not.toHaveBeenCalled();
   });
 
   it('should ignore language requests in release builds', async () => {
     Reflect.set(globalThis, '__DEV__', false);
-    jest.mocked(useURL).mockReturnValue('antica://?devLocale=zh-Hant');
+    jest.mocked(useURL).mockReturnValue('antica://?devLocale=en');
 
-    await renderLink();
+    const preferences = await renderLink();
 
-    await waitFor(() => expect(screen.getByText('en')).toBeTruthy());
-    expect(setItemAsync).not.toHaveBeenCalled();
+    expect(screen.getByText('zh-Hant')).toBeTruthy();
+    expect(preferences.write).not.toHaveBeenCalled();
   });
 });

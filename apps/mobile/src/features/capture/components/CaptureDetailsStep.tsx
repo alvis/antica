@@ -2,7 +2,7 @@ import { Text, View } from 'react-native';
 
 import { ActionButton, TextField, styles } from '@antica/ui';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
