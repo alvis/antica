@@ -96,6 +96,7 @@ export default preset('@antica/mobile', {
               'src/components/Screen.stories.tsx',
               'src/components/SettingsAction.stories.tsx',
               'src/features/settings/*/*.stories.tsx',
+              'src/features/auth/components/*.stories.tsx',
               'src/mobile.stories.spec.dom.helpers.tsx',
             ],
           },

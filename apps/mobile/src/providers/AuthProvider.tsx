@@ -38,7 +38,8 @@ interface AuthContextValue {
   authenticated: boolean;
   loading: boolean;
   phone: string | null;
-  refresh: () => Promise<void>;
+  /** reloads the session and reports whether one exists */
+  refresh: () => Promise<boolean>;
   signOut: () => Promise<void>;
   expire: () => void;
   api: ApiTransport;
@@ -87,15 +88,18 @@ export const AuthProvider: FC<AuthProviderProps> = ({
   const [phone, setPhone] = useState<string | null>(null);
   useClearCacheWhenSessionEnds(authenticated);
 
-  const refresh = async (): Promise<void> => {
+  const refresh = async (): Promise<boolean> => {
     const result = await client.getSession();
-    setAuthenticated(Boolean(result.data?.session));
+    const signedIn = Boolean(result.data?.session);
+    setAuthenticated(signedIn);
     setPhone(
       result.data?.user && 'phoneNumber' in result.data.user
         ? String(result.data.user.phoneNumber)
         : null,
     );
     setLoading(false);
+
+    return signedIn;
   };
 
   useEffect(() => {

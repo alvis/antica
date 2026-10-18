@@ -26,6 +26,7 @@ export const domCoverageSources = [
   'features/settings/containers/SettingsContainer.stories.tsx',
   'components/SettingsAction.stories.tsx',
   'mobile.stories.spec.dom.helpers.tsx',
+  'features/auth/components/LoginCodeStep.stories.tsx',
 ] as const;
 
 /** runtime helpers required even though generic discovery excludes spec files */

@@ -144,7 +144,7 @@ export async function renderMobile(
     authenticated: true,
     loading: false,
     phone: null,
-    refresh: async () => undefined,
+    refresh: async () => true,
     signOut: async () => undefined,
     expire: () => undefined,
   });

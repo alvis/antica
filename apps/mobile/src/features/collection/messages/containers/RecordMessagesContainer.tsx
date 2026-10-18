@@ -1,13 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-import {
-  ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Text, View } from 'react-native';
 
 import { colors, styles } from '@antica/ui';
 
@@ -146,71 +139,69 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
       title={t('messages')}
       subtitle={record.data?.name ?? record.data?.code}
       scrollable={false}>
-      <KeyboardAvoidingView
-        behavior={Platform.select({ ios: 'padding' as const })}
-        style={{ flex: 1 }}>
-        <View style={{ flex: 1, paddingHorizontal: 16 }}>
-          <QueryState
-            loading={thread.loading}
-            error={thread.error}
-            retry={thread.retry}>
-            {newestFirst.length === 0 ? (
-              <Text
-                testID="record-messages-empty"
-                style={[styles.secondary, { paddingVertical: 24 }]}>
-                {t('noMessages')}
-              </Text>
-            ) : (
-              <FlatList
-                testID="record-messages-thread"
-                ref={focus.listRef}
-                onScrollToIndexFailed={focus.onScrollToIndexFailed}
-                inverted
-                data={newestFirst}
-                keyExtractor={(item) => item.id}
-                renderItem={renderEntry}
-                keyboardShouldPersistTaps="handled"
-                onEndReached={thread.loadOlder}
-                onEndReachedThreshold={0.2}
-                contentContainerStyle={{ paddingVertical: 12 }}
-                ListFooterComponent={
-                  thread.hasOlder ? (
-                    <View style={{ paddingVertical: 8 }}>
-                      {thread.loadingOlder ? (
-                        <ActivityIndicator
-                          accessibilityLabel={t('loading')}
-                          color={colors.jade}
-                        />
-                      ) : (
-                        <MessageButton
-                          label={t('earlierMessages')}
-                          testID="record-messages-load-earlier"
-                          onPress={thread.loadOlder}
-                          secondary
-                        />
-                      )}
-                    </View>
-                  ) : null
-                }
-              />
-            )}
-          </QueryState>
-        </View>
-        <MessageComposer
-          text={composer.text}
-          onChangeText={composer.setText}
-          onSend={send && (() => void send())}
-          voicePhase={voice.phase}
-          onVoice={
-            voice.phase === 'recording'
-              ? () => void voice.stop()
-              : voice.phase === 'transcribing' || composer.busy
-                ? undefined
-                : () => void voice.start()
-          }
-          error={composer.error}
-        />
-      </KeyboardAvoidingView>
+      <View style={{ flex: 1, paddingHorizontal: 16 }}>
+        <QueryState
+          loading={thread.loading}
+          error={thread.error}
+          retry={thread.retry}>
+          {newestFirst.length === 0 ? (
+            <Text
+              testID="record-messages-empty"
+              style={[styles.secondary, { paddingVertical: 24 }]}>
+              {t('noMessages')}
+            </Text>
+          ) : (
+            <FlatList
+              testID="record-messages-thread"
+              ref={focus.listRef}
+              onScrollToIndexFailed={focus.onScrollToIndexFailed}
+              inverted
+              data={newestFirst}
+              keyExtractor={(item) => item.id}
+              renderItem={renderEntry}
+              keyboardShouldPersistTaps="handled"
+              // reading back through the thread closes the keyboard and returns its space (I17)
+              keyboardDismissMode="on-drag"
+              onEndReached={thread.loadOlder}
+              onEndReachedThreshold={0.2}
+              contentContainerStyle={{ paddingVertical: 12 }}
+              ListFooterComponent={
+                thread.hasOlder ? (
+                  <View style={{ paddingVertical: 8 }}>
+                    {thread.loadingOlder ? (
+                      <ActivityIndicator
+                        accessibilityLabel={t('loading')}
+                        color={colors.jade}
+                      />
+                    ) : (
+                      <MessageButton
+                        label={t('earlierMessages')}
+                        testID="record-messages-load-earlier"
+                        onPress={thread.loadOlder}
+                        secondary
+                      />
+                    )}
+                  </View>
+                ) : null
+              }
+            />
+          )}
+        </QueryState>
+      </View>
+      <MessageComposer
+        text={composer.text}
+        onChangeText={composer.setText}
+        onSend={send && (() => void send())}
+        voicePhase={voice.phase}
+        onVoice={
+          voice.phase === 'recording'
+            ? () => void voice.stop()
+            : voice.phase === 'transcribing' || composer.busy
+              ? undefined
+              : () => void voice.start()
+        }
+        error={composer.error}
+      />
     </Screen>
   );
 };

@@ -31,6 +31,7 @@ module.exports = {
     '!src/features/settings/containers/SettingsContainer.stories.tsx',
     '!src/components/SettingsAction.stories.tsx',
     '!src/mobile.stories.spec.dom.helpers.tsx',
+    '!src/features/auth/components/LoginCodeStep.stories.tsx',
   ],
   coverageThreshold: {
     'global': { statements: 100, branches: 100, functions: 100, lines: 100 },

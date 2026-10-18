@@ -36,8 +36,7 @@ appId: ${APP_ID}
 - tapOn:
     id: record-message-input
 - inputText: 這件器物的年代可以怎麼判斷？
-# a soft keyboard covers the composer on edge-to-edge Android; close it before sending
-- hideKeyboard
+# I17: the composer stays above the soft keyboard, so Send is tapped with it open
 - tapOn:
     id: record-message-send
 - extendedWaitUntil:
@@ -50,12 +49,21 @@ appId: ${APP_ID}
 - tapOn:
     id: record-message-input
 - inputText: 名稱改成「${NEW_NAME}」，年代改成「${NEW_PERIOD}」
-- hideKeyboard
 - tapOn:
     id: record-message-send
+# With the keyboard still open only the new card's foot is in view; dragging
+# the thread back toward the reply closes the keyboard and returns its space
+# (I17). The drag starts on the thread, above the lifted composer.
 - extendedWaitUntil:
-    visible: '開發示範：已建議修改「名稱」、「年代」.*'
+    visible:
+      id: 'record-message-card-apply-.*'
     timeout: 90000
+- swipe:
+    start: 50%, 20%
+    end: 50%, 40%
+- scrollUntilVisible:
+    element: '開發示範：已建議修改「名稱」、「年代」.*'
+    direction: UP
 - scrollUntilVisible:
     element:
       id: 'record-message-card-apply-.*'

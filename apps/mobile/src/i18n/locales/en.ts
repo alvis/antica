@@ -7,7 +7,6 @@ export const en = {
   whatsappLogin: 'Sign in with WhatsApp',
   authorizedPhone: 'Authorized phone number',
   continue: 'Continue',
-  sentToPhone: 'Code sent to {{phone}}',
   code: 'Six-digit code',
   verify: 'Verify code',
   verifying: 'Verifying…',
@@ -325,4 +324,47 @@ export const en = {
   signInAgain: 'Sign in again to continue.',
   changeStale:
     'The item changed after this suggestion. The latest values were reloaded; review them before applying.',
+  codePhone: 'WhatsApp number {{phone}}',
+  deliverySending: 'Sending the code…',
+  deliverySent: 'If this number is permitted, a code was sent via WhatsApp',
+  deliveryFailed:
+    'The code could not be sent. Check your connection and try again.',
+  deliveryRateLimited:
+    'Too many code requests. Wait a moment, then request a new code.',
+  changeNumber: 'Change number',
+  verifyingWait: 'Please wait',
+  codeInvalid: 'That code is not correct. Check it and try again.',
+  verifyRateLimited: 'Too many attempts. Request a new code.',
+  verifyFailed:
+    'Verification could not finish. Check your connection and try again.',
+  recordSaved: 'Saved',
+  savedNotAnalysedHint: 'Saved. You can start an analysis at any time.',
+  analysisRunning: 'Analyzing',
+  analysisRunningHint:
+    'The analysis runs in the cloud. You can leave and come back later.',
+  analysisDone: 'Analyzed',
+  analysisPartialDone: 'Partly analyzed',
+  analysisFailedBadge: 'Analysis failed',
+  newEvidenceHint:
+    'New evidence was added after the last analysis. Uploading never starts an analysis.',
+  viewAnalysis: 'View analysis',
+  actionNeedsEvidence: 'Needs evidence',
+  capturePhoto: 'Capture photo',
+  addDescription: 'Add description',
+  linkedCheck: 'Used for check {{id}}',
+  captureForAction: 'Answering: {{instruction}}',
+  captureLinkedCheck: 'New evidence is linked to check {{id}}.',
+  captureUnlinked:
+    'This action has no check; new evidence is added to this item only.',
+  sessionFailed:
+    'Your code was accepted, but signing in could not finish. Retry to continue.',
+  analysisInputChanged:
+    'This item changed since you opened it. Check the update, then analyze again.',
+  analysisStatusUnknown: 'Analysis status unavailable',
+  analysisStatusUnknownHint:
+    'The latest analysis could not be loaded. Retry, or open it.',
+  actionRecordMismatch:
+    'This action belongs to another item, so nothing was added.',
+  actionMissing: 'This action is no longer in the analysis.',
+  actionChanged: 'This action changed. Return to the analysis and try again.',
 } as const satisfies Dictionary;

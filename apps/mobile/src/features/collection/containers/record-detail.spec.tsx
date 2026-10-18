@@ -162,7 +162,7 @@ function expectNameContent(
 it.each([
   {
     locale: 'en' as const,
-    results: 'Results',
+    results: 'View analysis',
     name: 'Name',
     description: 'Description',
     previous: 'Previous',
@@ -171,7 +171,7 @@ it.each([
   },
   {
     locale: 'zh-Hant' as const,
-    results: '結果',
+    results: '查看分析',
     name: '名稱',
     description: '描述',
     previous: '目前內容',
@@ -318,7 +318,7 @@ it('should start analysis explicitly and keep the check context on a signed phot
   });
   expect(screen.getByText('New evidence not analyzed')).toBeTruthy();
   await fireEvent.press(screen.getByRole('button', { name: 'View' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Results' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'View analysis' }));
   await fireEvent.press(screen.getByRole('button', { name: /^Checks / }));
   expect(jest.mocked(view.router.push).mock.calls).toEqual([
     [`/media/${photo.asset.id}?checkId=${checkId}`],
@@ -467,7 +467,7 @@ it('should reopen observations, video, and saved collection, page, and web refer
     ),
   );
   expect(screen.getByText('Blue glaze')).toBeTruthy();
-  expect(screen.getByText('Saved')).toBeTruthy();
+  expect(screen.getByText('✓ Saved')).toBeTruthy();
   expect(screen.getByText('collection')).toBeTruthy();
   expect(
     screen.queryByRole('button', { name: 'Find similar images' }),
@@ -502,7 +502,9 @@ it('should show failed analysis and stale edit without discarding the edit', asy
   view.commands.mockRejectedValueOnce(new Error('Analysis unavailable'));
   await fireEvent.press(screen.getByRole('button', { name: 'Analyze' }));
   await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Analysis unavailable'),
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Something went wrong.',
+    ),
   );
   expect(view.router.push).not.toHaveBeenCalled();
 
@@ -510,8 +512,15 @@ it('should show failed analysis and stale edit without discarding the edit', asy
   await fireEvent.changeText(screen.getByLabelText('Name'), '   ');
   view.patches.mockRejectedValueOnce(new Error('Revision changed'));
   await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  // the start failure stays beside Analyse while the edit failure closes the screen
   await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Revision changed'),
+    expect(screen.getByText('Revision changed')).toHaveProp(
+      'accessibilityRole',
+      'alert',
+    ),
+  );
+  expect(screen.getByTestId('record-analyse-error')).toHaveTextContent(
+    'Something went wrong.',
   );
   expect(view.patches.mock.calls[0][2].body).toEqual({
     expectedRevision: 1,

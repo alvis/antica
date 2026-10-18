@@ -1,18 +1,59 @@
 import { Redirect, useRouter } from 'expo-router';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField, colors, styles } from '@antica/ui';
 
+import { BusyButton } from '../../../components/BusyButton';
 import { Screen } from '../../../components/Screen';
 import { authClient, useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
+import { LoginCodeStep } from '../components/LoginCodeStep';
+import { maskPhoneNumber } from '../phone-mask';
+
 import type { FC } from 'react';
 
-type Stage = 'welcome' | 'phone' | 'code' | 'expired';
+import type { MessageKey } from '../../../i18n/messages';
+
+import type { CodeDelivery } from '../components/LoginCodeStep';
+
+type Stage = 'welcome' | 'phone' | 'code' | 'expired' | 'session';
+
+/** seconds the API waits before it sends another code to the same number */
+const resendCooldownSeconds = 60;
+
+/** failure reported by the Better Auth client for a phone request */
+type AuthFailure = { code?: string; status?: number };
+
+/**
+ * tells whether an auth failure is a rate limit
+ * @param failure failure reported by the auth client
+ * @returns whether the API refused the request for being too frequent
+ */
+function isRateLimited(failure: AuthFailure): boolean {
+  return failure.code === 'RATE_LIMITED' || failure.status === 429;
+}
+
+/**
+ * localizes a verification failure; an expired code is shown as its own state
+ * @param failure failure reported by the auth client
+ * @returns the message key, or null when the code expired
+ */
+function verifyFailureKey(failure: AuthFailure): MessageKey | null {
+  if (failure.code === 'OTP_EXPIRED' || failure.status === 410) {
+    return null;
+  }
+  if (isRateLimited(failure)) {
+    return 'verifyRateLimited';
+  }
+
+  return failure.code === 'OTP_INVALID' || failure.status === 401
+    ? 'codeInvalid'
+    : 'verifyFailed';
+}
 
 const layout = StyleSheet.create({
   language: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 4 },
@@ -25,10 +66,20 @@ export const LoginContainer: FC = () => {
   const { t } = useLocale();
   const [stage, setStage] = useState<Stage>('welcome');
   const [phone, setPhone] = useState('');
+  // the number the current code was requested for; a later edit never changes where it is verified
+  const [sentPhone, setSentPhone] = useState('');
   const [code, setCode] = useState('');
   const [seconds, setSeconds] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const [delivery, setDelivery] = useState<CodeDelivery>('sending');
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+  // refs close the gap before a re-render disables the controls, so repeated taps or Enter never resend
+  const sendingRef = useRef(false);
+  const verifyingRef = useRef(false);
+  // each code request and each Change number starts a new attempt; a late reply to an older one is ignored
+  const attemptRef = useRef(0);
+  const [restoring, setRestoring] = useState(false);
+  const restoringRef = useRef(false);
 
   useEffect(() => {
     if (seconds <= 0) {
@@ -47,50 +98,113 @@ export const LoginContainer: FC = () => {
   }
 
   const send = async (): Promise<void> => {
-    if (busy) {
+    if (sendingRef.current || verifyingRef.current) {
       return;
     }
-    setBusy(true);
+    sendingRef.current = true;
+    attemptRef.current += 1;
+    const attempt = attemptRef.current;
+    const target = phone.trim();
+    setSentPhone(target);
+    setDelivery('sending');
     setError('');
+    setStage((current) => (current === 'phone' ? 'code' : current));
     try {
       const result = await authClient.phoneNumber.sendOtp({
-        phoneNumber: phone.trim(),
+        phoneNumber: target,
       });
+      if (attempt !== attemptRef.current) {
+        return;
+      }
       if (result.error) {
-        throw new Error(result.error.message);
+        const limited = isRateLimited(result.error);
+        setDelivery(limited ? 'rateLimited' : 'failed');
+        if (limited) {
+          setSeconds(resendCooldownSeconds);
+        }
+
+        return;
       }
       setCode('');
-      setSeconds(60);
+      setSeconds(resendCooldownSeconds);
       setStage('code');
-    } catch (cause) {
-      setError((cause as Error).message);
+      setDelivery('sent');
+    } catch {
+      if (attempt === attemptRef.current) {
+        setDelivery('failed');
+      }
     } finally {
-      setBusy(false);
+      if (attempt === attemptRef.current) {
+        sendingRef.current = false;
+      }
     }
   };
 
-  const verify = async (): Promise<void> => {
-    if (busy || code.length !== 6) {
+  /** abandons the current number, so a reply still on its way cannot change the new one */
+  const changeNumber = (): void => {
+    attemptRef.current += 1;
+    sendingRef.current = false;
+    setError('');
+    setCode('');
+    setSeconds(0);
+    setStage('phone');
+  };
+
+  /**
+   * fetches the session for a code the API already accepted; the used code is never sent again
+   */
+  const restoreSession = async (): Promise<void> => {
+    if (restoringRef.current) {
       return;
     }
-    setBusy(true);
+    restoringRef.current = true;
+    setRestoring(true);
+    setError('');
+    try {
+      // an accepted code with no session to show is the same failure as an unreachable server
+      if (!(await refresh())) {
+        throw new Error('session missing after verification');
+      }
+    } catch {
+      setStage('session');
+      setError(t('sessionFailed'));
+    } finally {
+      restoringRef.current = false;
+      setRestoring(false);
+    }
+  };
+
+  /**
+   * sends the code once, then fetches the session; the code stays locked until the session settles
+   */
+  const verify = async (): Promise<void> => {
+    if (verifyingRef.current || code.length !== 6 || stage === 'expired') {
+      return;
+    }
+    verifyingRef.current = true;
+    setVerifying(true);
     setError('');
     try {
       const result = await authClient.phoneNumber.verify({
-        phoneNumber: phone.trim(),
+        phoneNumber: sentPhone,
         code,
       });
-      if (result.error) {
-        if (result.error.code === 'OTP_EXPIRED') {
-          setStage('expired');
-        }
-        throw new Error(result.error.message);
+      if (!result.error) {
+        await restoreSession();
+
+        return;
       }
-      await refresh();
-    } catch (cause) {
-      setError((cause as Error).message);
+      const key = verifyFailureKey(result.error);
+      if (key) {
+        setError(t(key));
+      } else {
+        setStage('expired');
+      }
+    } catch {
+      setError(t('verifyFailed'));
     } finally {
-      setBusy(false);
+      verifyingRef.current = false;
+      setVerifying(false);
     }
   };
 
@@ -138,51 +252,40 @@ export const LoginContainer: FC = () => {
               testID="login-send-code"
               label={t('continue')}
               onPress={() => void send()}
-              disabled={busy || !phone.trim()}
+              disabled={!phone.trim()}
             />
           </>
         )}
         {(stage === 'code' || stage === 'expired') && (
+          <LoginCodeStep
+            maskedPhone={maskPhoneNumber(sentPhone)}
+            delivery={delivery}
+            expired={stage === 'expired'}
+            code={code}
+            onChangeCode={setCode}
+            verifying={verifying}
+            onVerify={() => void verify()}
+            resendSeconds={seconds}
+            onResend={() => void send()}
+            onChangeNumber={changeNumber}
+            error={error}
+          />
+        )}
+        {stage === 'session' && (
           <>
-            <Text style={styles.body}>
-              {t('sentToPhone', {
-                phone: phone.trim().replace(/.(?=.{4})/g, '•'),
-              })}
+            <Text
+              testID="login-session-error"
+              accessibilityRole="alert"
+              style={styles.error}>
+              {error}
             </Text>
-            {stage === 'expired' && (
-              <Text accessibilityRole="alert" style={styles.error}>
-                {t('expired')}
-              </Text>
-            )}
-            <View testID="login-code">
-              <TextField
-                label={t('code')}
-                value={code}
-                onChangeText={(value) =>
-                  setCode(value.replace(/\D/g, '').slice(0, 6))
-                }
-                keyboardType="number-pad"
-                autoComplete="one-time-code"
-              />
-            </View>
-            <ActionButton
-              testID="login-verify"
-              label={busy ? t('verifying') : t('verify')}
-              onPress={() => void verify()}
-              disabled={busy || code.length !== 6 || stage === 'expired'}
-            />
-            <ActionButton
-              label={seconds ? t('resendCountdown', { seconds }) : t('resend')}
-              onPress={() => void send()}
-              disabled={busy || seconds > 0}
-              secondary
+            <BusyButton
+              testID="login-session-retry"
+              label={t('retry')}
+              onPress={() => void restoreSession()}
+              busy={restoring}
             />
           </>
-        )}
-        {Boolean(error) && (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {error}
-          </Text>
         )}
       </View>
     </Screen>

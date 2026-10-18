@@ -2,7 +2,7 @@ import { randomUUID } from 'expo-crypto';
 import { useState } from 'react';
 
 import {
-  evidenceCreationSchema,
+  evidenceAnchorSchema,
   locationSchema,
   mediaDetailSchema,
   recordDetailSchema,
@@ -11,12 +11,15 @@ import {
 
 import { uploadMedia } from '../../../adapters/media-upload';
 
+import { describeActionLinkError } from './useActionLink';
+
 import type { QueryClient } from '@tanstack/react-query';
 
 import type { useRouter } from 'expo-router';
 
 import type { Location } from '@antica/contracts';
 
+import type { ActionLink } from './useActionLink';
 import type { CaptureDraftState, CaptureRuntime } from './useCaptureDraft';
 
 /** per-file upload errors and the save action */
@@ -36,6 +39,7 @@ export interface CaptureSave {
  * @param context.savedObservation whether the original words were confirmed
  * @param context.locations the collector's saved storage locations
  * @param context.checkId check the capture answers, when opened from one
+ * @param context.actionLink analysis action the capture answers, when opened from one
  * @param context.queryClient query cache to refresh after saving
  * @param context.router navigator used to open the saved record
  * @returns per-file errors and the save action
@@ -50,6 +54,7 @@ export function useCaptureSave(
     savedObservation,
     locations,
     checkId,
+    actionLink,
     queryClient,
     router,
   }: Pick<
@@ -59,6 +64,7 @@ export function useCaptureSave(
     savedObservation: boolean;
     locations: Location[] | undefined;
     checkId: string | undefined;
+    actionLink: Pick<ActionLink, 'linked' | 'verify' | 'supply'>;
     queryClient: QueryClient;
     router: ReturnType<typeof useRouter>;
   },
@@ -81,6 +87,14 @@ export function useCaptureSave(
     setBusy(true);
     setError('');
     try {
+      // evidence for an action of another record, or one no longer in its run, is never created (PT-13)
+      try {
+        await actionLink.verify();
+      } catch (cause) {
+        setError(describeActionLinkError(cause, t));
+
+        return;
+      }
       const labels = [
         ...new Set(
           draft.files.map((file) => file.componentLabel.trim()).filter(Boolean),
@@ -178,8 +192,9 @@ export function useCaptureSave(
             continue;
           }
         }
+        // a photo answering a check or an analysis action becomes an evidence anchor linked to it
         if (
-          checkId &&
+          (checkId || actionLink.linked) &&
           file.kind === 'photo' &&
           !nextFiles[index]?.checkLinked
         ) {
@@ -193,23 +208,31 @@ export function useCaptureSave(
               mediaDetailSchema,
             );
             const view = detail.asset.views[0];
-            await api.post('/v1/evidence', evidenceCreationSchema, {
-              body: {
-                requestKey: file.checkRequestKey ?? file.id,
-                mode: 'create',
-                checkId,
-                evidence: {
-                  kind: 'image',
-                  recordId: record.id,
-                  componentIds: component ? [component.id] : [],
-                  originalAssetId: assetId,
-                  canonicalViewId: view.id,
-                  scope: { kind: 'whole' },
+            const anchor = await api.post(
+              '/v1/evidence',
+              evidenceAnchorSchema,
+              {
+                body: {
+                  requestKey: file.checkRequestKey ?? file.id,
+                  mode: 'create',
+                  checkId,
+                  evidence: {
+                    kind: 'image',
+                    recordId: record.id,
+                    componentIds: component ? [component.id] : [],
+                    originalAssetId: assetId,
+                    canonicalViewId: view.id,
+                    scope: { kind: 'whole' },
+                  },
                 },
+                idempotencyKey: file.checkRequestKey ?? file.id,
               },
-              idempotencyKey: file.checkRequestKey ?? file.id,
-            });
-            nextFiles[index] = { ...nextFiles[index], checkLinked: true };
+            );
+            nextFiles[index] = {
+              ...nextFiles[index],
+              checkLinked: true,
+              anchorId: anchor.id,
+            };
           } catch (cause) {
             failures[file.id] = (cause as Error).message;
           }
@@ -232,6 +255,19 @@ export function useCaptureSave(
         setStep(6);
 
         return;
+      }
+      const anchorIds = nextFiles.flatMap((file) =>
+        file.anchorId ? [file.anchorId] : [],
+      );
+      // a failure leaves the files linked, so saving again only retries the action
+      if (anchorIds.length > 0) {
+        try {
+          await actionLink.supply({ evidenceAnchorIds: anchorIds });
+        } catch (cause) {
+          setError(describeActionLinkError(cause, t));
+
+          return;
+        }
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['records'] }),

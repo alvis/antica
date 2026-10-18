@@ -1,5 +1,7 @@
 # Captures a photo through the system camera (the emulator's virtual scene on
-# AOSP Camera2), saves the record, and confirms the upload finished (A2).
+# AOSP Camera2), saves the record, and confirms the upload finished (A2). The
+# saved record waits for an explicit Analyse (B06); the run's describe action
+# opens capture linked to it, and the confirmed words mark it supplied (C04).
 # Runs after 02-authenticate: it relaunches without clearing state and relies
 # on that session. The camera2 IDs tie it to the emulator's AOSP camera app.
 appId: ${APP_ID}
@@ -48,6 +50,11 @@ appId: ${APP_ID}
 - tapOn:
     id: capture-save
 - assertVisible: ${RECORD_NAME}
+# B06: saving never starts an analysis; the record offers Analyse instead.
+- assertVisible:
+    id: record-analysis-status-unanalysed
+- assertVisible:
+    id: record-analyse
 # The record's action and message cards push the media status below the fold.
 # Any state after the upload counts; the drain loop may already have processed it.
 - scrollUntilVisible:
@@ -55,3 +62,67 @@ appId: ${APP_ID}
       id: record-media-.*-(uploaded|processing|ready)
     direction: DOWN
     timeout: 30000
+# B06: Analyse starts one run and opens it.
+- scrollUntilVisible:
+    element:
+      id: record-analyse
+    direction: UP
+- tapOn:
+    id: record-analyse
+# C04: the development model suggests one describe action without a check;
+# its card follows the result sections once the drain loop completes the run.
+# Selectors name the first card, so a second suggested action cannot match.
+- extendedWaitUntil:
+    visible:
+      id: analysis-open-record
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: 'analysis-action-describe-.*'
+      index: 0
+    direction: DOWN
+    timeout: 120000
+- assertVisible:
+    id: 'analysis-action-status-pending-.*'
+    index: 0
+- tapOn:
+    id: 'analysis-action-describe-.*'
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: capture-action-link
+    timeout: 60000
+- assertVisible:
+    id: capture-action-unlinked
+- tapOn:
+    id: capture-voice-original-words
+- inputText: Foot ring unglazed
+# I17: the screen lifts above the open keyboard, so the rest of the step scrolls into view
+- scrollUntilVisible:
+    element:
+      id: capture-voice-confirm-words
+    direction: DOWN
+- tapOn:
+    id: capture-voice-confirm-words
+- scrollUntilVisible:
+    element:
+      id: capture-action-finish
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: capture-action-finish
+# PT-13: back on the run, the action keeps its supplied state and offers no
+# second answer; nothing re-runs the analysis by itself.
+- extendedWaitUntil:
+    visible:
+      id: analysis-open-record
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: 'analysis-action-status-supplied-.*'
+      index: 0
+    direction: DOWN
+    timeout: 60000
+- assertNotVisible:
+    id: 'analysis-action-describe-.*'
+    index: 0

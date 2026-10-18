@@ -67,7 +67,7 @@ const authValue = {
   authenticated: false,
   loading: false,
   phone: null,
-  refresh: async () => undefined,
+  refresh: async () => true,
   signOut: async () => undefined,
   expire: () => undefined,
 } satisfies ReturnType<typeof useAuth>;
@@ -146,7 +146,7 @@ describe('Login language shortcut', () => {
       await fireEvent.press(screen.getByText('switch language'));
 
       expect(screen.getByLabelText('六位數驗證碼')).toHaveProp('value', '1234');
-      expect(screen.getByText('驗證碼已傳送至 ••••••••5678')).toBeTruthy();
+      expect(screen.getByText('WhatsApp 號碼 +852 1••• ••78')).toBeTruthy();
       expect(
         screen.getByRole('button', { name: '重發驗證碼 (55s)' }),
       ).toBeTruthy();

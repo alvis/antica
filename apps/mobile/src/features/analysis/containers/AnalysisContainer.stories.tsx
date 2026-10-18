@@ -16,6 +16,8 @@ import {
   findStoryText,
 } from '../../../mobile.stories.helpers';
 
+import { expect } from 'storybook/test';
+
 import { AnalysisContainer } from './AnalysisContainer';
 
 import type { Meta, StoryObj } from '@storybook/react-native-web-vite';
@@ -91,6 +93,57 @@ const completedRun = analysisRunDetailSchema.parse({
     },
   },
 });
+
+const photoActionId = '00000000-0000-4000-8000-000000000016';
+const describeActionId = '00000000-0000-4000-8000-000000000017';
+const storyCheckId = '00000000-0000-4000-8000-000000000018';
+
+/**
+ * builds a completed run whose action cards stand in the given saved states (C04, PT-13)
+ * @param status saved state of both actions
+ * @returns a parsed run with a checked photo action and an unchecked describe action
+ */
+function actionRun(
+  status: 'pending' | 'supplied',
+): ReturnType<typeof analysisRunDetailSchema.parse> {
+  const state = {
+    runId: storyRunId,
+    recordId: storyRecord.id,
+    revision: 1,
+    status,
+    latestResolutionId: null,
+    updatedAt: storyRecord.updatedAt,
+  };
+
+  return analysisRunDetailSchema.parse({
+    ...completedRun,
+    result: {
+      ...completedRun.result,
+      actionStates: [
+        { ...state, actionId: photoActionId },
+        { ...state, actionId: describeActionId },
+      ],
+      output: {
+        ...completedRun.result.output,
+        nextActions: [
+          {
+            id: photoActionId,
+            checkId: storyCheckId,
+            kind: 'capturePhoto',
+            instruction: '補拍底部全貌',
+            reason: '讓圈足與底面完整入鏡，用來檢查圈足與修整痕跡。',
+          },
+          {
+            id: describeActionId,
+            kind: 'describe',
+            instruction: '描述底部觸感',
+            reason: '觸感無法從照片判斷。',
+          },
+        ],
+      },
+    },
+  });
+}
 
 const successResponses = {
   [`GET /v1/analyses/${storyRunId}`]: completedRun,
@@ -211,4 +264,69 @@ export const FailedInTraditionalChinese = {
       <AnalysisContainer {...args} />
     </MobileStoryShell>
   ),
+} satisfies Story;
+
+/** C04 as in the mockup: a checked photo action and an action without a check, both actionable */
+export const ActionCardsInTraditionalChinese = {
+  render: (args) => (
+    <MobileStoryShell
+      locale="zh-Hant"
+      responses={{
+        [`GET /v1/analyses/${storyRunId}`]: actionRun('pending'),
+        [`GET /v1/records/${storyRecord.id}`]: storyRecord,
+      }}>
+      <AnalysisContainer {...args} />
+    </MobileStoryShell>
+  ),
+  play: async ({ canvasElement }) => {
+    await findStoryText(canvasElement, '補拍底部全貌');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="analysis-action-status-pending-${photoActionId}"]`,
+    );
+    await findStoryText(canvasElement, '待補資料');
+    await findStoryText(canvasElement, '用來檢查：實查 00000000');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="analysis-action-capture-${photoActionId}"][aria-label="補拍照片"]`,
+    );
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="analysis-action-describe-${describeActionId}"][aria-label="補充描述"]`,
+    );
+    (
+      await findStoryElement(
+        canvasElement,
+        `[data-testid="analysis-action-capture-${photoActionId}"]`,
+      )
+    ).click();
+  },
+} satisfies Story;
+
+/** PT-13: reopening keeps supplied actions supplied, without capture controls */
+export const SuppliedActionsReopened = {
+  render: (args) => (
+    <MobileStoryShell
+      responses={{
+        [`GET /v1/analyses/${storyRunId}`]: actionRun('supplied'),
+        [`GET /v1/records/${storyRecord.id}`]: storyRecord,
+      }}>
+      <AnalysisContainer {...args} />
+    </MobileStoryShell>
+  ),
+  play: async ({ canvasElement }) => {
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="analysis-action-status-supplied-${photoActionId}"]`,
+    );
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="analysis-action-status-supplied-${describeActionId}"]`,
+    );
+    await expect(
+      canvasElement.querySelector(
+        `[data-testid="analysis-action-capture-${photoActionId}"]`,
+      ),
+    ).toBeNull();
+  },
 } satisfies Story;

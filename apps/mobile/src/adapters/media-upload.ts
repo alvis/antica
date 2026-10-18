@@ -37,6 +37,8 @@ export interface LocalMedia {
   assetId: string | null;
   checkLinked?: boolean;
   checkRequestKey?: string;
+  /** evidence anchor created for this photo when it answers a check or an analysis action */
+  anchorId?: string;
 }
 
 /** record or source intake receiving an uploaded file */

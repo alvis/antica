@@ -42,3 +42,11 @@ appId: ${APP_ID}
     id: login-send-code
 - assertVisible:
     id: login-code
+# A02: the code step names the number, masked, and reports the WhatsApp delivery.
+- extendedWaitUntil:
+    visible:
+      id: login-delivery-sent
+    timeout: 30000
+- assertVisible:
+    id: login-masked-phone
+    text: '.*\+\d+ .*•.*'

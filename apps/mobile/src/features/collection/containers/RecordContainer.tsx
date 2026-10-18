@@ -9,7 +9,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Linking, Text, View } from 'react-native';
 
 import {
-  analysisAcceptedSchema,
   cursorPageSchema,
   evidenceCreationSchema,
   mediaDetailSchema,
@@ -17,7 +16,6 @@ import {
   recordDetailSchema,
   recordPatchSchema,
   referencePageSchema,
-  requestAnalysisSchema,
 } from '@antica/contracts';
 import { ActionButton, TextField, styles } from '@antica/ui';
 
@@ -27,8 +25,13 @@ import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
+import { analysisRunQuery } from '../../analysis/api/analysis-run-query';
+import { useStartAnalysis } from '../../analysis/hooks/useStartAnalysis';
+
 import { recordQuery } from '../api/record-query';
+import { RecordAnalysisStatus } from '../components/RecordAnalysisStatus';
 import { RecordMessagesEntryContainer } from '../messages/containers/RecordMessagesEntryContainer';
+import { recordAnalysisState } from '../record-analysis-state';
 
 import type { FC } from 'react';
 
@@ -60,6 +63,12 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const record = useQuery(recordQuery(api, recordId));
+  const latestRunId = record.data?.latestRunId;
+  const latestRun = useQuery({
+    ...analysisRunQuery(api, latestRunId ?? ''),
+    enabled: Boolean(latestRunId),
+  });
+  const analysis = useStartAnalysis(api, t);
   const observations = useQuery({
     queryKey: ['observations', recordId],
     queryFn: async ({ signal }) =>
@@ -112,29 +121,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   useEffect(() => {
     scrollToReferencedObservation();
   }, [scrollToReferencedObservation]);
-
-  const analyze = async (): Promise<void> => {
-    if (!record.data || busy) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const request = requestAnalysisSchema.parse({
-        expectedRecordRevision: record.data.recordRevision,
-      });
-      const accepted = await api.post(
-        `/v1/records/${recordId}/analyses`,
-        analysisAcceptedSchema,
-        { body: request, idempotencyKey: randomUUID() },
-      );
-      router.push(`/analysis/${accepted.runId}`);
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const saveEdit = async (): Promise<void> => {
     if (!record.data || busy) {
@@ -225,13 +211,24 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
         {record.data && (
           <>
             <View style={styles.card}>
-              <Text style={styles.body}>
-                {record.data.analysisFreshness === 'outdated'
-                  ? t('newEvidence')
-                  : record.data.analysisFreshness === 'unanalyzed'
-                    ? t('notAnalyzed')
-                    : t('saved')}
-              </Text>
+              <RecordAnalysisStatus
+                state={recordAnalysisState(
+                  record.data,
+                  latestRun.data?.status,
+                  latestRun.isError,
+                )}
+                canAnalyse={record.data.mediaIds.length > 0}
+                starting={analysis.starting}
+                onAnalyse={() => void analysis.start(record.data)}
+                onRetryRun={() => void latestRun.refetch()}
+                retryingRun={latestRun.isFetching}
+                error={analysis.error}
+                onOpenRun={
+                  record.data.latestRunId
+                    ? () => router.push(`/analysis/${record.data.latestRunId}`)
+                    : undefined
+                }
+              />
               <Text style={styles.secondary}>
                 {t('locationValue', {
                   location: record.data.location.detail || t('unknown'),
@@ -240,22 +237,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
               <Text style={styles.body}>
                 {record.data.description || t('empty')}
               </Text>
-              <ActionButton
-                label={
-                  record.data.latestRunId ? t('analyzeAgain') : t('analyze')
-                }
-                onPress={() => void analyze()}
-                disabled={busy || record.data.mediaIds.length === 0}
-              />
-              {record.data.latestRunId && (
-                <ActionButton
-                  label={t('results')}
-                  onPress={() =>
-                    router.push(`/analysis/${record.data.latestRunId}`)
-                  }
-                  secondary
-                />
-              )}
               <ActionButton
                 label={t('addEvidence')}
                 onPress={() => router.push(`/capture?recordId=${recordId}`)}

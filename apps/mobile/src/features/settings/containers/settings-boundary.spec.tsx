@@ -31,7 +31,7 @@ const signedOut = {
   authenticated: false,
   loading: false,
   phone: null,
-  refresh: async () => undefined,
+  refresh: async () => true,
   signOut: async () => undefined,
   expire: () => undefined,
 } satisfies ReturnType<typeof useAuth>;

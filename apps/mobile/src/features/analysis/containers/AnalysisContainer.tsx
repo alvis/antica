@@ -11,14 +11,13 @@ import { Linking, Pressable, Text, View } from 'react-native';
 import {
   actionResolutionRequestSchema,
   actionResolutionResultSchema,
-  analysisRunDetailSchema,
   applyAnalysisChangesSchema,
   checkCreateSchema,
   mediaDetailSchema,
   recordCheckSchema,
   recordDetailSchema,
 } from '@antica/contracts';
-import { ActionButton, TextField, colors, styles } from '@antica/ui';
+import { ActionButton, colors, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
@@ -26,13 +25,16 @@ import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
+import { actionCaptureHref } from '../action-capture-href';
+import { analysisRunQuery } from '../api/analysis-run-query';
+import { ActionCard } from '../components/ActionCard';
 import { useProposalFocus } from '../hooks/useProposalFocus';
 
 import type { FC } from 'react';
 
 import type { LayoutChangeEvent } from 'react-native';
 
-import type { Finding, ProposedChange } from '@antica/contracts';
+import type { ActionState, Finding, ProposedChange } from '@antica/contracts';
 
 import type { MessageKey } from '../../../i18n/messages';
 
@@ -64,15 +66,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
   const [error, setError] = useState('');
   const [applied, setApplied] = useState(false);
   const checkRequestKeys = useRef(new Map<string, string>());
-  const run = useQuery({
-    queryKey: ['analysis', runId],
-    queryFn: async ({ signal }) =>
-      api.get(`/v1/analyses/${runId}`, analysisRunDetailSchema, signal),
-    refetchInterval: (query) =>
-      ['queued', 'running'].includes(query.state.data?.status ?? '')
-        ? 3000
-        : false,
-  });
+  const run = useQuery(analysisRunQuery(api, runId));
   const record = useQuery({
     queryKey: ['record', run.data?.recordId],
     enabled: Boolean(run.data?.recordId),
@@ -166,12 +160,13 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
 
   const resolveAction = async (
     actionId: string,
-    revision: number,
+    state: ActionState,
     status: 'supplied' | 'dismissed',
   ): Promise<void> => {
     if (!record.data || busy) {
       return;
     }
+    const revision = state.revision;
     const note =
       (actionText as Partial<Record<string, string>>)[actionId]?.trim() ?? '';
     if (!note) {
@@ -376,63 +371,42 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                     const state = run.data.result.actionStates.find(
                       (item) => item.actionId === action.id,
                     );
+                    const target = {
+                      recordId: run.data.recordId,
+                      runId,
+                      action,
+                    };
 
                     return (
-                      <View key={action.id} style={styles.card}>
-                        <Text style={styles.body}>{action.instruction}</Text>
-                        <Text style={styles.secondary}>{action.reason}</Text>
-                        <Text style={styles.secondary}>
-                          {localizeStatus(state?.status ?? 'pending', t)}
-                        </Text>
-                        {action.checkId && (
-                          <ActionButton
-                            label={t('checks')}
-                            onPress={() =>
-                              router.push(`/checks/${action.checkId}`)
-                            }
-                            secondary
-                          />
-                        )}
-                        {state?.status === 'pending' && (
-                          <>
-                            <TextField
-                              label={t('reason')}
-                              value={actionText[action.id] ?? ''}
-                              onChangeText={(value) =>
-                                setActionText((current) => ({
-                                  ...current,
-                                  [action.id]: value,
-                                }))
-                              }
-                              multiline
-                            />
-                            <ActionButton
-                              label={t('supplied')}
-                              onPress={() =>
-                                void resolveAction(
-                                  action.id,
-                                  state.revision,
-                                  'supplied',
-                                )
-                              }
-                              disabled={busy || !record.data}
-                              secondary
-                            />
-                            <ActionButton
-                              label={t('dismiss')}
-                              onPress={() =>
-                                void resolveAction(
-                                  action.id,
-                                  state.revision,
-                                  'dismissed',
-                                )
-                              }
-                              disabled={busy || !record.data}
-                              secondary
-                            />
-                          </>
-                        )}
-                      </View>
+                      <ActionCard
+                        key={action.id}
+                        action={action}
+                        status={state?.status ?? 'pending'}
+                        note={actionText[action.id] ?? ''}
+                        onNoteChange={(value) =>
+                          setActionText((current) => ({
+                            ...current,
+                            [action.id]: value,
+                          }))
+                        }
+                        busy={busy}
+                        canResolve={Boolean(record.data)}
+                        onCapture={() =>
+                          router.push(actionCaptureHref(target, 'photo'))
+                        }
+                        onDescribe={() =>
+                          router.push(actionCaptureHref(target, 'describe'))
+                        }
+                        onOpenCheck={() =>
+                          router.push(`/checks/${action.checkId}`)
+                        }
+                        onResolve={
+                          state
+                            ? (status) =>
+                                void resolveAction(action.id, state, status)
+                            : undefined
+                        }
+                      />
                     );
                   })}
                 </View>
