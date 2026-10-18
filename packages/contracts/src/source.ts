@@ -14,6 +14,8 @@ import {
   cursorPageSchema,
 } from './shared.js';
 
+export * from './source-structured.js';
+
 export const sourceContributorSchema = z.strictObject({
   nameAsPrinted: z.string(),
   role: z.enum(['author', 'editor', 'reviewer', 'institution']),

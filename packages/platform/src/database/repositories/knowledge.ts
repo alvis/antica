@@ -5,10 +5,13 @@ import { knowledgeDetailSchema } from '@antica/contracts';
 import { Prisma } from '../generated/client.js';
 import { jsonValue } from '../json.js';
 
+import { createKnowledgeV2Repository } from './knowledge/v2.js';
 import { readCitation, readReferenceImage } from './sources.js';
 
 import type { KnowledgeRepository } from '@antica/application/ports';
 import type {
+  KnowledgeReadV2,
+  KnowledgeEntryDetailV2,
   CursorPage,
   KnowledgeDetail,
   KnowledgeQuery,
@@ -108,7 +111,7 @@ async function saveRevision(
       entryId: entry.id,
       revision: entry.revision,
       status: entry.status,
-      savedBy: entry.savedBy,
+      savedBy: entry.status === 'saved' ? 'collector' : null,
       titleZhHant: entry.content.titleZhHant,
       summaryZhHant: entry.content.summary.textZhHant,
       content: jsonValue(entry.content),
@@ -150,14 +153,15 @@ async function saveRevision(
  * @param query
  */
 function matchesFilters(
-  content: KnowledgeContent,
+  content: KnowledgeContent | KnowledgeEntryDetailV2['content'],
   query: KnowledgeQuery,
 ): boolean {
   const filters = query.filters;
   if (!filters) {
     return true;
   }
-  const values = content.applicability.flatMap((item) => [
+  const applicability = 'applicability' in content ? content.applicability : [];
+  const values = applicability.flatMap((item) => [
     ...item.objectTypeIds.map((id) => ['object', id] as const),
     ...item.materialIds.map((id) => ['material', id] as const),
     ...item.periodIds.map((id) => ['period', id] as const),
@@ -176,15 +180,17 @@ function matchesFilters(
   ) {
     return false;
   }
+  const citations: ReadonlyArray<{ locator: { sourceId: string } }> =
+    content.citations;
   if (
     filters.sourceIds?.length &&
-    !content.citations.some((citation) =>
+    !citations.some((citation) =>
       filters.sourceIds!.includes(citation.locator.sourceId),
     )
   ) {
     return false;
   }
-  if (filters.includeUnknown === false && content.applicability.length === 0) {
+  if (filters.includeUnknown === false && applicability.length === 0) {
     return false;
   }
 
@@ -200,7 +206,13 @@ function matchesFilters(
 export function createKnowledgeRepository(
   tx: Transaction,
   ownerId: string,
-): KnowledgeRepository {
+): KnowledgeRepository &
+  Omit<ReturnType<typeof createKnowledgeV2Repository>, 'getV2'> & {
+    getV2(
+      id: string,
+      read?: KnowledgeReadV2,
+    ): Promise<KnowledgeDetail | KnowledgeEntryDetailV2 | null>;
+  } {
   async function getMethod(id: string): Promise<InspectionMethod | null> {
     const row = await tx.inspectionMethods.findFirst({
       where: { id, knowledgeEntries: { ownerId } },
@@ -359,6 +371,36 @@ export function createKnowledgeRepository(
   }
 
   return {
+    ...createKnowledgeV2Repository(tx, ownerId),
+    /**
+     * reads legacy and v2 envelopes without changing the requested revision
+     * @param id knowledge identity scoped to the owner
+     * @param read requested view and revision
+     * @returns exact detail or null when inaccessible
+     */
+    async getV2(id: string, read: KnowledgeReadV2 = {}) {
+      const result = await createKnowledgeV2Repository(tx, ownerId).getV2(
+        id,
+        read,
+      );
+      if (result) {
+        return result;
+      }
+      const base = await tx.knowledgeEntries.findFirst({
+        where: { id, ownerId },
+      });
+      if (!base) {
+        return null;
+      }
+      const revision =
+        read.view === 'saved'
+          ? base.latestSavedRevision
+          : read.view === 'revision'
+            ? read.revision
+            : base.currentRevision;
+
+      return revision === null ? null : get(id, revision);
+    },
     /** */
     async allocateCode() {
       const result = await tx.$queryRaw<Array<{ value: bigint }>>(Prisma.sql`
@@ -497,6 +539,12 @@ export function createKnowledgeRepository(
         },
       });
       await saveRevision(tx, entry);
+      if (entry.status === 'saved') {
+        await tx.knowledgeEntries.updateMany({
+          where: { id: entry.id, ownerId },
+          data: { latestSavedRevision: entry.revision },
+        });
+      }
     },
     /**
      * @param entry
@@ -504,7 +552,13 @@ export function createKnowledgeRepository(
      */
     async addRevision(entry, expectedRevision) {
       const [changed] = await tx.knowledgeEntries.updateManyAndReturn({
-        data: { currentRevision: entry.revision, updatedAt: entry.updatedAt },
+        data: {
+          currentRevision: entry.revision,
+          updatedAt: entry.updatedAt,
+          ...(entry.status === 'saved'
+            ? { latestSavedRevision: entry.revision }
+            : {}),
+        },
         where: {
           AND: [
             { id: entry.id },

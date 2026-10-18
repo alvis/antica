@@ -1,3 +1,6 @@
+export * from './knowledge-v2.js';
+export * from './knowledge-v2-operations.js';
+export * from './source-structured.js';
 export {
   MAX_PAGE_SIZE,
   cursorPageSchema,
