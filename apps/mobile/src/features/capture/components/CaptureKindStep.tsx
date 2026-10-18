@@ -23,11 +23,13 @@ export const CaptureKindStep: FC<CaptureKindStepProps> = ({
         {t('single')} / {t('set')}
       </Text>
       <ActionButton
+        testID="capture-kind-single"
         label={t('single')}
         onPress={() => onSelect('single')}
         disabled={busy}
       />
       <ActionButton
+        testID="capture-kind-set"
         label={t('set')}
         onPress={() => onSelect('set')}
         disabled={busy}

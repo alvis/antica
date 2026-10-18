@@ -31,7 +31,7 @@ export const RecordMessagesEntry: FC<RecordMessagesEntryProps> = ({
     <Pressable
       testID="record-messages-entry"
       accessibilityRole="button"
-      accessibilityLabel={`${t('openMessages')}: ${summary}`}
+      accessibilityLabel={t('openMessagesSummary', { summary })}
       onPress={onOpen}
       style={[styles.card, { minHeight: 48 }]}>
       <Text style={styles.heading}>{t('messages')}</Text>

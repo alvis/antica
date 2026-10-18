@@ -45,6 +45,7 @@ const config = {
       },
     ],
     ['expo-secure-store', { faceIDPermission: false }],
+    'expo-localization',
   ],
 } satisfies ExpoConfig;
 

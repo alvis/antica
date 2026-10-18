@@ -51,7 +51,11 @@ export const CaptureComponentsStep: FC<CaptureComponentsStepProps> = ({
           </View>
         ))}
       <ActionButton label={t('photo')} onPress={onPhoto} secondary />
-      <ActionButton label={t('continue')} onPress={onContinue} />
+      <ActionButton
+        testID="capture-components-continue"
+        label={t('continue')}
+        onPress={onContinue}
+      />
     </View>
   );
 };

@@ -95,6 +95,7 @@ export const LoginContainer: FC = () => {
           <>
             <Text style={styles.heading}>{t('welcome')}</Text>
             <ActionButton
+              testID="login-start"
               label={t('whatsappLogin')}
               onPress={() => setStage('phone')}
             />
@@ -102,14 +103,18 @@ export const LoginContainer: FC = () => {
         )}
         {stage === 'phone' && (
           <>
-            <TextField
-              label={t('authorizedPhone')}
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              autoComplete="tel"
-            />
+            {/* the shared field takes no testID, so automation targets its wrapper */}
+            <View testID="login-phone">
+              <TextField
+                label={t('authorizedPhone')}
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                autoComplete="tel"
+              />
+            </View>
             <ActionButton
+              testID="login-send-code"
               label={t('continue')}
               onPress={() => void send()}
               disabled={busy || !phone.trim()}
@@ -119,29 +124,34 @@ export const LoginContainer: FC = () => {
         {(stage === 'code' || stage === 'expired') && (
           <>
             <Text style={styles.body}>
-              {t('sentTo')} {phone.trim().replace(/.(?=.{4})/g, '•')}
+              {t('sentToPhone', {
+                phone: phone.trim().replace(/.(?=.{4})/g, '•'),
+              })}
             </Text>
             {stage === 'expired' && (
               <Text accessibilityRole="alert" style={styles.error}>
                 {t('expired')}
               </Text>
             )}
-            <TextField
-              label={t('code')}
-              value={code}
-              onChangeText={(value) =>
-                setCode(value.replace(/\D/g, '').slice(0, 6))
-              }
-              keyboardType="number-pad"
-              autoComplete="one-time-code"
-            />
+            <View testID="login-code">
+              <TextField
+                label={t('code')}
+                value={code}
+                onChangeText={(value) =>
+                  setCode(value.replace(/\D/g, '').slice(0, 6))
+                }
+                keyboardType="number-pad"
+                autoComplete="one-time-code"
+              />
+            </View>
             <ActionButton
+              testID="login-verify"
               label={busy ? t('verifying') : t('verify')}
               onPress={() => void verify()}
               disabled={busy || code.length !== 6 || stage === 'expired'}
             />
             <ActionButton
-              label={seconds ? `${t('resend')} (${seconds}s)` : t('resend')}
+              label={seconds ? t('resendCountdown', { seconds }) : t('resend')}
               onPress={() => void send()}
               disabled={busy || seconds > 0}
               secondary

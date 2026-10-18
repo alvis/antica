@@ -233,7 +233,9 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                     : t('saved')}
               </Text>
               <Text style={styles.secondary}>
-                {t('location')}: {record.data.location.detail || t('unknown')}
+                {t('locationValue', {
+                  location: record.data.location.detail || t('unknown'),
+                })}
               </Text>
               <Text style={styles.body}>
                 {record.data.description || t('empty')}
@@ -285,7 +287,9 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                         accessibilityLabel={detail.asset.originalFileName}
                       />
                     )}
-                    <Text style={styles.secondary}>
+                    <Text
+                      testID={`record-media-${record.data.mediaIds[index]}-${detail ? detail.asset.state : 'loading'}`}
+                      style={styles.secondary}>
                       {detail?.asset.originalFileName ?? t('loading')} ·{' '}
                       {detail
                         ? localizeStatus(detail.asset.state, t)
@@ -364,7 +368,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                     accessibilityRole={referenced ? 'text' : undefined}
                     accessibilityLabel={
                       referenced
-                        ? `${t('referencedObservation')}: ${item.text}`
+                        ? t('referencedObservationText', { text: item.text })
                         : undefined
                     }
                     accessibilityState={
@@ -407,7 +411,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
               {record.data.checkIds.map((id) => (
                 <ActionButton
                   key={id}
-                  label={`${t('checks')} ${id.slice(0, 8)}`}
+                  label={t('checkWithId', { id: id.slice(0, 8) })}
                   onPress={() => router.push(`/checks/${id}`)}
                   secondary
                 />

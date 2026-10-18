@@ -177,6 +177,7 @@ export const CollectionContainer: FC = () => {
             }}>
             <View style={styles.row}>
               <ActionButton
+                testID="collection-add-item"
                 label={t('addItem')}
                 onPress={() => router.push('/capture')}
               />
@@ -349,6 +350,7 @@ export const CollectionContainer: FC = () => {
                   )}
                   {!hasRecordFilters && (
                     <ActionButton
+                      testID="collection-empty-add-item"
                       label={t('addItem')}
                       onPress={() => router.push('/capture')}
                     />
@@ -385,7 +387,7 @@ export const CollectionContainer: FC = () => {
             </Text>
             {item.pendingCheckCount > 0 && (
               <Text style={styles.secondary}>
-                {item.pendingCheckCount} {t('tasks')}
+                {t('pendingTaskCount', { count: item.pendingCheckCount })}
               </Text>
             )}
           </Pressable>

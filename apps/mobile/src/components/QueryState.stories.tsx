@@ -13,6 +13,8 @@ import type { Meta, StoryObj } from '@storybook/react-native-web-vite';
 
 import type { FC } from 'react';
 
+import type { Locale } from '../i18n/resources';
+
 import type { QueryStateProps } from './QueryState';
 
 /** renderer operations for the canonical query-state scenarios */
@@ -350,6 +352,12 @@ export function createDomQueryStateInteractions(
  * exposes locale changes through the real provider's public operation
  * @returns language controls and the observed active language
  */
+const languageLabels = {
+  'en': 'Language: English',
+  'zh-Hant': '語言：繁體中文',
+  'zh-Hans': '语言：简体中文',
+} as const satisfies Record<Locale, string>;
+
 const LocaleControls: FC = () => {
   const { locale, setLocale } = useLocale();
 
@@ -357,7 +365,7 @@ const LocaleControls: FC = () => {
     <View>
       <Button title="English" onPress={async () => setLocale('en')} />
       <Button title="繁體中文" onPress={async () => setLocale('zh-Hant')} />
-      <Text>{locale === 'en' ? 'Language: English' : '語言：繁體中文'}</Text>
+      <Text>{languageLabels[locale]}</Text>
     </View>
   );
 };

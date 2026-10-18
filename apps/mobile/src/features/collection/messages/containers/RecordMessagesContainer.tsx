@@ -105,7 +105,9 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
         item.id === messageId && focusedRowStyle,
       ]}>
       {item.id === messageId && (
-        <Text style={styles.label}>{t('openedFromHistory')}</Text>
+        <Text testID="record-messages-opened-from-history" style={styles.label}>
+          {t('openedFromHistory')}
+        </Text>
       )}
       <MessageBubble
         messageId={item.id}

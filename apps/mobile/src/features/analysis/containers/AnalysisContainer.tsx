@@ -34,12 +34,21 @@ import type { LayoutChangeEvent } from 'react-native';
 
 import type { Finding, ProposedChange } from '@antica/contracts';
 
+import type { MessageKey } from '../../../i18n/messages';
+
 export type AnalysisContainerProps = {
   runId: string;
   /** proposal to scroll to and mark, when opened from a record's change history */
   proposalId?: string;
 };
 type ReferenceKind = 'evidence' | 'observation' | 'citation';
+
+/** button label of each kind of finding reference, followed by a short ID */
+const referenceLabelKeys = {
+  evidence: 'evidenceWithId',
+  observation: 'observationWithId',
+  citation: 'citationWithId',
+} as const satisfies Record<ReferenceKind, MessageKey>;
 
 export const AnalysisContainer: FC<AnalysisContainerProps> = ({
   runId,
@@ -244,7 +253,10 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
       scrollRef={focus.scrollRef}
       subtitle={
         run.data
-          ? `${localizeStatus(run.data.status, t)} · ${t('version')} ${run.data.snapshot.analysisInputVersion}`
+          ? t('runStatusVersion', {
+              status: localizeStatus(run.data.status, t),
+              version: run.data.snapshot.analysisInputVersion,
+            })
           : undefined
       }>
       <QueryState
@@ -459,7 +471,9 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                     />
                   ))}
                   <ActionButton
-                    label={`${t('applySelected')} (${selected.length})`}
+                    label={t('applySelectedCount', {
+                      count: selected.length,
+                    })}
                     onPress={() => void apply()}
                     disabled={
                       busy ||
@@ -540,7 +554,7 @@ const FindingGroup: FC<FindingGroupProps> = ({
           ].map(({ id, kind }) => (
             <ActionButton
               key={`${kind}:${id}`}
-              label={`${t(kind)} ${id.slice(0, 8)}`}
+              label={t(referenceLabelKeys[kind], { id: id.slice(0, 8) })}
               onPress={() => onReference(kind, id)}
               secondary
             />
@@ -593,10 +607,10 @@ const ProposalRow: FC<ProposalRowProps> = ({
         {localizeStatus(status, t)}
       </Text>
       <Text style={styles.body}>
-        {t('previous')}: {JSON.stringify(change.before)}
+        {t('previousValue', { value: JSON.stringify(change.before) })}
       </Text>
       <Text style={styles.body}>
-        {t('proposed')}: {JSON.stringify(change.proposed)}
+        {t('proposedValue', { value: JSON.stringify(change.proposed) })}
       </Text>
       {evidence.map((value, index) => (
         <Text key={index} style={styles.secondary}>

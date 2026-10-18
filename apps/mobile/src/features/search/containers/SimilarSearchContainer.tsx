@@ -353,7 +353,7 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
             {match.sourceTitle ?? t('myCollection')}
           </Text>
           <Text style={styles.secondary}>
-            {t('rank')} {match.rank} ·{' '}
+            {t('rankValue', { rank: match.rank })} ·{' '}
             {match.contributorNames.join(', ') || t('unknownAuthor')}
           </Text>
           <ActionButton

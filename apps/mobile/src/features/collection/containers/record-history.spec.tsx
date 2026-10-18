@@ -112,7 +112,9 @@ it('should show each change with its field, values, decision, time, and source',
   expect(entryText(describedByVoice)).toContain(longDescription);
   expect(entryText(describedByVoice)).toContain('Edited by voice or message');
   expect(
-    screen.queryByTestId(`record-history-entry-${describedByVoice.id}-source`),
+    screen.queryByTestId(
+      `record-history-entry-${describedByVoice.id}-description-source`,
+    ),
   ).toBeNull();
   expect(entryText(dated)).toContain(
     'Qing · unconfirmed | After | Kangxi (1662–1722) · collector’s claim',
@@ -133,7 +135,7 @@ it('should show each change with its field, values, decision, time, and source',
     ),
   ).toBeTruthy();
   expect(
-    screen.getByTestId(`record-history-entry-${renamed.id}-source`),
+    screen.getByTestId(`record-history-entry-${renamed.id}-name-source`),
   ).toHaveAccessibleName(`Open the suggestion: Name, ${time}`);
 });
 
@@ -141,7 +143,7 @@ it('should open the analysis proposal behind a change', async () => {
   const view = await renderHistory(async () => page([renamed]));
 
   await fireEvent.press(
-    await screen.findByTestId(`record-history-entry-${renamed.id}-source`),
+    await screen.findByTestId(`record-history-entry-${renamed.id}-name-source`),
   );
 
   expect(view.router.push).toHaveBeenCalledWith(
@@ -156,7 +158,7 @@ it('should open the message that requested an edit, and offer nothing for a voic
 
   await fireEvent.press(
     await screen.findByTestId(
-      `record-history-entry-${taggedByMessage.id}-source`,
+      `record-history-entry-${taggedByMessage.id}-tags-source`,
     ),
   );
 
@@ -165,7 +167,9 @@ it('should open the message that requested an edit, and offer nothing for a voic
   );
   expect(entryText(taggedByMessage)).toContain('Edited by voice or message');
   expect(
-    screen.queryByTestId(`record-history-entry-${describedByVoice.id}-source`),
+    screen.queryByTestId(
+      `record-history-entry-${describedByVoice.id}-description-source`,
+    ),
   ).toBeNull();
 });
 

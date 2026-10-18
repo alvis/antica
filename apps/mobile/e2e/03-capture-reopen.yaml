@@ -1,33 +1,44 @@
 appId: ${APP_ID}
 ---
 - runFlow: support/dismiss-dev-logbox.yaml
-- tapOn: Add item
-- tapOn: Single item
-- tapOn: Import file
+- tapOn:
+    id: collection-add-item
+- tapOn:
+    id: capture-kind-single
+- tapOn:
+    id: capture-media-import
+# The system photo picker labels its controls in the emulator's system language.
 - tapOn: ${MEDIA_PICKER_ITEM}
 - tapOn: Done
-- tapOn: Continue
-- tapOn: Continue
-- tapOn: Original words
+- tapOn:
+    id: capture-media-continue
+- tapOn:
+    id: capture-components-continue
+- tapOn:
+    id: capture-voice-original-words
 - inputText: ${ORIGINAL_WORDS}
-- tapOn: Confirm original words
-- assertVisible: Original words confirmed
-- tapOn: Continue
-- tapOn: Name
+- tapOn:
+    id: capture-voice-confirm-words
+- assertVisible:
+    id: capture-voice-words-confirmed
+- tapOn:
+    id: capture-voice-continue
+- tapOn:
+    id: capture-details-name
 - inputText: ${RECORD_NAME}
 # Submit the field to close the keyboard, which otherwise covers Continue.
 - pressKey: Enter
 - waitForAnimationToEnd
-- tapOn: Continue
-- runFlow: support/dismiss-dev-logbox.yaml
-# The step heading also reads "Save"; index 1 is the button until GAP01 adds testIDs.
 - tapOn:
-    text: Save
-    index: 1
+    id: capture-details-continue
+- runFlow: support/dismiss-dev-logbox.yaml
+- tapOn:
+    id: capture-save
 - assertVisible: ${RECORD_NAME}
 - stopApp
 - launchApp
 # A cold start on a loaded host can take well over a minute in dev builds.
+# Collection rows are labelled "<item code>, <name>", which holds no interface text.
 - extendedWaitUntil:
     visible: '.*, ${RECORD_NAME}'
     timeout: 120000

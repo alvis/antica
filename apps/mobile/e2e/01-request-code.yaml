@@ -1,13 +1,44 @@
+# Starts signed out and saves the interface language for the whole run before
+# requesting a code. Development builds take the language from
+# `antica://?devLocale=<locale>` (DevLocaleLink); later flows relaunch without
+# clearing state, so they keep it. Controls are selected by testID, so the
+# flows read the same in every language; the locale checks below prove which
+# language is on screen.
 appId: ${APP_ID}
 ---
 - launchApp:
     clearState: true
 # A cold start on a loaded host can take well over a minute in dev builds.
 - extendedWaitUntil:
-    visible: Sign in with WhatsApp
+    visible:
+      id: login-start
     timeout: 120000
-- tapOn: Sign in with WhatsApp
-- tapOn: Authorized phone number
+- openLink: antica://?devLocale=${APP_LOCALE}
+- extendedWaitUntil:
+    visible:
+      id: login-start
+    timeout: 60000
+- runFlow:
+    when:
+      true: ${APP_LOCALE == 'en'}
+    commands:
+      - assertVisible: Sign in with WhatsApp
+- runFlow:
+    when:
+      true: ${APP_LOCALE == 'zh-Hant'}
+    commands:
+      - assertVisible: 使用 WhatsApp 登入
+- runFlow:
+    when:
+      true: ${APP_LOCALE == 'zh-Hans'}
+    commands:
+      - assertVisible: 使用 WhatsApp 登录
+- tapOn:
+    id: login-start
+- tapOn:
+    id: login-phone
 - inputText: ${PHONE_NUMBER}
-- tapOn: Continue
-- assertVisible: Six-digit code
+- tapOn:
+    id: login-send-code
+- assertVisible:
+    id: login-code

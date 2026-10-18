@@ -5,11 +5,13 @@ import { colors, styles } from '@antica/ui';
 import { useLocale } from '../../../../i18n/LocaleProvider';
 import { localizeProposalField } from '../../../../i18n/messages';
 
+import { proposalFieldTestId } from '../../proposal-field-test-id';
+
 import type { FC } from 'react';
 
 import type { ProposedChange } from '@antica/contracts';
 
-import type { MessageKey } from '../../../../i18n/messages';
+import type { Translate } from '../../../../i18n/messages';
 
 import type { ProposalDecision } from '../hooks/useEditCardStates';
 
@@ -34,7 +36,7 @@ export type EditCardRowProps = {
  */
 export function formatProposalValue(
   value: ProposedChange['before'],
-  t: (key: MessageKey) => string,
+  t: Translate,
 ): string {
   const text = Array.isArray(value)
     ? value.join(', ')
@@ -69,9 +71,21 @@ export const EditCardRow: FC<EditCardRowProps> = ({
 }) => {
   const { t } = useLocale();
   const field = localizeProposalField(change.field, t);
+  // automation identifiers name the field so flows can pick a row in any language
+  const fieldId = proposalFieldTestId(change.field);
   const choices = [
-    { decision: 'confirmed', label: t('confirmChange') },
-    { decision: 'rejected', label: t('rejectChange') },
+    {
+      decision: 'confirmed',
+      id: 'confirm',
+      label: t('confirmChange'),
+      accessibilityLabel: t('confirmField', { field }),
+    },
+    {
+      decision: 'rejected',
+      id: 'reject',
+      label: t('rejectChange'),
+      accessibilityLabel: t('rejectField', { field }),
+    },
   ] as const;
 
   return (
@@ -102,7 +116,7 @@ export const EditCardRow: FC<EditCardRowProps> = ({
       </View>
       {outcome === 'applied' ? (
         <Text
-          testID={`record-message-card-applied-${change.id}`}
+          testID={`record-message-card-applied-${fieldId}-${change.id}`}
           // the check mark is decoration; screen readers hear only the status
           accessibilityLabel={t('changeApplied')}
           style={[styles.label, { color: colors.jade }]}>
@@ -110,7 +124,7 @@ export const EditCardRow: FC<EditCardRowProps> = ({
         </Text>
       ) : outcome === 'skipped' ? (
         <Text
-          testID={`record-message-card-skipped-${change.id}`}
+          testID={`record-message-card-skipped-${fieldId}-${change.id}`}
           // the cross is decoration; screen readers hear only the status
           accessibilityLabel={t('changeSkipped')}
           style={[styles.label, { color: colors.muted }]}>
@@ -124,9 +138,9 @@ export const EditCardRow: FC<EditCardRowProps> = ({
             return (
               <Pressable
                 key={choice.decision}
-                testID={`record-message-card-${choice.decision === 'confirmed' ? 'confirm' : 'reject'}-${change.id}`}
+                testID={`record-message-card-${choice.id}-${fieldId}-${change.id}`}
                 accessibilityRole="radio"
-                accessibilityLabel={`${choice.label}: ${field}`}
+                accessibilityLabel={choice.accessibilityLabel}
                 accessibilityState={{ checked, disabled: !onDecide }}
                 disabled={!onDecide}
                 onPress={() => onDecide?.(choice.decision)}

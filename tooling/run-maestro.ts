@@ -5,10 +5,18 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { SpawnSyncReturns } from 'node:child_process';
 
+/** interface languages a journey run can select through the app's development link */
+export const journeyLocales = ['en', 'zh-Hant', 'zh-Hans'] as const;
+
+/** interface language the journeys run in */
+export type JourneyLocale = (typeof journeyLocales)[number];
+
 /** settings for one local Maestro journey run against the emulator */
 export interface MaestroRun {
   /** Android application ID installed on the emulator */
   appId: string;
+  /** interface language flow 01 saves before signing in; later flows keep it */
+  locale: JourneyLocale;
   /** collector phone number allowed by the development API */
   phoneNumber: string;
   /** development OTP inbox written by the local API */
@@ -52,6 +60,24 @@ const secondsTimestampLength = 19;
 
 /** attempts and spacing while waiting for the media scanner to index the sample */
 const galleryIndexPolling = { attempts: 10, intervalMs: 500 } as const;
+
+/**
+ * reads the journey language from the environment, defaulting to English
+ * @param value requested language tag, if any
+ * @returns the supported journey language
+ * @throws {Error} when the value names an unsupported language
+ */
+export function journeyLocale(value: string | undefined): JourneyLocale {
+  const locale = value ?? 'en';
+  const supported = journeyLocales.find((candidate) => candidate === locale);
+  if (!supported) {
+    throw new Error(
+      `Unsupported journey locale ${locale}; use one of ${journeyLocales.join(', ')}.`,
+    );
+  }
+
+  return supported;
+}
 
 /**
  * selects the newest development OTP issued to a phone after a start time
@@ -206,7 +232,7 @@ export function waitForGalleryIndex(
 }
 
 /**
- * runs journeys 01–05: request a code, sign in, import and reopen, camera capture, then record messages
+ * runs journeys 01–05 in one interface language: request a code, sign in, import and reopen, camera capture, then record messages
  * @param run journey settings
  * @param io side effects
  */
@@ -217,6 +243,7 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
   io.run(
     maestroStep(run.deviceId, flow('01-request-code.yaml'), {
       APP_ID: run.appId,
+      APP_LOCALE: run.locale,
       PHONE_NUMBER: run.phoneNumber,
     }),
   );
@@ -251,6 +278,7 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
   io.run(
     maestroStep(run.deviceId, flow('05-record-messages.yaml'), {
       APP_ID: run.appId,
+      APP_LOCALE: run.locale,
       RECORD_NAME: `Camera ${stamp}`,
       NEW_NAME: `青瓷碗 ${stamp}`,
       NEW_PERIOD: '清代',
@@ -315,6 +343,7 @@ if (
     runMaestroJourneys(
       {
         appId: process.env.APP_ID ?? 'app.antica.collector',
+        locale: journeyLocale(process.env.ANTICA_E2E_LOCALE),
         phoneNumber: process.env.ANTICA_COLLECTOR_PHONE ?? '+15550100001',
         otpInboxPath: resolve(
           root,

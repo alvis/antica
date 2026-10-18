@@ -160,7 +160,7 @@ export const SourcePagePreview: FC<SourcePagePreviewProps> = ({
           source={{ uri: previewUri }}
           style={{ width: displayWidth, height: 220 }}
           resizeMode="contain"
-          accessibilityLabel={`${name}, ${t('preparedPreview')}`}
+          accessibilityLabel={t('preparedPreviewOf', { name })}
         />
       )}
       {previewFailed && (

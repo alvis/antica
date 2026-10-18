@@ -106,7 +106,7 @@ export const SourceDetailContainer: FC<SourceDetailContainerProps> = ({
                 detail.data.version.originalAssetIds.map((assetId, index) => (
                   <ActionButton
                     key={assetId}
-                    label={`${t('openOriginalPdf')} ${index + 1}`}
+                    label={t('openOriginalPdfNumber', { number: index + 1 })}
                     onPress={() => void openOriginalPdf(assetId)}
                     secondary
                   />
@@ -120,8 +120,10 @@ export const SourceDetailContainer: FC<SourceDetailContainerProps> = ({
               return (
                 <View key={page.id} style={styles.card}>
                   <Text style={styles.heading}>
-                    {t('pageOrder')} {page.pageIndex + 1} · {t('printedPage')}{' '}
-                    {page.printedPageLabel ?? t('unknown')}
+                    {t('pageOrderValue', {
+                      order: page.pageIndex + 1,
+                      printed: page.printedPageLabel ?? t('unknown'),
+                    })}
                   </Text>
                   {read && (
                     <Image
@@ -138,8 +140,10 @@ export const SourceDetailContainer: FC<SourceDetailContainerProps> = ({
                   </Text>
                   {page.presentation && (
                     <Text style={styles.secondary}>
-                      {t('rotate')}:{' '}
-                      {page.presentation.rotationQuarterTurns * 90}° ·{' '}
+                      {t('rotateValue', {
+                        degrees: page.presentation.rotationQuarterTurns * 90,
+                      })}{' '}
+                      ·{' '}
                       {page.presentation.crop
                         ? t('selectRegion')
                         : t('fullImage')}
@@ -203,7 +207,7 @@ export const SourceDetailContainer: FC<SourceDetailContainerProps> = ({
               {detail.data.knowledgeDraftIds.map((id) => (
                 <ActionButton
                   key={id}
-                  label={`${t('view')} ${id.slice(0, 8)}`}
+                  label={t('viewWithId', { id: id.slice(0, 8) })}
                   onPress={() => router.push(`/knowledge/${id}`)}
                   secondary
                 />

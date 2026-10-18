@@ -1,7 +1,10 @@
 appId: ${APP_ID}
 ---
-- tapOn: Six-digit code
+- tapOn:
+    id: login-code
 - inputText: ${OTP_CODE}
-- tapOn: Verify code
-- assertVisible: Collection
+- tapOn:
+    id: login-verify
+- assertVisible:
+    id: collection-add-item
 - runFlow: support/dismiss-dev-logbox.yaml

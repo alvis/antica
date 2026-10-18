@@ -109,7 +109,10 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
               <Text style={styles.secondary}>
                 {detail.data.entry.content.summary.support === 'needs_source'
                   ? t('sourceNeedsReview')
-                  : `${detail.data.entry.content.summary.citationIds.length} ${t('citations')}`}
+                  : t('citationCount', {
+                      count:
+                        detail.data.entry.content.summary.citationIds.length,
+                    })}
               </Text>
               <ActionButton
                 label={t('save')}
@@ -176,7 +179,7 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
               {detail.data.citations.map((citation) => (
                 <ActionButton
                   key={citation.id}
-                  label={`${t('viewSource')} ${citation.id.slice(0, 8)}`}
+                  label={t('viewSourceWithId', { id: citation.id.slice(0, 8) })}
                   onPress={() =>
                     citation.locator.kind === 'page'
                       ? router.push(

@@ -31,11 +31,20 @@ export const CaptureSaveStep: FC<CaptureSaveStepProps> = ({
         <Text
           key={file.id}
           style={file.state === 'failed' ? styles.error : styles.secondary}>
-          {file.name}: {localizeStatus(file.state, t)}
-          {fileErrors[file.id] ? ` — ${fileErrors[file.id]}` : ''}
+          {fileErrors[file.id]
+            ? t('fileStatusWithError', {
+                name: file.name,
+                status: localizeStatus(file.state, t),
+                error: fileErrors[file.id],
+              })
+            : t('fileStatus', {
+                name: file.name,
+                status: localizeStatus(file.state, t),
+              })}
         </Text>
       ))}
       <ActionButton
+        testID="capture-save"
         label={busy ? t('processing') : t('save')}
         onPress={onSave}
         disabled={busy}

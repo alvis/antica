@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   adbStep,
+  journeyLocale,
   latestOtp,
   maestroStep,
   runMaestroJourneys,
@@ -61,6 +62,7 @@ function recordingIO(overrides: Partial<RunnerIO> = {}): {
 
 const run: MaestroRun = {
   appId: 'app.id',
+  locale: 'zh-Hant',
   phoneNumber: phone,
   otpInboxPath: '/api/inbox.jsonl',
   sampleImagePath: '/fixtures/sample.jpg',
@@ -133,6 +135,21 @@ void describe('fn:latestOtp', () => {
     assert.throws(
       () => latestOtp(content, { phoneNumber: phone, since, source }),
       /Malformed OTP inbox entry at inbox\.jsonl:2/,
+    );
+  });
+});
+
+void describe('fn:journeyLocale', () => {
+  void it('should run in English unless another language is requested', () => {
+    assert.equal(journeyLocale(undefined), 'en');
+    assert.equal(journeyLocale('zh-Hant'), 'zh-Hant');
+    assert.equal(journeyLocale('zh-Hans'), 'zh-Hans');
+  });
+
+  void it('should reject a language the app does not offer', () => {
+    assert.throws(
+      () => journeyLocale('fr'),
+      /Unsupported journey locale fr; use one of en, zh-Hant, zh-Hans\./,
     );
   });
 });
@@ -250,12 +267,14 @@ void describe('fn:runMaestroJourneys', () => {
         'maestro /e2e/05-record-messages.yaml',
       ],
     );
+    assert.ok(ran[0]?.args.includes('APP_LOCALE=zh-Hant'));
     assert.ok(ran[1]?.args.includes('OTP_CODE=424242'));
     assert.ok(ran[5]?.args.includes('RECORD_NAME=E2E 2026-10-16T10:00:00'));
     assert.ok(ran[6]?.args.includes('RECORD_NAME=Camera 2026-10-16T10:00:00'));
     assert.ok(ran[7]?.args.includes('RECORD_NAME=Camera 2026-10-16T10:00:00'));
     assert.ok(ran[7]?.args.includes('NEW_NAME=青瓷碗 2026-10-16T10:00:00'));
     assert.ok(ran[7]?.args.includes('NEW_PERIOD=清代'));
+    assert.ok(ran[7]?.args.includes('APP_LOCALE=zh-Hant'));
   });
 
   void it('should stop before authenticating when no code was issued during the run', () => {

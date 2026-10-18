@@ -93,7 +93,9 @@ export const CaptureVoiceStep: FC<CaptureVoiceStepProps> = ({
       )}
       {transcription && (
         <Text style={styles.secondary}>
-          {t('transcribe')}: {localizeStatus(transcription.state.kind, t)}
+          {t('transcribeStatus', {
+            status: localizeStatus(transcription.state.kind, t),
+          })}
         </Text>
       )}
       {transcription?.state.kind === 'failed' && (
@@ -103,21 +105,31 @@ export const CaptureVoiceStep: FC<CaptureVoiceStepProps> = ({
       )}
       {transcriptionDetail?.result && (
         <Text style={styles.secondary}>
-          {t('originalTranscript')}: {transcriptionDetail.result.originalText}
+          {t('originalTranscriptText', {
+            text: transcriptionDetail.result.originalText,
+          })}
         </Text>
       )}
-      <TextField
-        label={t('originalWords')}
-        value={draft.originalWords}
-        onChangeText={(value) => {
-          update({ originalWords: value });
-          onWordsChanged();
-        }}
-        editable={!savedObservation}
-        multiline
-      />
+      {/* the shared field takes no testID, so automation targets its wrapper */}
+      <View testID="capture-voice-original-words">
+        <TextField
+          label={t('originalWords')}
+          value={draft.originalWords}
+          onChangeText={(value) => {
+            update({ originalWords: value });
+            onWordsChanged();
+          }}
+          editable={!savedObservation}
+          multiline
+        />
+      </View>
       {Boolean(draft.originalWords.trim()) && (
         <ActionButton
+          testID={
+            savedObservation
+              ? 'capture-voice-words-confirmed'
+              : 'capture-voice-confirm-words'
+          }
           label={savedObservation ? t('confirmedWords') : t('confirmWords')}
           onPress={onConfirmWords}
           disabled={busy || savedObservation}
@@ -136,7 +148,9 @@ export const CaptureVoiceStep: FC<CaptureVoiceStepProps> = ({
       )}
       {editDraft && (
         <Text style={styles.secondary}>
-          {t('prepareDescription')}: {localizeStatus(editDraft.state.kind, t)}
+          {t('prepareDescriptionStatus', {
+            status: localizeStatus(editDraft.state.kind, t),
+          })}
         </Text>
       )}
       {editDraft?.state.kind === 'failed' && (
@@ -150,10 +164,10 @@ export const CaptureVoiceStep: FC<CaptureVoiceStepProps> = ({
             {localizeProposalField(change.field, t)}
           </Text>
           <Text style={styles.secondary}>
-            {t('previous')}: {JSON.stringify(change.before)}
+            {t('previousValue', { value: JSON.stringify(change.before) })}
           </Text>
           <Text style={styles.body}>
-            {t('proposed')}: {JSON.stringify(change.proposed)}
+            {t('proposedValue', { value: JSON.stringify(change.proposed) })}
           </Text>
           <ActionButton
             label={
@@ -168,7 +182,9 @@ export const CaptureVoiceStep: FC<CaptureVoiceStepProps> = ({
       ))}
       {selectedProposalIds.length > 0 && (
         <ActionButton
-          label={`${t('applySelected')} (${selectedProposalIds.length})`}
+          label={t('applySelectedCount', {
+            count: selectedProposalIds.length,
+          })}
           onPress={onApply}
           disabled={busy}
         />
@@ -185,7 +201,11 @@ export const CaptureVoiceStep: FC<CaptureVoiceStepProps> = ({
         disabled={!draft.preparedDescription.trim() || draft.adoptedDescription}
         secondary
       />
-      <ActionButton label={t('continue')} onPress={onContinue} />
+      <ActionButton
+        testID="capture-voice-continue"
+        label={t('continue')}
+        onPress={onContinue}
+      />
     </View>
   );
 };

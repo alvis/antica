@@ -110,7 +110,7 @@ export const ChangesWithOlderPage = {
     await findStoryText(canvasElement, 'Edited by voice or message');
     await findStoryElement(
       canvasElement,
-      `[data-testid="record-history-entry-${taggedByMessage.id}-source"]`,
+      `[data-testid="record-history-entry-${taggedByMessage.id}-tags-source"]`,
     );
     (await findStoryButton(canvasElement, 'Show older changes')).click();
     await findStoryText(canvasElement, 'Late Qing (1850–1911)');

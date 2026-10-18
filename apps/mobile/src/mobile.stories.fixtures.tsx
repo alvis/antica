@@ -12,6 +12,8 @@ import { AuthProvider } from './providers/AuthProvider';
 
 import type { PropsWithChildren, ReactElement } from 'react';
 
+import type { Locale } from './i18n/resources';
+
 export const storyRecordId = '00000000-0000-4000-8000-000000000001';
 export const storyRunId = '00000000-0000-4000-8000-000000000010';
 
@@ -52,7 +54,7 @@ export type StoryResponses = Readonly<Partial<Record<string, StoryResponse>>>;
 
 export type MobileStoryShellProps = PropsWithChildren<{
   responses: StoryResponses;
-  locale?: 'en' | 'zh-Hant';
+  locale?: Locale;
   delayMs?: number;
 }>;
 

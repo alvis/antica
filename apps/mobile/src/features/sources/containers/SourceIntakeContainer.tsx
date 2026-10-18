@@ -271,7 +271,9 @@ export const SourceIntakeContainer: FC = () => {
               />
               <Text style={styles.secondary}>
                 {file.presentation.crop
-                  ? `${t('selectRegion')}: ${JSON.stringify(file.presentation.crop)}`
+                  ? t('selectedRegion', {
+                      crop: JSON.stringify(file.presentation.crop),
+                    })
                   : t('fullImage')}
               </Text>
               <View style={styles.row}>

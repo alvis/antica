@@ -3,8 +3,10 @@
 # collector confirms the name, rejects the period, and applies; the period row
 # stays locked as not applied, the record reflects only the confirmed field, its
 # change history lists the name as accepted and the period as skipped, and the
-# history links back to the requesting message, which opens fully in view. Replies come from the deterministic
-# development model through the local drain loop.
+# history links back to the requesting message, which opens fully in view.
+# Replies come from the deterministic development model through the local drain
+# loop, so their text is the same in every interface language. Controls and
+# states are selected by testID; the card title check proves the language.
 appId: ${APP_ID}
 ---
 - launchApp
@@ -55,29 +57,50 @@ appId: ${APP_ID}
     element:
       id: 'record-message-card-apply-.*'
     direction: DOWN
-- assertVisible: Suggested changes
-- assertVisible: Nothing changes until you tap “Apply decisions”.
-- assertVisible: 'Confirm: Name'
-- assertVisible: 'Reject: Period'
+- assertVisible:
+    id: 'record-message-card-status-ready-.*'
+- runFlow:
+    when:
+      true: ${APP_LOCALE == 'en'}
+    commands:
+      - assertVisible: Suggested changes
+- runFlow:
+    when:
+      true: ${APP_LOCALE == 'zh-Hant'}
+    commands:
+      - assertVisible: 建議變更
+- runFlow:
+    when:
+      true: ${APP_LOCALE == 'zh-Hans'}
+    commands:
+      - assertVisible: 建议变更
+- assertVisible:
+    id: 'record-message-card-confirm-name-.*'
+- assertVisible:
+    id: 'record-message-card-reject-period-.*'
 - assertNotVisible:
     id: 'record-message-card-applied-.*'
 
 # 3. Confirm the name, reject the period, then apply both decisions. The name
 #    is applied, the period stays locked as not applied, and no toggle remains.
-- tapOn: 'Confirm: Name'
-- tapOn: 'Reject: Period'
-- tapOn: Apply decisions \(2\)
+- tapOn:
+    id: 'record-message-card-confirm-name-.*'
+- tapOn:
+    id: 'record-message-card-reject-period-.*'
+- tapOn:
+    id: 'record-message-card-apply-.*'
 - extendedWaitUntil:
-    visible: All changes decided; some not applied
+    visible:
+      id: 'record-message-card-status-resolved-.*'
     timeout: 60000
 - assertVisible:
-    id: 'record-message-card-applied-.*'
-    index: 0
+    id: 'record-message-card-applied-name-.*'
 - assertNotVisible:
-    id: 'record-message-card-applied-.*'
-    index: 1
+    id: 'record-message-card-applied-period-.*'
 - assertVisible:
-    id: 'record-message-card-skipped-.*'
+    id: 'record-message-card-skipped-period-.*'
+- assertNotVisible:
+    id: 'record-message-card-skipped-name-.*'
 - assertNotVisible:
     id: 'record-message-card-confirm-.*'
 - assertNotVisible:
@@ -104,10 +127,14 @@ appId: ${APP_ID}
     visible:
       id: record-history
     timeout: 60000
-- assertVisible: 'Name · Accepted.*'
-- assertVisible: 'Period · Skipped.*'
-- tapOn: 'Open the suggestion: Name.*'
+- assertVisible:
+    id: 'record-history-entry-.*-name-accepted'
+- assertVisible:
+    id: 'record-history-entry-.*-period-skipped'
+- tapOn:
+    id: 'record-history-entry-.*-name-source'
 - extendedWaitUntil:
-    visible: Opened from change history
+    visible:
+      id: record-messages-opened-from-history
     timeout: 60000
 - assertVisible: '名稱改成「${NEW_NAME}」.*'

@@ -61,6 +61,25 @@ describe('rc:RootLayout', () => {
     );
   });
 
+  it('should leave the development language link out of release builds', async () => {
+    const developmentBuild = __DEV__;
+    Reflect.set(globalThis, '__DEV__', false);
+    try {
+      await render(<RootLayout />);
+
+      expect(
+        screen.getByText('Your private collection and research'),
+      ).toBeTruthy();
+      await waitFor(() =>
+        expect(jest.mocked(Redirect).mock.calls.at(-1)?.[0]).toEqual(
+          expect.objectContaining({ href: '/login' }),
+        ),
+      );
+    } finally {
+      Reflect.set(globalThis, '__DEV__', developmentBuild);
+    }
+  });
+
   it('should present the collection route after restoring the collector session', async () => {
     jest.mocked(authClient.getSession).mockResolvedValueOnce({
       data: {
