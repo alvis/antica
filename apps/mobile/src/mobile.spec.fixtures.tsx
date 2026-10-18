@@ -31,6 +31,8 @@ export interface MobileResponses {
 export interface MobileDevice {
   /** preference storage; defaults to a device that saved English */
   preferences?: LocalPreferencesPort;
+  /** collector signed in on the device; defaults to the fixture collector */
+  userId?: string | null;
 }
 
 export interface MobileHarness {
@@ -41,6 +43,9 @@ export interface MobileHarness {
   router: ReturnType<typeof useRouter>;
   client: QueryClient;
 }
+
+/** collector every rendered screen is signed in as */
+export const collectorId = 'collector-1';
 
 export const collectionRecord = recordDetailSchema.parse({
   id: '00000000-0000-4000-8000-000000000001',
@@ -107,7 +112,7 @@ export async function renderMobile(
   responses: MobileResponses,
   device: MobileDevice = {},
 ): Promise<MobileHarness> {
-  const { preferences = savedPreferences('en') } = device;
+  const { preferences = savedPreferences('en'), userId = collectorId } = device;
   const api = new ApiTransport({
     baseUrl: 'https://api.example',
     session: {
@@ -144,6 +149,7 @@ export async function renderMobile(
     authenticated: true,
     loading: false,
     phone: null,
+    userId,
     refresh: async () => true,
     signOut: async () => undefined,
     expire: () => undefined,

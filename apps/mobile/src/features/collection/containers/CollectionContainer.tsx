@@ -19,6 +19,8 @@ import { SettingsAction } from '../../../components/SettingsAction';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
+import { UploadResumeContainer } from '../../capture/containers/UploadResumeContainer';
+
 import { FreshnessOption } from '../components/FreshnessOption';
 
 import type { FC } from 'react';
@@ -184,6 +186,7 @@ export const CollectionContainer: FC = () => {
               label={t('addItem')}
               onPress={() => router.push('/capture')}
             />
+            <UploadResumeContainer />
             <View style={{ gap: styles.card.gap }}>
               <ActionButton
                 label={t('filters')}

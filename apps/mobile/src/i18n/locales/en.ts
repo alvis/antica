@@ -480,4 +480,31 @@ export const en = {
   labelNewName: 'New label name',
   labelApply: 'Use this label',
   labelClear: 'Clear label',
+  uploadQueued: 'Waiting to upload',
+  uploadProgress: 'Uploading {{uploaded}}/{{total}}',
+  uploadNotUploaded: 'Not uploaded',
+  uploadReasonOffline: 'No connection. The file is kept on this device.',
+  uploadReasonRejected: 'The file could not be verified. Retry it.',
+  retryFile: 'Retry {{name}}',
+  retryAllFailed_one: 'Retry {{count}} file that did not upload',
+  retryAllFailed_other: 'Retry {{count}} files that did not upload',
+  uploadResumeTitle_one:
+    '{{count}} file from {{record}} has not finished uploading',
+  uploadResumeTitle_other:
+    '{{count}} files from {{record}} have not finished uploading',
+  uploadResumeNote:
+    'Nothing uploads until you resume, to save mobile data and battery.',
+  uploadResume: 'Resume upload',
+  uploadDiscard: 'Discard',
+  uploadDiscardConfirm_one:
+    'Discard {{count}} file? Its copy on this device is deleted.',
+  uploadDiscardConfirm_other:
+    'Discard {{count}} files? Their copies on this device are deleted.',
+  uploadDiscardYes: 'Discard files',
+  uploadDiscardKeep: 'Keep',
+  filesNotUploaded_one: '{{count}} file not uploaded',
+  filesNotUploaded_other: '{{count}} files not uploaded',
+  retryUpload: 'Retry upload',
+  mediaCount_one: '{{count}} photo or video uploaded',
+  mediaCount_other: '{{count}} photos and videos uploaded',
 } as const satisfies Dictionary;

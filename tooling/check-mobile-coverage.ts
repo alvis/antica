@@ -31,6 +31,8 @@ export const domCoverageSources = [
   'features/capture/components/CaptureCamera.stories.tsx',
   'features/capture/components/CaptureCameraFallback.stories.tsx',
   'features/capture/components/CaptureGridStep.stories.tsx',
+  'features/capture/components/CaptureSaveStep.stories.tsx',
+  'features/capture/components/UploadResumeBanner.stories.tsx',
 ] as const;
 
 /** runtime helpers required even though generic discovery excludes spec files */

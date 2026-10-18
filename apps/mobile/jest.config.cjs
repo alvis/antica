@@ -36,6 +36,8 @@ module.exports = {
     '!src/features/capture/components/CaptureCamera.stories.tsx',
     '!src/features/capture/components/CaptureCameraFallback.stories.tsx',
     '!src/features/capture/components/CaptureGridStep.stories.tsx',
+    '!src/features/capture/components/CaptureSaveStep.stories.tsx',
+    '!src/features/capture/components/UploadResumeBanner.stories.tsx',
   ],
   coverageThreshold: {
     'global': { statements: 100, branches: 100, functions: 100, lines: 100 },

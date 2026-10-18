@@ -76,7 +76,8 @@ describe('hk:useAuth', () => {
     expect({
       authenticated: view.result.current.authenticated,
       phone: view.result.current.phone,
-    }).toEqual({ authenticated: false, phone: null });
+      userId: view.result.current.userId,
+    }).toEqual({ authenticated: false, phone: null, userId: null });
     expect(authClient.signOut).toHaveBeenCalledTimes(1);
     expect(cache.getQueryData(['records'])).toBeUndefined();
   });
@@ -140,7 +141,8 @@ describe('Session expiry', () => {
     expect({
       authenticated: view.result.current.authenticated,
       phone: view.result.current.phone,
-    }).toEqual({ authenticated: false, phone: null });
+      userId: view.result.current.userId,
+    }).toEqual({ authenticated: false, phone: null, userId: null });
     expect(cache.getQueryData(['records'])).toBeUndefined();
     expect(request).toHaveBeenCalledWith(
       expect.any(String),
@@ -156,7 +158,8 @@ describe('Session expiry', () => {
     expect({
       authenticated: view.result.current.authenticated,
       phone: view.result.current.phone,
-    }).toEqual({ authenticated: false, phone: null });
+      userId: view.result.current.userId,
+    }).toEqual({ authenticated: false, phone: null, userId: null });
     expect(cache.getQueryData(['records'])).toBeUndefined();
   });
 });
@@ -179,7 +182,13 @@ async function restoreCollector(): Promise<{
       authenticated: view.result.current.authenticated,
       loading: view.result.current.loading,
       phone: view.result.current.phone,
-    }).toEqual({ authenticated: true, loading: false, phone: '+85212345678' }),
+      userId: view.result.current.userId,
+    }).toEqual({
+      authenticated: true,
+      loading: false,
+      phone: '+85212345678',
+      userId: 'collector-1',
+    }),
   );
 
   return { view, cache };

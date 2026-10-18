@@ -226,6 +226,7 @@ describe('uploaded files', () => {
         thumbnails={{}}
         onToggle={onToggle}
         onLabel={jest.fn()}
+        onRetry={jest.fn()}
         onAddPhoto={jest.fn()}
         onAddVideo={jest.fn()}
         onBack={jest.fn()}

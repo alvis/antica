@@ -249,7 +249,7 @@ void describe('fn:waitForGalleryIndex', () => {
 });
 
 void describe('fn:runMaestroJourneys', () => {
-  void it('should sign in with the issued code, seed the gallery, then run imports, camera capture, record messages, record editing and a labelled set', () => {
+  void it('should sign in with the issued code, seed the gallery, then run imports, camera capture, record messages, record editing, a labelled set and a resumed upload', () => {
     const { io, ran } = recordingIO();
 
     runMaestroJourneys({ ...run, locale: 'en' }, io);
@@ -267,6 +267,7 @@ void describe('fn:runMaestroJourneys', () => {
         'maestro /e2e/05-record-messages.yaml',
         'maestro /e2e/07-record-edit.yaml',
         'maestro /e2e/08-capture-set.yaml',
+        'maestro /e2e/09-upload-resume.yaml',
       ],
     );
     assert.ok(ran[0]?.args.includes('APP_LOCALE=en'));
@@ -283,6 +284,11 @@ void describe('fn:runMaestroJourneys', () => {
     );
     assert.ok(ran[8]?.args.includes('LOCATION=Main display-room cabinet'));
     assert.ok(ran[9]?.args.includes('RECORD_NAME=Set 2026-10-16T10:00:00'));
+    assert.deepEqual(ran[10]?.args.slice(3), [
+      '-e',
+      'APP_ID=app.id',
+      '/e2e/09-upload-resume.yaml',
+    ]);
   });
 
   void it('should add the language-settings flow around a second code in the default language', () => {
@@ -336,6 +342,7 @@ void describe('fn:runMaestroJourneys', () => {
           'RECORD_NAME=Set 2026-10-16T10:00:00',
           '/e2e/08-capture-set.yaml',
         ],
+        ['-e', 'APP_ID=app.id', '/e2e/09-upload-resume.yaml'],
         [
           '-e',
           'APP_ID=app.id',

@@ -38,6 +38,8 @@ interface AuthContextValue {
   authenticated: boolean;
   loading: boolean;
   phone: string | null;
+  /** signed-in collector, whose unfinished uploads are the only ones offered on this device */
+  userId: string | null;
   /** reloads the session and reports whether one exists */
   refresh: () => Promise<boolean>;
   signOut: () => Promise<void>;
@@ -79,24 +81,40 @@ function useClearCacheWhenSessionEnds(authenticated: boolean): void {
   }, [authenticated, queryClient]);
 }
 
+/** who is signed in, as the session reports them */
+type Identity = Pick<AuthContextValue, 'phone' | 'userId'>;
+
+/** the identity of a device nobody is signed in on */
+const nobody: Identity = { phone: null, userId: null };
+
+/**
+ * reads the collector's phone number and identifier from the session's user
+ * @param user user the session reports, if any
+ * @returns the collector's identity, with what the session lacks left empty
+ */
+function identityOf(
+  user: Record<string, unknown> | null | undefined,
+): Identity {
+  return {
+    phone: user && 'phoneNumber' in user ? String(user.phoneNumber) : null,
+    userId: typeof user?.id === 'string' ? user.id : null,
+  };
+}
+
 export const AuthProvider: FC<AuthProviderProps> = ({
   children,
   client = authClient,
 }) => {
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState<string | null>(null);
+  const [identity, setIdentity] = useState(nobody);
   useClearCacheWhenSessionEnds(authenticated);
 
   const refresh = async (): Promise<boolean> => {
     const result = await client.getSession();
     const signedIn = Boolean(result.data?.session);
     setAuthenticated(signedIn);
-    setPhone(
-      result.data?.user && 'phoneNumber' in result.data.user
-        ? String(result.data.user.phoneNumber)
-        : null,
-    );
+    setIdentity(identityOf(result.data?.user));
     setLoading(false);
 
     return signedIn;
@@ -106,38 +124,35 @@ export const AuthProvider: FC<AuthProviderProps> = ({
     void refresh().catch(() => setLoading(false));
   }, []);
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
+  const value = useMemo<AuthContextValue>(() => {
+    const forget = (): void => {
+      setAuthenticated(false);
+      setIdentity(nobody);
+    };
+
+    return {
       authenticated,
       loading,
-      phone,
+      ...identity,
       refresh,
       signOut: async (): Promise<void> => {
         try {
           await client.signOut();
         } finally {
           // the device forgets the collector even when the server cannot be told
-          setAuthenticated(false);
-          setPhone(null);
+          forget();
         }
       },
-      expire: (): void => {
-        setAuthenticated(false);
-        setPhone(null);
-      },
+      expire: forget,
       api: new ApiTransport({
         baseUrl: apiUrl,
         session: {
           getCookie: async (): Promise<string> => client.getCookie(),
-          onUnauthorized: (): void => {
-            setAuthenticated(false);
-            setPhone(null);
-          },
+          onUnauthorized: forget,
         },
       }),
-    }),
-    [authenticated, client, loading, phone],
-  );
+    };
+  }, [authenticated, client, loading, identity]);
 
   return <authContext.Provider value={value}>{children}</authContext.Provider>;
 };

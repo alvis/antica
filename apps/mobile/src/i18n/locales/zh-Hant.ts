@@ -448,6 +448,30 @@ export const zhHant = {
   labelNewName: '新標籤名稱',
   labelApply: '使用此標籤',
   labelClear: '清除標籤',
+  uploadQueued: '等待上傳',
+  uploadProgress: '上傳中 {{uploaded}}/{{total}}',
+  uploadNotUploaded: '未上傳',
+  uploadReasonOffline: '沒有網路連線。檔案仍保留在此裝置上。',
+  uploadReasonRejected: '無法驗證此檔案。請重試。',
+  retryFile: '重試{{name}}',
+  retryAllFailed_one: '重試 {{count}} 個未上傳的檔案',
+  retryAllFailed_other: '重試 {{count}} 個未上傳的檔案',
+  uploadResumeTitle_one: '「{{record}}」有 {{count}} 個檔案尚未完成上傳',
+  uploadResumeTitle_other: '「{{record}}」有 {{count}} 個檔案尚未完成上傳',
+  uploadResumeNote: '在您繼續之前不會上傳，以節省流動數據及電量。',
+  uploadResume: '繼續上傳',
+  uploadDiscard: '捨棄',
+  uploadDiscardConfirm_one:
+    '要捨棄這 {{count}} 個檔案嗎？此裝置上的副本會被刪除。',
+  uploadDiscardConfirm_other:
+    '要捨棄這 {{count}} 個檔案嗎？此裝置上的副本會被刪除。',
+  uploadDiscardYes: '捨棄檔案',
+  uploadDiscardKeep: '保留',
+  filesNotUploaded_one: '{{count}} 個檔案未上傳',
+  filesNotUploaded_other: '{{count}} 個檔案未上傳',
+  retryUpload: '重試上傳',
+  mediaCount_one: '已上傳 {{count}} 個照片或影片',
+  mediaCount_other: '已上傳 {{count}} 個照片或影片',
 } as const;
 
 /** text for every message key in one locale */

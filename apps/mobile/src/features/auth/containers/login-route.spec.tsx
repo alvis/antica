@@ -9,12 +9,12 @@ import {
 
 import { Redirect } from 'expo-router';
 
-import { ApiTransport } from '@antica/client';
-
 import LoginRoute from '../../../app/login';
 import { savedPreferences } from '../../../i18n/preferences.spec.fixtures';
 import { authClient, useAuth } from '../../../providers/AuthProvider';
 import { LocaleProvider } from '../../../providers/LocaleProvider';
+
+import { authValue } from './login.spec.fixtures';
 
 jest.mock('@better-auth/expo/client', () => ({ expoClient: () => ({}) }));
 jest.mock('better-auth/client/plugins', () => ({
@@ -54,18 +54,6 @@ jest.mock(
     }) satisfies Partial<typeof import('expo-router')>,
 );
 
-const authValue = {
-  api: new ApiTransport({
-    baseUrl: 'https://api.example',
-    session: { getCookie: async () => '', onUnauthorized: () => undefined },
-  }),
-  authenticated: false,
-  loading: false,
-  phone: null,
-  refresh: async () => true,
-  signOut: async () => undefined,
-  expire: () => undefined,
-} satisfies ReturnType<typeof useAuth>;
 jest.mocked(useAuth).mockReturnValue(authValue);
 const resendCooldownMilliseconds = 60_000;
 

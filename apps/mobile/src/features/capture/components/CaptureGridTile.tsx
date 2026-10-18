@@ -7,6 +7,8 @@ import { useLocale } from '../../../providers/LocaleProvider';
 
 import { wholeRecord } from '../capture-grid';
 
+import { CaptureFileState } from './CaptureFileState';
+
 import type { FC } from 'react';
 
 import type { LocalMedia } from '../../../adapters/media-upload';
@@ -20,8 +22,12 @@ export type CaptureGridTileProps = {
   /** whether component labels apply, as they do for a set */
   labelled: boolean;
   selected: boolean;
+  /** another upload or save is running, so retrying waits */
+  busy: boolean;
   onToggle: () => void;
   onLabel: () => void;
+  /** uploads the file again after it failed */
+  onRetry: () => void;
 };
 
 const layout = StyleSheet.create({
@@ -97,6 +103,7 @@ const layout = StyleSheet.create({
     backgroundColor: colors.card,
   },
   stripText: { color: colors.text, fontSize: 16 },
+  state: { paddingHorizontal: 12, backgroundColor: colors.card },
   stripEmpty: { color: colors.muted },
 });
 
@@ -188,6 +195,42 @@ const SelectBox: FC<{
 };
 
 /**
+ * renders the strip naming a set component that opens the label picker
+ * @param props strip content and handler
+ * @param props.index grid position from 1
+ * @param props.item spoken name of the photo or video
+ * @param props.label component label shown on the strip
+ * @param props.empty whether the file has no label yet
+ * @param props.onLabel opens the label picker
+ * @returns a button naming the component, which opens the picker
+ */
+const LabelStrip: FC<{
+  index: number;
+  item: string;
+  label: string;
+  empty: boolean;
+  onLabel: () => void;
+}> = ({ index, item, label, empty, onLabel }) => {
+  const { t } = useLocale();
+
+  return (
+    <Pressable
+      testID={`capture-grid-label-${index}`}
+      accessibilityRole="button"
+      accessibilityLabel={t('gridEditLabel', { item })}
+      accessibilityValue={{ text: label }}
+      onPress={onLabel}
+      style={layout.strip}>
+      <Text
+        numberOfLines={1}
+        style={[layout.stripText, empty && layout.stripEmpty]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+};
+
+/**
  * renders one grid tile (B03): the photo or video still, a check mark that keeps it for saving,
  * and, for a set, a strip naming its component that opens the label picker
  * @param props tile content and handlers
@@ -196,9 +239,11 @@ const SelectBox: FC<{
  * @param props.thumbnailUri video still, or null for the video icon
  * @param props.labelled shows the component strip when true
  * @param props.selected whether the file will be saved
+ * @param props.busy disables retrying while another upload runs
  * @param props.onToggle selects or deselects the file
  * @param props.onLabel opens the label picker
- * @returns the tile with its check mark and label strip
+ * @param props.onRetry uploads the file again after it failed
+ * @returns the tile with its check mark, upload state and label strip
  */
 export const CaptureGridTile: FC<CaptureGridTileProps> = ({
   index,
@@ -206,8 +251,10 @@ export const CaptureGridTile: FC<CaptureGridTileProps> = ({
   thumbnailUri,
   labelled,
   selected,
+  busy,
   onToggle,
   onLabel,
+  onRetry,
 }) => {
   const { t } = useLocale();
   const video = file.kind === 'video';
@@ -237,23 +284,25 @@ export const CaptureGridTile: FC<CaptureGridTileProps> = ({
         uploaded={file.state === 'uploaded'}
         onToggle={onToggle}
       />
+      {file.state !== 'local' && (
+        <View style={layout.state}>
+          <CaptureFileState
+            index={index}
+            file={file}
+            name={item}
+            busy={busy}
+            onRetry={onRetry}
+          />
+        </View>
+      )}
       {labelled && (
-        <Pressable
-          testID={`capture-grid-label-${index}`}
-          accessibilityRole="button"
-          accessibilityLabel={t('gridEditLabel', { item })}
-          accessibilityValue={{ text: label }}
-          onPress={onLabel}
-          style={layout.strip}>
-          <Text
-            numberOfLines={1}
-            style={[
-              layout.stripText,
-              !file.componentLabel && layout.stripEmpty,
-            ]}>
-            {label}
-          </Text>
-        </Pressable>
+        <LabelStrip
+          index={index}
+          item={item}
+          label={label}
+          empty={!file.componentLabel}
+          onLabel={onLabel}
+        />
       )}
     </View>
   );

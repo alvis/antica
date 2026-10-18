@@ -120,6 +120,7 @@ const meta = {
     thumbnails: {},
     onToggle: fn(),
     onLabel: fn(),
+    onRetry: fn(),
     onAddPhoto: fn(),
     onAddVideo: fn(),
     onBack: fn(),
@@ -138,6 +139,11 @@ const meta = {
     thumbnails: { control: false },
     onToggle: { control: false },
     onLabel: { control: false },
+    onRetry: { control: false },
+    busy: {
+      control: 'boolean',
+      description: 'Another upload runs, so retrying waits',
+    },
     onAddPhoto: { control: false },
     onAddVideo: { control: false },
     onBack: { control: false },
@@ -238,5 +244,29 @@ export const SingleItem = {
     await expect(args.onAddPhoto).toHaveBeenCalledTimes(1);
     (await findStoryButton(canvasElement, 'Back')).click();
     await expect(args.onBack).toHaveBeenCalledTimes(1);
+  },
+} satisfies Story;
+
+/** after a save attempt each tile names its upload state, and a failed photo offers a retry */
+export const UploadStates = {
+  args: {
+    kind: 'single',
+    files: (
+      [
+        { state: 'uploaded', assetId: 'asset-1' },
+        { state: 'uploading', progress: { uploaded: 2, total: 5 } },
+        { state: 'failed', errorCode: 'NETWORK' },
+      ] satisfies Array<Partial<LocalMedia>>
+    ).map((overrides, index) => storyFile(index + 1, overrides)),
+  },
+  play: async ({ args, canvasElement }) => {
+    await findStoryElement(
+      canvasElement,
+      '[role="progressbar"][aria-valuenow="2"][aria-valuemax="5"]',
+    );
+    await findStoryText(canvasElement, 'Uploading 2/5');
+    await findStoryText(canvasElement, 'Not uploaded');
+    (await findStoryButton(canvasElement, 'Retry Photo 3')).click();
+    await expect(args.onRetry).toHaveBeenCalledWith('file-3');
   },
 } satisfies Story;

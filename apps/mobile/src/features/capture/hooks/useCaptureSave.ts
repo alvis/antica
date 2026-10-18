@@ -9,9 +9,13 @@ import {
   recordPatchSchema,
 } from '@antica/contracts';
 
-import { uploadMedia } from '../../../adapters/media-upload';
-
 import { componentLabelsOf } from '../capture-grid';
+import { openSavedRecord } from '../open-saved-record';
+import {
+  patchFile,
+  uploadDraftFile,
+  withKeptCopies,
+} from '../upload-draft-file';
 
 import { describeActionLinkError } from './useActionLink';
 
@@ -21,13 +25,24 @@ import type { useRouter } from 'expo-router';
 
 import type { Location } from '@antica/contracts';
 
+import type { DraftUploadContext } from '../upload-draft-file';
+
 import type { ActionLink } from './useActionLink';
 import type { CaptureDraftState, CaptureRuntime } from './useCaptureDraft';
 
-/** per-file upload errors and the save action */
+/** per-file upload errors, the save action, and retries of files that did not upload */
 export interface CaptureSave {
   fileErrors: Record<string, string>;
+  /** whether the collector asked to save, after which unsent files are kept for later */
+  attempted: boolean;
   save: () => Promise<void>;
+  /** uploads the given failed files again, sending only what storage lacks */
+  retry: (fileIds: readonly string[]) => Promise<void>;
+  /**
+   * uploads files restored after a restart without saving the record's fields again, then opens
+   * the record once every one uploaded
+   */
+  resume: (fileIds: readonly string[]) => Promise<void>;
 }
 
 /**
@@ -37,7 +52,9 @@ export interface CaptureSave {
  * @param context.draft record, media, and words collected so far
  * @param context.editedFields fields the collector edited
  * @param context.setStep capture step updater
+ * @param context.setDraft capture draft updater
  * @param context.update capture draft patcher
+ * @param context.userId signed-in collector whose documents keep the journals
  * @param context.savedObservation whether the original words were confirmed
  * @param context.locations the collector's saved storage locations
  * @param context.checkId check the capture answers, when opened from one
@@ -52,7 +69,9 @@ export function useCaptureSave(
     draft,
     editedFields,
     setStep,
+    setDraft,
     update,
+    userId,
     savedObservation,
     locations,
     checkId,
@@ -61,8 +80,9 @@ export function useCaptureSave(
     router,
   }: Pick<
     CaptureDraftState,
-    'draft' | 'editedFields' | 'setStep' | 'update'
+    'draft' | 'editedFields' | 'setStep' | 'setDraft' | 'update'
   > & {
+    userId: string | null;
     savedObservation: boolean;
     locations: Location[] | undefined;
     checkId: string | undefined;
@@ -74,6 +94,19 @@ export function useCaptureSave(
   const { api, t, busy, setBusy, setError } = runtime;
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({});
   const [savedFields, setSavedFields] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const uploads: DraftUploadContext = {
+    api,
+    t,
+    userId,
+    publish: (fileId, patch) =>
+      setDraft((current) => ({
+        ...current,
+        files: patchFile(current.files, fileId, patch),
+      })),
+  };
+
+  const saved = { queryClient, router, userId, checkId };
 
   const save = async (): Promise<void> => {
     if (!draft.record || busy) {
@@ -87,6 +120,7 @@ export function useCaptureSave(
     }
 
     setBusy(true);
+    setAttempted(true);
     setError('');
     try {
       // evidence for an action of another record, or one no longer in its run, is never created (PT-13)
@@ -167,7 +201,9 @@ export function useCaptureSave(
       }
       update({ record });
       setSavedFields(true);
-      const nextFiles = [...draft.files];
+      // a copy still being made when saving starts is waited for, so the file uploads with its
+      // journal and never completes again from a stale one
+      const nextFiles = await withKeptCopies(draft.files);
       const failures: Record<string, string> = {};
       for (const [index, file] of nextFiles.entries()) {
         if (file.excluded) {
@@ -177,20 +213,14 @@ export function useCaptureSave(
           (item) => item.label === file.componentLabel.trim(),
         );
         if (file.state !== 'uploaded') {
-          nextFiles[index] = { ...file, state: 'uploading' };
-          update({ files: [...nextFiles] });
-          try {
-            const assetId = await uploadMedia(
-              api,
-              file,
-              { kind: 'record', id: record.id },
-              component ? [component.id] : [],
-            );
-            nextFiles[index] = { ...file, state: 'uploaded', assetId };
-          } catch (cause) {
-            nextFiles[index] = { ...file, state: 'failed' };
-            failures[file.id] = (cause as Error).message;
-            update({ files: [...nextFiles] });
+          await uploadDraftFile(uploads, {
+            files: nextFiles,
+            index,
+            record,
+            components,
+            failures,
+          });
+          if (nextFiles[index]?.state === 'failed') {
             continue;
           }
         }
@@ -230,16 +260,13 @@ export function useCaptureSave(
                 idempotencyKey: file.checkRequestKey ?? file.id,
               },
             );
-            nextFiles[index] = {
-              ...nextFiles[index],
-              checkLinked: true,
-              anchorId: anchor.id,
-            };
+            const linked = { checkLinked: true, anchorId: anchor.id };
+            nextFiles[index] = { ...nextFiles[index], ...linked };
+            uploads.publish(file.id, linked);
           } catch (cause) {
             failures[file.id] = (cause as Error).message;
           }
         }
-        update({ files: [...nextFiles] });
       }
       setFileErrors(failures);
       if (Object.keys(failures).length > 0) {
@@ -271,15 +298,7 @@ export function useCaptureSave(
           return;
         }
       }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['records'] }),
-        queryClient.invalidateQueries({ queryKey: ['record', record.id] }),
-        queryClient.invalidateQueries({
-          queryKey: ['observations', record.id],
-        }),
-      ]);
-      const query = checkId ? `?checkId=${checkId}` : '';
-      router.replace(`/collection/${record.id}${query}`);
+      await openSavedRecord(saved, record, nextFiles);
     } catch (cause) {
       setError((cause as Error).message);
     } finally {
@@ -287,5 +306,54 @@ export function useCaptureSave(
     }
   };
 
-  return { fileErrors, save };
+  /**
+   * uploads only the given files, sending only what storage lacks; the record's fields and its
+   * photo requirement are left to Save
+   * @param fileIds files to upload
+   * @param open whether to open the record once every file uploaded
+   */
+  const send = async (
+    fileIds: readonly string[],
+    open: boolean,
+  ): Promise<void> => {
+    const record = draft.record;
+    if (!record || busy) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const nextFiles = await withKeptCopies(draft.files);
+    const failures: Record<string, string> = {};
+    for (const [index, file] of nextFiles.entries()) {
+      if (fileIds.includes(file.id) && file.state !== 'uploaded') {
+        await uploadDraftFile(uploads, {
+          files: nextFiles,
+          index,
+          record,
+          components: record.components,
+          failures,
+        });
+      }
+    }
+    setFileErrors((current) => ({
+      ...Object.fromEntries(
+        Object.entries(current).filter(([id]) => !fileIds.includes(id)),
+      ),
+      ...failures,
+    }));
+    if (Object.keys(failures).length > 0) {
+      setError(t('uploadFailed'));
+    } else if (open) {
+      await openSavedRecord(saved, record, nextFiles);
+    }
+    setBusy(false);
+  };
+
+  return {
+    fileErrors,
+    attempted,
+    save,
+    retry: async (fileIds) => send(fileIds, false),
+    resume: async (fileIds) => send(fileIds, true),
+  };
 }

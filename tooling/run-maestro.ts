@@ -289,7 +289,7 @@ export function runLanguageSettingsJourney(
 }
 
 /**
- * runs journeys 01–05, 07 and 08 in one interface language: request a code, sign in, import and reopen, camera capture, record messages, manual record editing, then a labelled set from the in-app camera; a run in the default language then adds flow 06
+ * runs journeys 01–05 and 07–09 in one interface language: request a code, sign in, import and reopen, camera capture, record messages, manual record editing, a labelled set from the in-app camera, then an upload resumed after the app closed; a run in the default language then adds flow 06
  * @param run journey settings
  * @param io side effects
  */
@@ -356,6 +356,12 @@ export function runMaestroJourneys(run: MaestroRun, io: RunnerIO): void {
     maestroStep(run.deviceId, flow('08-capture-set.yaml'), {
       APP_ID: run.appId,
       RECORD_NAME: `Set ${stamp}`,
+    }),
+  );
+  // closes the app with photos unsaved, resumes from the restart prompt, and counts no duplicate (PT-5)
+  io.run(
+    maestroStep(run.deviceId, flow('09-upload-resume.yaml'), {
+      APP_ID: run.appId,
     }),
   );
   // flow 06 clears state, so a fresh install starts in the default language

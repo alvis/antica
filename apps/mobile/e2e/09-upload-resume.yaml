@@ -1,0 +1,129 @@
+# PT-5 (T14, PR-3): photographs four objects through the in-app camera, reaches
+# the save step, and closes the app before saving. Each photo already has its
+# copy and upload journal in documents, so the relaunched app offers to resume
+# instead of uploading on its own. Discard asks first and Keep leaves the files;
+# Resume uploads them and opens the record, whose media count equals the photos
+# added, so no file was stored twice. A last relaunch shows no prompt, as
+# nothing is left to upload. Local storage completes four uploads within the
+# few seconds a tap takes, so a kill in the middle of one is not staged here;
+# the journal specs cover resuming a started multipart upload with the same
+# completion key. The record name is draft state and is not kept across the
+# restart, so the record is checked by its media count. Runs after 04, which
+# granted camera access, and on the session from 02.
+appId: ${APP_ID}
+---
+- launchApp
+# A cold start on a loaded host can take well over a minute in dev builds.
+- extendedWaitUntil:
+    visible:
+      id: collection-add-item
+    timeout: 120000
+- runFlow: support/dismiss-dev-logbox.yaml
+- tapOn:
+    id: collection-add-item
+- tapOn:
+    id: capture-kind-single
+- tapOn:
+    id: capture-media-photo
+- runFlow:
+    when:
+      visible: While using the app
+    commands:
+      - tapOn: While using the app
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-preview
+    timeout: 30000
+# Each shot joins the draft before the next, so no shutter press is lost.
+- tapOn:
+    id: capture-camera-shutter
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-shot-count
+      text: '.* 1 .*'
+    timeout: 30000
+- tapOn:
+    id: capture-camera-shutter
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-shot-count
+      text: '.* 2 .*'
+    timeout: 30000
+- tapOn:
+    id: capture-camera-shutter
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-shot-count
+      text: '.* 3 .*'
+    timeout: 30000
+- tapOn:
+    id: capture-camera-shutter
+- extendedWaitUntil:
+    visible:
+      id: capture-camera-shot-count
+      text: '.* 4 .*'
+    timeout: 30000
+- tapOn:
+    id: capture-camera-last-shot
+- assertVisible:
+    id: capture-grid-tile-4
+- scrollUntilVisible:
+    element:
+      id: capture-grid-next
+    direction: DOWN
+- tapOn:
+    id: capture-grid-next
+- tapOn:
+    id: capture-voice-continue
+- scrollUntilVisible:
+    element:
+      id: capture-details-continue
+    direction: DOWN
+- tapOn:
+    id: capture-details-continue
+- runFlow: support/dismiss-dev-logbox.yaml
+# The save step lists the four photos, none uploaded yet.
+- assertVisible:
+    id: capture-file-state-4
+- stopApp
+# Relaunch without clearing state: the unfinished files wait for the collector.
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: upload-resume-banner
+    timeout: 120000
+- runFlow: support/dismiss-dev-logbox.yaml
+# Discard asks before deleting anything; Keep returns to the prompt.
+- tapOn:
+    id: upload-discard
+- assertVisible:
+    id: upload-discard-confirm
+- tapOn:
+    id: upload-discard-keep
+- tapOn:
+    id: upload-resume
+# Resume opens the record's upload, sends the four photos, and opens the record.
+- extendedWaitUntil:
+    visible:
+      id: record-fields
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: record-media-count
+    direction: DOWN
+# PT-5: four photos added, four stored; a duplicate would count five or more.
+- extendedWaitUntil:
+    visible:
+      id: record-media-count
+      text: '(.* )?4 .*'
+    timeout: 60000
+- assertNotVisible:
+    id: record-files-not-uploaded
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: collection-add-item
+    timeout: 120000
+- assertNotVisible:
+    id: upload-resume-banner

@@ -67,6 +67,7 @@ const authValue = {
   authenticated: false,
   loading: false,
   phone: null,
+  userId: null,
   refresh: async () => true,
   signOut: async () => undefined,
   expire: () => undefined,

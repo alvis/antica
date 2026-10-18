@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 
 import { styles } from '@antica/ui';
@@ -28,6 +28,7 @@ import { useCaptureRecord } from '../hooks/useCaptureRecord';
 import { useCaptureSave } from '../hooks/useCaptureSave';
 import { useEditDraft } from '../hooks/useEditDraft';
 import { useShotCleanup } from '../hooks/useShotCleanup';
+import { useUploadJournal } from '../hooks/useUploadJournal';
 import { useVideoThumbnails } from '../hooks/useVideoThumbnails';
 import { useVoiceNote } from '../hooks/useVoiceNote';
 
@@ -46,18 +47,24 @@ const wordsStep = 4;
 /** step that reviews and labels the photos and videos */
 const gridStep = 3;
 
+/** step that saves the record and shows each file's upload */
+const saveStep = 6;
+
 export const CaptureContainer: FC = () => {
   const router = useRouter();
-  const { recordId, checkId, runId, actionId, mode } = useLocalSearchParams<{
-    recordId?: string;
-    checkId?: string;
-    /** run and action being answered, when opened from an analysis action card */
-    runId?: string;
-    actionId?: string;
-    /** `describe` opens the spoken or typed observation step instead of the media step */
-    mode?: string;
-  }>();
-  const { api } = useAuth();
+  const { recordId, checkId, runId, actionId, mode, resume } =
+    useLocalSearchParams<{
+      recordId?: string;
+      checkId?: string;
+      /** run and action being answered, when opened from an analysis action card */
+      runId?: string;
+      actionId?: string;
+      /** `describe` opens the spoken or typed observation step instead of the media step */
+      mode?: string;
+      /** `1` continues the record's unfinished uploads, as the restart prompt asks */
+      resume?: string;
+    }>();
+  const { api, userId } = useAuth();
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const draftState = useCaptureDraft();
@@ -93,16 +100,25 @@ export const CaptureContainer: FC = () => {
     confirmedObservationId: observation.confirmedObservationId,
   });
   const describing = mode === 'describe';
+  const resuming = resume === '1' && Boolean(recordId);
   const createDraft = useCaptureRecord(runtime, {
     ...draftState,
     recordId,
-    resumeStep: describing ? wordsStep : mediaStep,
+    resumeStep: resuming ? saveStep : describing ? wordsStep : mediaStep,
   });
-  const { fileErrors, save } = useCaptureSave(runtime, {
+  const {
+    fileErrors,
+    attempted,
+    save,
+    retry,
+    resume: resumeUploads,
+  } = useCaptureSave(runtime, {
     draft,
     editedFields,
     setStep,
+    setDraft,
     update,
+    userId,
     savedObservation: observation.savedObservation,
     locations: locations.data,
     checkId: linkedCheckId,
@@ -113,6 +129,28 @@ export const CaptureContainer: FC = () => {
   const confirmedObservationId = observation.confirmedObservationId;
   const thumbnails = useVideoThumbnails(draft.files);
   useShotCleanup(draft.files);
+  const restored = useUploadJournal({
+    draft,
+    setDraft,
+    resume: resuming,
+    attempted,
+    userId,
+  });
+  const [resumed, setResumed] = useState(false);
+
+  // Resume on the restart prompt is the collector's request, so the restored files upload now;
+  // only the files upload, since the record's fields were saved before the app closed
+  useEffect(() => {
+    if (restored?.length && !resumed) {
+      setResumed(true);
+      void resumeUploads(restored);
+    }
+  }, [restored]);
+
+  const failedIds = draft.files
+    .filter((file) => file.state === 'failed' && !file.excluded)
+    .map((file) => file.id);
+  const retryFile = (fileId: string): void => void retry([fileId]);
   const summary = summarizeRecord(draft.record, t('newItem'));
 
   /**
@@ -188,12 +226,14 @@ export const CaptureContainer: FC = () => {
           files={draft.files}
           componentLabels={summary.componentLabels}
           thumbnails={thumbnails}
+          busy={busy}
           onToggle={(fileId) =>
             setDraft((current) => ({
               ...current,
               files: toggleSelected(current.files, fileId),
             }))
           }
+          onRetry={retryFile}
           onLabel={(fileId, componentLabel) =>
             setDraft((current) => ({
               ...current,
@@ -245,12 +285,14 @@ export const CaptureContainer: FC = () => {
           onContinue={draftState.next}
         />
       )}
-      {step === 6 && (
+      {step === saveStep && (
         <CaptureSaveStep
           files={draft.files.filter((file) => !file.excluded)}
           fileErrors={fileErrors}
           busy={busy}
           onSave={() => void save()}
+          onRetry={retryFile}
+          onRetryAll={() => void retry(failedIds)}
         />
       )}
       {Boolean(error) && (

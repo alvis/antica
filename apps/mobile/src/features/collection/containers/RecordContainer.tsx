@@ -24,6 +24,8 @@ import { useLocale } from '../../../providers/LocaleProvider';
 
 import { analysisRunQuery } from '../../analysis/api/analysis-run-query';
 import { useStartAnalysis } from '../../analysis/hooks/useStartAnalysis';
+import { RecordUploadsContainer } from '../../capture/containers/RecordUploadsContainer';
+import { useUnfinishedUploads } from '../../capture/hooks/useUnfinishedUploads';
 
 import { recordQuery } from '../api/record-query';
 import { RecordAnalysisStatus } from '../components/RecordAnalysisStatus';
@@ -40,6 +42,16 @@ import type { ScrollView } from 'react-native';
 import type { MediaDetail } from '@antica/contracts';
 
 export type RecordContainerProps = { recordId: string };
+
+/**
+ * asset states whose bytes the server verified, the only ones counted as uploaded; completion
+ * checks the digest before it marks an asset uploaded, ahead of processing
+ */
+const verifiedStates: ReadonlySet<unknown> = new Set([
+  'uploaded',
+  'processing',
+  'ready',
+]);
 
 export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   const router = useRouter();
@@ -91,6 +103,10 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   });
   // the labels hook reads the record's media once for both uses
   const media = fieldLabels.mediaQueries;
+  // a file that failed on the server can be sent again while this device keeps its copy
+  const retriable = useUnfinishedUploads().some(
+    (group) => group.recordId === recordId,
+  );
 
   const scrollToReferencedObservation = useCallback((): void => {
     if (!observationId) {
@@ -229,9 +245,18 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
               record={record.data}
               labels={fieldLabels.labels}
             />
+            <RecordUploadsContainer recordId={recordId} />
             <View style={styles.card}>
               <Text style={styles.heading}>
                 {t('photo')} / {t('video')}
+              </Text>
+              <Text testID="record-media-count" style={styles.secondary}>
+                {t('mediaCount', {
+                  // a file awaiting its upload, or one that failed, is never counted as saved
+                  count: media.filter((item) =>
+                    verifiedStates.has(item.data?.asset.state),
+                  ).length,
+                })}
               </Text>
               {media.map((item, index) => {
                 const detail = item.data;
@@ -252,9 +277,20 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                       style={styles.secondary}>
                       {detail?.asset.originalFileName ?? t('loading')} ·{' '}
                       {detail
-                        ? localizeStatus(detail.asset.state, t)
+                        ? detail.asset.state === 'failed'
+                          ? t('uploadNotUploaded')
+                          : localizeStatus(detail.asset.state, t)
                         : t('loading')}
                     </Text>
+                    {detail?.asset.state === 'failed' && retriable && (
+                      <ActionButton
+                        testID={`record-media-${detail.asset.id}-retry`}
+                        label={t('retryUpload')}
+                        onPress={() =>
+                          router.push(`/capture?recordId=${recordId}&resume=1`)
+                        }
+                      />
+                    )}
                     {detail && (
                       <ActionButton
                         label={t('view')}

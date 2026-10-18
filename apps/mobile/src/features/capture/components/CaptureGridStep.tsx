@@ -29,8 +29,12 @@ export type CaptureGridStepProps = {
   componentLabels: readonly string[];
   /** video stills by file ID; null when a still could not be made */
   thumbnails: Readonly<Record<string, string | null>>;
+  /** another upload or save is running, so retrying waits */
+  busy?: boolean;
   onToggle: (fileId: string) => void;
   onLabel: (fileId: string, componentLabel: string) => void;
+  /** uploads a failed file again */
+  onRetry: (fileId: string) => void;
   onAddPhoto: () => void;
   onAddVideo: () => void;
   onBack: () => void;
@@ -160,8 +164,10 @@ const GridActions: FC<
  * @param props.files every draft file; the grid shows the object files
  * @param props.componentLabels labels of the record's existing components
  * @param props.thumbnails video stills by file ID
+ * @param props.busy disables retrying while another upload runs
  * @param props.onToggle selects or deselects a file
  * @param props.onLabel gives a file a component label
+ * @param props.onRetry uploads a failed file again
  * @returns the grid card with its label picker
  */
 export const CaptureGridStep: FC<CaptureGridStepProps> = ({
@@ -169,8 +175,10 @@ export const CaptureGridStep: FC<CaptureGridStepProps> = ({
   files,
   componentLabels,
   thumbnails,
+  busy = false,
   onToggle,
   onLabel,
+  onRetry,
   ...actions
 }) => {
   const { t } = useLocale();
@@ -194,8 +202,10 @@ export const CaptureGridStep: FC<CaptureGridStepProps> = ({
             thumbnailUri={thumbnails[file.id] ?? null}
             labelled={kind === 'set'}
             selected={isSelected(file)}
+            busy={busy}
             onToggle={() => onToggle(file.id)}
             onLabel={() => setEditingId(file.id)}
+            onRetry={() => onRetry(file.id)}
           />
         ))}
       </View>
