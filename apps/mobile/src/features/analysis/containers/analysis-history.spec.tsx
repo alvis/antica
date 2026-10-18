@@ -123,11 +123,13 @@ it('should mark and scroll to the proposal opened from the change history withou
   expect(scrollTo).not.toHaveBeenCalled();
   await layOut('analysis-proposals', sectionY);
   await layOut('analysis-proposals', sectionY + rowY);
+  await waitFor(() =>
+    expect(scrollTo).toHaveBeenCalledWith({
+      y: sectionY + rowY - contentGap,
+      animated: false,
+    }),
+  );
   expect(scrollTo).toHaveBeenCalledTimes(1);
-  expect(scrollTo).toHaveBeenCalledWith({
-    y: sectionY + rowY - contentGap,
-    animated: false,
-  });
 });
 
 it('should scroll to the top when the focused proposal sits above the content gap', async () => {
@@ -141,7 +143,9 @@ it('should scroll to the top when the focused proposal sits above the content ga
   await layOut('analysis-proposals', 0);
   await layOut(`analysis-proposal-${firstProposalId}`, 0);
 
-  expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: false });
+  await waitFor(() =>
+    expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: false }),
+  );
 });
 
 it('should wait for the record before scrolling, because its arrival moves the proposals', async () => {
