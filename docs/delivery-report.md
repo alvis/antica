@@ -31,7 +31,6 @@ packages
   ui                    # Shared React Native controls and Storybook
 tools
   evaluation            # Frozen inference/retrieval reports and sensitivity checks
-  storage-benchmark     # Seeded scale/thumbnail measurements
 tooling                 # Shared configuration helpers
 docs                    # Runbook, architecture, coverage and limitations
 ```
@@ -108,7 +107,7 @@ The bounded preview/fixture repair passes 33 tests. Three isolated mutations fai
 
 An Android debug APK generated through the durable Expo plugin built and installed, rendered English login, and authenticated against the local API using development OTP. Authenticated Settings switched to Traditional Chinese and back to English; each language and the authenticated session persisted after force-stop/reopen. Sign-out returned to English login. APK SHA-256: `07c304f7f429e347bf9355f4b29951dbf51708dc04454b1b8f561eef4d2ce1a5`. The missing authenticated `GET/POST /v1/locations` routes were repaired and passed nine PostgreSQL route tests. The same native single-photo draft now saves its name, measurements and location (revision 2). Runtime `adb reverse tcp:8080 tcp:8080` makes localhost signed transfers reachable from the emulator; retrying the photo completed verified upload and one successful media-processing job. The stored original byte length and SHA-256 matched database metadata. Record and Ready photo reopened after force-stop, and all three clean cold cycles reached authenticated Collection without a new development state-update warning. Microphone, TalkBack, 200% text scaling, and device performance remain unverified.
 
-The frozen 5,000-record/100,000-media benchmark executed 800 samples across 16 scenarios, with p95 180.10–610.55 ms and four SELECTs per request. It checks signed/null covers, ownership, and complete traversal. These are service/storage timings on a contended host, without handset/network or image-generation timing claims.
+The storage benchmark was retired in the first trial; its recorded PT-20 outcome stands as follows. The frozen 5,000-record/100,000-media benchmark executed 800 samples across 16 scenarios, with p95 180.10–610.55 ms and four SELECTs per request. It checks signed/null covers, ownership, and complete traversal. These are service/storage timings on a contended host, without handset/network or image-generation timing claims.
 
 ## Requirements and deviations
 

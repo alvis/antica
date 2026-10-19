@@ -7,8 +7,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { recordDetailSchema } from '@antica/contracts';
 
-import { AuthProvider } from './auth';
-import { LocaleProvider } from './locale';
+import { LocaleProvider } from './i18n/LocaleProvider';
+import { AuthProvider } from './providers/AuthProvider';
 
 import type { PropsWithChildren, ReactElement } from 'react';
 

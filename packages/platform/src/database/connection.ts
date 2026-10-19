@@ -6,7 +6,6 @@ import { PrismaClient } from './generated/client.js';
 export interface DatabaseConfig {
   readonly url: string;
   readonly maxConnections?: number;
-  readonly onQuery?: (query: string, parameters: readonly unknown[]) => void;
 }
 
 /** typed platform database and its connection cleanup capability */
@@ -40,11 +39,7 @@ export function createDatabase(config: DatabaseConfig): DatabaseConnection {
   };
   const db = new PrismaClient({
     adapter,
-    log: [{ emit: 'event', level: 'query' }],
     transactionOptions: { maxWait: 30_000, timeout: 60_000 },
-  });
-  db.$on('query', ({ query, params }) => {
-    config.onQuery?.(query, JSON.parse(params) as unknown[]);
   });
 
   return {

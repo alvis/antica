@@ -62,6 +62,20 @@ export interface EditDraftRepository {
     selectedProposalIds: readonly string[],
     updatedAt: string,
   ): Promise<EditDraftDetail | null>;
+  /**
+   * records the history entry of one adopted proposal at the record's current revision
+   * @param id edit draft that proposed the change
+   * @param proposalId proposal within the draft result
+   * @param status collector decision for the proposal
+   * @param eventId identifier of the new history entry
+   * @throws {Error} when the draft, proposal, or record is unavailable or the proposal was already recorded
+   */
+  appendAdoption(
+    id: string,
+    proposalId: string,
+    status: 'accepted' | 'skipped',
+    eventId: string,
+  ): Promise<void>;
 }
 
 export interface ComparisonFailureRecord {

@@ -12,7 +12,6 @@
     "build": "pnpm --filter '!@antica/mobile' -r run build",
     "dev": "pnpm --parallel --filter @antica/api --filter @antica/mobile run dev",
     "install": "presetter bootstrap --projects . --projects 'packages/*' --projects 'apps/*' --projects 'tools/*'",
-    "db:benchmark": "pnpm --filter @antica/storage-benchmark run benchmark",
     "jobs:drain": "pnpm --filter @antica/api run jobs:drain",
     "lint": "prettier --check package.json pnpm-workspace.yaml presetter.config.ts tooling && eslint --flag v10_config_lookup_from_file --format stylish --max-warnings 0 presetter.config.ts tooling && pnpm -r run lint",
     "test": "vitest run --passWithNoTests --configLoader runner --project='*:UNIT' && pnpm run test:tooling && pnpm --filter @antica/ui test && pnpm --filter @antica/mobile test",
@@ -20,7 +19,8 @@
     "test:int": "vitest run --passWithNoTests --configLoader runner --project='*:INT'",
     "typecheck": "pnpm run typecheck:tooling && pnpm --filter '!@antica/monorepo' -r run typecheck",
     "typecheck:tooling": "tsc6 --project tsconfig.json --noEmit",
-    "test:tooling": "node --test tooling/check-mobile-coverage.spec.ts tooling/check-mobile-coverage.cli.spec.ts"
+    "e2e:android": "node tooling/run-maestro.ts",
+    "test:tooling": "node --test tooling/check-mobile-coverage.spec.ts tooling/check-mobile-coverage.cli.spec.ts tooling/run-maestro.spec.ts"
   },
   "devDependencies": {
     "@presetter/preset-esm": "9.1.0",

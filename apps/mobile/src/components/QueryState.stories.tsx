@@ -5,7 +5,7 @@ import { Button, Text, View } from 'react-native';
 
 import { expect, fn } from 'storybook/test';
 
-import { LocaleProvider, useLocale } from '../locale';
+import { LocaleProvider, useLocale } from '../i18n/LocaleProvider';
 
 import { QueryState } from './QueryState';
 

@@ -35,6 +35,18 @@ export type {
   RecordSummary,
 } from './record.js';
 export {
+  recordHistoryEntrySchema,
+  recordHistoryPageSchema,
+  recordHistoryQuerySchema,
+  recordHistorySourceSchema,
+} from './record-history.js';
+export type {
+  RecordHistoryEntry,
+  RecordHistoryPage,
+  RecordHistoryQuery,
+  RecordHistorySource,
+} from './record-history.js';
+export {
   canonicalViewSchema,
   checkCreateSchema,
   checkPatchSchema,

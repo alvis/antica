@@ -188,6 +188,16 @@ function fixture(
           appliedProposalIds: [proposalId],
         },
   );
+  const appendAdoption = vi.fn(
+    async (
+      ..._args: [
+        id: string,
+        proposalId: string,
+        status: 'accepted' | 'skipped',
+        eventId: string,
+      ]
+    ) => undefined,
+  );
   const repositories = {
     commands: {
       get: async (_owner: string, operation: string, key: string) =>
@@ -214,6 +224,7 @@ function fixture(
       create: createDraft,
       get: async () => current.run,
       markApplied,
+      appendAdoption,
     },
   };
   const unit = new Proxy({} as UnitOfWork, {
@@ -248,6 +259,7 @@ function fixture(
     enqueue,
     patch,
     markApplied,
+    appendAdoption,
   };
 }
 
@@ -535,5 +547,147 @@ describe('fn:createEditDraftService', () => {
       await draftConflict.service.apply(ownerId, draftId, apply),
     ).toMatchObject({ success: false, error: { code: 'REVISION_CONFLICT' } });
     expect(draftConflict.receipts.size).toBe(0);
+    expect(draftConflict.appendAdoption).not.toHaveBeenCalled();
+  });
+});
+
+describe('fn:createEditDraftService adoption guardrails', () => {
+  const descriptionId = '00000000-0000-4000-8000-000000000012';
+  const twoFieldRun = (): EditDraftRunRecord =>
+    readyRun([
+      {
+        id: proposalId,
+        field: 'name',
+        before: 'Vase',
+        proposed: 'Celadon vase',
+        findingIds: [],
+      },
+      {
+        id: descriptionId,
+        field: 'description',
+        before: '',
+        proposed: '青瓷瓶',
+        findingIds: [],
+      },
+    ]);
+
+  it('should reject a stale displayed revision as retryable without writing', async () => {
+    const ports = fixture({
+      run: readyRun(),
+      record: { ...record(), recordRevision: 2 },
+    });
+
+    expect(await ports.service.apply(ownerId, draftId, apply)).toEqual({
+      success: false,
+      error: {
+        code: 'REVISION_CONFLICT',
+        message: 'Record changed before adoption',
+        retryable: true,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+    expect(ports.appendAdoption).not.toHaveBeenCalled();
+  });
+
+  it('should reject an adopted field changed since the draft even when the revision matches', async () => {
+    const ports = fixture({
+      run: twoFieldRun(),
+      record: { ...record(), recordRevision: 3, description: 'Collector edit' },
+    });
+
+    expect(
+      await ports.service.apply(ownerId, draftId, {
+        ...apply,
+        expectedRecordRevision: 3,
+        selectedProposalIds: [proposalId, descriptionId],
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'REVISION_CONFLICT',
+        message: 'Proposed field changed since draft',
+        retryable: true,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+    expect(ports.appendAdoption).not.toHaveBeenCalled();
+  });
+
+  it('should adopt an unchanged field while an unadopted field changed after the draft (A7)', async () => {
+    const ports = fixture({
+      run: twoFieldRun(),
+      record: { ...record(), recordRevision: 3, description: 'Collector edit' },
+    });
+
+    expect(
+      await ports.service.apply(ownerId, draftId, {
+        ...apply,
+        expectedRecordRevision: 3,
+      }),
+    ).toMatchObject({
+      success: true,
+      data: { record: { name: 'Celadon vase' } },
+    });
+    expect(ports.patch).toHaveBeenCalledWith(
+      recordId,
+      {
+        expectedRevision: 3,
+        fields: { name: 'Celadon vase' },
+        editDraftId: draftId,
+        acceptedProposalIds: [proposalId],
+      },
+      { recordRevision: 4, analysisInputVersion: 2, evidenceVersion: 1 },
+    );
+  });
+
+  it('should answer a foreign or missing draft with a not-found result that leaks no record data', async () => {
+    const ports = fixture({ run: null });
+
+    expect(await ports.service.apply(ownerId, draftId, apply)).toEqual({
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Ready edit draft not found',
+        retryable: false,
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+  });
+
+  it('should refuse to reapply a proposal from a fully applied draft', async () => {
+    const applied: EditDraftRunRecord = {
+      ...readyRun(),
+      detail: {
+        ...readyRun().detail,
+        status: 'applied',
+        appliedProposalIds: [proposalId],
+      },
+    };
+    const ports = fixture({ run: applied });
+
+    expect(await ports.service.apply(ownerId, draftId, apply)).toMatchObject({
+      success: false,
+      error: { code: 'NOT_FOUND', retryable: false },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+    expect(ports.appendAdoption).not.toHaveBeenCalled();
+  });
+
+  it('should write one accepted history entry per adopted field after the draft is marked', async () => {
+    const ports = fixture({ run: twoFieldRun() });
+
+    expect(
+      await ports.service.apply(ownerId, draftId, {
+        ...apply,
+        selectedProposalIds: [proposalId, descriptionId],
+      }),
+    ).toMatchObject({ success: true });
+    expect(ports.appendAdoption.mock.calls).toEqual([
+      [draftId, proposalId, 'accepted', expect.any(String)],
+      [draftId, descriptionId, 'accepted', expect.any(String)],
+    ]);
+    expect(ports.markApplied.mock.invocationCallOrder[0]).toBeLessThan(
+      ports.appendAdoption.mock.invocationCallOrder[0]!,
+    );
   });
 });

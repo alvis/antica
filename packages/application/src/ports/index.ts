@@ -1,3 +1,4 @@
+export { InvalidCursorError } from './cursor.js';
 export { ComponentInUseError } from './repository.js';
 
 export type {

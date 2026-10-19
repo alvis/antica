@@ -21,7 +21,6 @@
     "@antica/application": "workspace:*",
     "@antica/client": "workspace:*",
     "@antica/contracts": "workspace:*",
-    "@antica/domain": "workspace:*",
     "@antica/ui": "workspace:*",
     "@babel/runtime": "^7.29.10",
     "@better-auth/expo": "^1.7.7",

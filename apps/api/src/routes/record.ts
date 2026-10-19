@@ -2,7 +2,9 @@ import { Hono } from 'hono';
 
 import {
   collectionQuerySchema,
+  entityIdSchema,
   recordCreateSchema,
+  recordHistoryQuerySchema,
   recordPatchSchema,
 } from '@antica/contracts';
 import type { RecordService } from '@antica/application/server';
@@ -61,6 +63,21 @@ export function createRecordRoutes(service: RecordService): Hono<ApiEnv> {
       await service.get(context.get('ownerId'), context.req.param('id')),
     ),
   );
+  router.get('/:id/history', async (context) => {
+    const rawLimit = context.req.query('limit');
+    const id = entityIdSchema.safeParse(context.req.param('id'));
+    const query = recordHistoryQuerySchema.safeParse({
+      cursor: context.req.query('cursor'),
+      limit: rawLimit === undefined ? undefined : Number(rawLimit),
+    });
+    if (!id.success || !query.success) {
+      return invalid(context);
+    }
+    return respond(
+      context,
+      await service.history(context.get('ownerId'), id.data, query.data),
+    );
+  });
   router.patch('/:id', async (context) => {
     const input = recordPatchSchema.safeParse(await jsonBody(context));
     if (!input.success) {

@@ -10,6 +10,8 @@ export type ActionButtonProps = {
   onPress: () => void;
   disabled?: boolean;
   secondary?: boolean;
+  /** stable automation identifier for native tests and end-to-end flows */
+  testID?: string;
 };
 
 /**
@@ -19,6 +21,7 @@ export type ActionButtonProps = {
  * @param root0.onPress action handler
  * @param root0.disabled prevents interaction when true
  * @param root0.secondary uses the outlined presentation when true
+ * @param root0.testID stable automation identifier
  * @returns the native button
  */
 export const ActionButton: FC<ActionButtonProps> = ({
@@ -26,8 +29,10 @@ export const ActionButton: FC<ActionButtonProps> = ({
   onPress,
   disabled,
   secondary,
+  testID,
 }) => (
   <Pressable
+    testID={testID}
     accessibilityRole="button"
     accessibilityLabel={label}
     accessibilityState={{ disabled: Boolean(disabled) }}

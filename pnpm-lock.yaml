@@ -101,9 +101,6 @@ importers:
       '@antica/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@antica/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
       '@antica/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -470,34 +467,6 @@ importers:
       vite:
         specifier: 8.3.4
         version: 8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
-      vitest:
-        specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/coverage-istanbul@4.1.11)(@vitest/coverage-v8@4.1.11)(jsdom@20.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
-
-  tools/storage-benchmark:
-    dependencies:
-      '@antica/application':
-        specifier: workspace:*
-        version: link:../../packages/application
-      '@antica/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@antica/platform':
-        specifier: workspace:*
-        version: link:../../packages/platform
-      postgres:
-        specifier: ^3.4.0
-        version: 3.4.9
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.19.2
-      '@vitest/coverage-v8':
-        specifier: 4.1.11
-        version: 4.1.11(vitest@4.1.11)
-      tsx:
-        specifier: ^4.20.0
-        version: 4.23.15
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/coverage-istanbul@4.1.11)(@vitest/coverage-v8@4.1.11)(jsdom@20.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))

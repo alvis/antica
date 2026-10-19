@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { Stack } from 'expo-router';
 import { StatusBar } from 'react-native';
 
 import { colors } from '@antica/ui';
 
-import { AuthProvider } from '../auth';
-import { LocaleProvider } from '../locale';
+import { SessionNavigator } from '../features/auth/containers/SessionNavigator';
+import { LocaleProvider } from '../i18n/LocaleProvider';
+import { AuthProvider } from '../providers/AuthProvider';
 
 import type { ReactElement } from 'react';
 
@@ -20,7 +20,7 @@ export default function RootLayout(): ReactElement {
       <StatusBar barStyle="dark-content" backgroundColor={colors.canvas} />
       <LocaleProvider>
         <AuthProvider>
-          <Stack screenOptions={{ headerShown: false }} />
+          <SessionNavigator />
         </AuthProvider>
       </LocaleProvider>
     </QueryClientProvider>

@@ -5,6 +5,8 @@ import { calculateAnalysisFreshness } from '@antica/domain';
 
 import { Prisma } from '../generated/client.js';
 
+import { queryRecordHistory } from './record-history.js';
+
 import type {
   RecordRepository,
   LocationRepository,
@@ -462,6 +464,15 @@ export function createRecordRepository(
       await saveRelations(id, fields);
 
       return get(id);
+    },
+    /**
+     * reads both suggestion flows' adoption history for one owned record
+     * @param id record identifier
+     * @param query opaque cursor and page size
+     * @returns newest-first history page
+     */
+    async queryHistory(id, query) {
+      return queryRecordHistory({ tx, ownerId }, id, query);
     },
     /**
      * @param id

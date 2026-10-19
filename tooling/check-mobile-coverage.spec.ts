@@ -23,6 +23,10 @@ const runtimeSources = [
   { name: 'mobile.stories.spec.dom.helpers.tsx', runner: 'dom' },
   { name: 'components/QueryState.stories.tsx', runner: 'dom' },
   { name: 'components/Screen.stories.tsx', runner: 'dom' },
+  {
+    name: 'features/collection/containers/RecordHistoryContainer.stories.tsx',
+    runner: 'dom',
+  },
 ];
 
 const covered = {
@@ -38,7 +42,10 @@ void describe('fn:checkMobileCoverage', () => {
   void it('should accept complete disjoint receipts and reject seeded omissions and uncovered counters', () => {
     const root = mkdtempSync(join(tmpdir(), 'antica-coverage-gate-'));
     const native = join(root, 'auth.tsx');
-    const dom = join(root, 'features/analysis/AnalysisContainer.stories.tsx');
+    const dom = join(
+      root,
+      'features/analysis/containers/AnalysisContainer.stories.tsx',
+    );
     mkdirSync(dirname(dom), { recursive: true });
     for (const { name } of runtimeSources) {
       const source = join(root, name);

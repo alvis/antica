@@ -1,10 +1,11 @@
 appId: ${APP_ID}
 ---
+- runFlow: support/dismiss-dev-logbox.yaml
 - tapOn: Add item
 - tapOn: Single item
 - tapOn: Import file
-- tapOn:
-    id: ${MEDIA_PICKER_ITEM_ID}
+- tapOn: ${MEDIA_PICKER_ITEM}
+- tapOn: Done
 - tapOn: Continue
 - tapOn: Continue
 - tapOn: Original words
@@ -14,10 +15,21 @@ appId: ${APP_ID}
 - tapOn: Continue
 - tapOn: Name
 - inputText: ${RECORD_NAME}
+# Submit the field to close the keyboard, which otherwise covers Continue.
+- pressKey: Enter
+- waitForAnimationToEnd
 - tapOn: Continue
-- tapOn: Save
+- runFlow: support/dismiss-dev-logbox.yaml
+# The step heading also reads "Save"; index 1 is the button until GAP01 adds testIDs.
+- tapOn:
+    text: Save
+    index: 1
 - assertVisible: ${RECORD_NAME}
 - stopApp
 - launchApp
+# A cold start on a loaded host can take well over a minute in dev builds.
+- extendedWaitUntil:
+    visible: '.*, ${RECORD_NAME}'
+    timeout: 120000
 - tapOn: '.*, ${RECORD_NAME}'
 - assertVisible: ${RECORD_NAME}
