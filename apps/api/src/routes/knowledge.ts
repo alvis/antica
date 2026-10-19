@@ -13,6 +13,8 @@ import {
 
 import { invalid, jsonBody, respond } from '../http.js';
 
+import { registerKnowledgeSearchRoutes } from './knowledge-search.js';
+
 import type { Context } from 'hono';
 
 import type {
@@ -51,6 +53,7 @@ export function createKnowledgeRoutes(
   const router = new Hono<ApiEnv>();
   registerSourceRoutes(router, sources);
   registerKnowledgeListRoute(router, knowledge);
+  registerKnowledgeSearchRoutes(router, knowledge);
   registerKnowledgeDetailRoutes(router, knowledge);
 
   return router;
@@ -254,6 +257,9 @@ async function getKnowledgeDetail(
   if (!query.success) {
     return invalid(context);
   }
+  if (knowledge.discovery) {
+    return discoveredMethodDetail(context, knowledge.discovery, query.data);
+  }
   const legacy = await knowledge.get(
     ownerId,
     id,
@@ -276,4 +282,59 @@ async function getKnowledgeDetail(
   );
 
   return respond(context, legacy);
+}
+
+/**
+ * serves a pinned legacy inspection method using the same bulk detail snapshot
+ * @param context authenticated request
+ * @param discovery bulk knowledge capabilities
+ * @param query legacy revision and method selection
+ * @returns legacy detail with persisted content ETag
+ */
+async function discoveredMethodDetail(
+  context: Context<ApiEnv, '/knowledge/:id'>,
+  discovery: NonNullable<KnowledgeService['discovery']>,
+  query: z.infer<typeof knowledgeReadSchema>,
+): Promise<Response> {
+  const value = await discovery.detail(
+    context.get('ownerId'),
+    context.req.param('id'),
+    { revision: query.revision },
+  );
+  if (!value || !('entry' in value.detail)) {
+    return respond(context, {
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Knowledge entry or requested version not found',
+        retryable: false,
+      },
+    });
+  }
+  const detail = value.detail;
+  const versions = detail.methodVersions.filter(
+    (version) => version.id === query.methodVersionId,
+  );
+  if (versions.length === 0) {
+    return respond(context, {
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Knowledge entry or requested version not found',
+        retryable: false,
+      },
+    });
+  }
+  context.header('ETag', `"${detail.entry.revision}-${value.contentHash}"`);
+
+  return respond(context, {
+    success: true,
+    data: {
+      ...detail,
+      methods: detail.methods.filter((method) =>
+        versions.some((version) => version.methodId === method.id),
+      ),
+      methodVersions: versions,
+    },
+  });
 }

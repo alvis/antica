@@ -20,3 +20,5 @@ export { claimOtpSend } from './otp-cooldown.js';
 export { ensureCollectorUser, collectorUserId } from './collector.js';
 export { migrateDatabase } from './migrate.js';
 export { seedIllustrativeData } from './seed.js';
+
+export { createKnowledgeDiscovery } from './repositories/knowledge/search.js';

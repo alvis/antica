@@ -15,6 +15,7 @@ import { runKnowledgeAudit } from './knowledge/audit-cli.js';
 import { auditKnowledge } from './knowledge/audit.js';
 import { canonicalHash } from './knowledge/canonical.js';
 import { projectKnowledge } from './knowledge/projections.js';
+import { createKnowledgeDiscovery } from './knowledge/search.js';
 import { createKnowledgeRepository } from './knowledge.js';
 import { createSourceRepository } from './sources.js';
 
@@ -436,6 +437,11 @@ describe('fn:createKnowledgeRepository', { timeout: 30_000 }, () => {
 
       const saved = await repository.get(entry.id);
       expect(saved?.entry).toEqual(entry);
+      expect(
+        await createKnowledgeDiscovery(tx).detail(ownerId, entry.id, {
+          view: 'working',
+        }),
+      ).toMatchObject({ detail: saved });
       expect(saved?.citations).toEqual([citation]);
       expect(saved?.referenceImages).toMatchObject([
         { id: imageId, locator: citation.locator },

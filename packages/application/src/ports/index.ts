@@ -90,3 +90,5 @@ export type {
   CorpusInstallPlan,
   CorpusInstallRepository,
 } from '../knowledge/corpus-install.js';
+
+export type { KnowledgeDiscovery } from '../knowledge/discovery.js';

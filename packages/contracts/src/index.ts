@@ -313,3 +313,4 @@ export type {
   RecordMessagePost,
   RecordMessagePosted,
 } from './record-message.js';
+export * from './knowledge-search.js';

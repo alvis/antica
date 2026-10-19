@@ -5,6 +5,7 @@ import {
   createImageSearchService,
   createJobService,
   createKnowledgeService,
+  withKnowledgeDiscovery,
   createLocationService,
   createMediaService,
   createRecordMessageService,
@@ -13,6 +14,8 @@ import {
   createSourceService,
   createTranscriptionService,
 } from '@antica/application/server';
+
+import { createKnowledgeDiscovery } from '@antica/platform/database';
 
 import { createApplication } from './application.js';
 import { createApplicationDrain } from './jobs.js';
@@ -200,7 +203,10 @@ function createKnowledgeServices(
       ids,
       signer: persistence.storage,
     }),
-    knowledge: createKnowledgeService(transaction, clock, ids),
+    knowledge: withKnowledgeDiscovery(
+      createKnowledgeService(transaction, clock, ids),
+      createKnowledgeDiscovery(persistence.database.db),
+    ),
     research: createResearchService(transaction, clock, ids),
     images: createImageSearchService({
       transaction,

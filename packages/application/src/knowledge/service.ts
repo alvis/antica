@@ -32,8 +32,11 @@ import type {
   UnitOfWork,
 } from '../ports/index.js';
 
+import type { KnowledgeDiscovery } from './discovery.js';
+
 /** authenticated knowledge entry reads and collector revisions */
 export interface KnowledgeService {
+  readonly discovery?: KnowledgeDiscovery;
   list(
     ownerId: string,
     query: KnowledgeQuery,

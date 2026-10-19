@@ -22,6 +22,21 @@ const clock = { now: (): string => '2026-10-19T00:00:00.000Z' };
 const ids = { create: randomUUID };
 
 describe('Knowledge revision response integrity', () => {
+  it('should reject discovery requests explicitly when the service lacks that capability', async () => {
+    const router = createKnowledgeRoutes(
+      createSourceService({ transaction, clock, ids }),
+      createKnowledgeService(transaction, clock, ids),
+    );
+    for (const path of [
+      '/knowledge/search',
+      '/knowledge/topics',
+      `/knowledge/topics/${randomUUID()}/tree`,
+    ]) {
+      const response = await router.request(path);
+      expect(await response.json()).toMatchObject({ code: 'INDEX_NOT_READY' });
+    }
+  });
+
   it('should withhold a legacy detail if its exact revision hash cannot be read', async () => {
     const knowledge = createKnowledgeService(transaction, clock, ids);
     const id = randomUUID();

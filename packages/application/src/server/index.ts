@@ -59,3 +59,6 @@ export type { TranscriptionMediaReader } from '../voice/transcription-handler.js
 export { createEditDraftService } from '../voice/edit.js';
 export type { EditDraftService } from '../voice/edit.js';
 export { createEditDraftHandler } from '../voice/edit-handler.js';
+
+export type { KnowledgeDiscovery } from '../knowledge/discovery.js';
+export { withKnowledgeDiscovery } from '../knowledge/discovery.js';
