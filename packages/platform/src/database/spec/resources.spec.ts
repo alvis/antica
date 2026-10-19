@@ -8,7 +8,7 @@ import { provisionDatabaseResources } from './resources.js';
 import type { DatabaseConnection } from '../connection.js';
 
 const boundary = vi.hoisted(() => ({
-  execute: vi.fn<DatabaseConnection['db']['execute']>(),
+  execute: vi.fn<DatabaseConnection['db']['$executeRawUnsafe']>(),
   close: vi.fn<DatabaseConnection['close']>(async () => {}),
 }));
 
@@ -18,7 +18,8 @@ vi.mock(
     ({
       createDatabase: vi.fn<typeof createDatabase>(() => ({
         db: {
-          execute: boundary.execute as DatabaseConnection['db']['execute'],
+          $executeRawUnsafe:
+            boundary.execute as DatabaseConnection['db']['$executeRawUnsafe'],
         } satisfies Partial<DatabaseConnection['db']> as Partial<
           DatabaseConnection['db']
         > as DatabaseConnection['db'],
@@ -107,7 +108,7 @@ describe('fn:provisionDatabaseResources', () => {
 
     const created = boundary.execute.mock.calls
       .slice(0, 2)
-      .map(([query]) => (query as string).slice('CREATE DATABASE '.length));
+      .map(([query]) => query.slice('CREATE DATABASE '.length));
     expect(created).toHaveLength(2);
     expect(boundary.execute.mock.calls).toEqual([
       ...created.map((name) => [`CREATE DATABASE ${name}`]),
@@ -122,7 +123,7 @@ describe('fn:provisionDatabaseResources', () => {
     const close = new Error('Close unavailable');
     vi.mocked(migrateDatabase).mockRejectedValueOnce(acquisition);
     boundary.execute.mockImplementationOnce(
-      vi.fn<DatabaseConnection['db']['execute']>(),
+      vi.fn<DatabaseConnection['db']['$executeRawUnsafe']>(),
     );
     boundary.execute.mockRejectedValueOnce(drop);
     boundary.close.mockRejectedValueOnce(close);

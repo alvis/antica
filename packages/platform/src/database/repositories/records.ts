@@ -1,38 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  isNull,
-  lt,
-  or,
-  sql,
-} from 'drizzle-orm';
-
 import { ComponentInUseError } from '@antica/application/ports';
 import { calculateAnalysisFreshness } from '@antica/domain';
 
-import {
-  analysisRuns,
-  analysisSnapshots,
-  locations,
-  mediaAssets,
-  mediaDerivatives,
-  recordAcquisitions,
-  recordCategories,
-  recordChecks,
-  recordComponents,
-  recordMaterials,
-  recordMeasurements,
-  recordReceipts,
-  records,
-  recordTags,
-} from '../schema/index.js';
+import { Prisma } from '../generated/client.js';
 
 import type {
   RecordRepository,
@@ -99,34 +70,27 @@ export function createRecordRepository(
     if (runIds.length === 0) {
       return new Map();
     }
-    const rows = await tx
-      .select({
-        runId: analysisRuns.id,
-        analysisInputVersion: analysisSnapshots.analysisInputVersion,
-      })
-      .from(analysisRuns)
-      .innerJoin(
-        analysisSnapshots,
-        eq(analysisRuns.snapshotId, analysisSnapshots.id),
-      )
-      .where(
-        and(
-          eq(analysisRuns.ownerId, ownerId),
-          inArray(analysisRuns.id, runIds),
-          inArray(analysisRuns.status, ['completed', 'partial']),
-        ),
-      );
+    const rows = await tx.analysisRuns.findMany({
+      select: {
+        id: true,
+        analysisSnapshots: { select: { analysisInputVersion: true } },
+      },
+      where: {
+        ownerId,
+        id: { in: [...runIds] },
+        status: { in: ['completed', 'partial'] },
+      },
+    });
 
     return new Map(
-      rows.map((row) => [row.runId, row.analysisInputVersion] as const),
+      rows.map(
+        (row) => [row.id, row.analysisSnapshots.analysisInputVersion] as const,
+      ),
     );
   }
 
   async function get(id: string): Promise<RecordDetail | null> {
-    const [row] = await tx
-      .select()
-      .from(records)
-      .where(and(eq(records.id, id), eq(records.ownerId, ownerId)));
+    const row = await tx.records.findFirst({ where: { id, ownerId } });
     if (!row) {
       return null;
     }
@@ -142,41 +106,27 @@ export function createRecordRepository(
       checks,
       latestRunInputVersions,
     ] = await Promise.all([
-      tx
-        .select()
-        .from(recordComponents)
-        .where(eq(recordComponents.recordId, id))
-        .orderBy(asc(recordComponents.ordinal)),
-      tx
-        .select()
-        .from(recordCategories)
-        .where(eq(recordCategories.recordId, id)),
-      tx.select().from(recordMaterials).where(eq(recordMaterials.recordId, id)),
-      tx.select().from(recordTags).where(eq(recordTags.recordId, id)),
-      tx
-        .select()
-        .from(recordMeasurements)
-        .where(eq(recordMeasurements.recordId, id)),
-      tx
-        .select()
-        .from(recordAcquisitions)
-        .where(eq(recordAcquisitions.recordId, id)),
-      tx
-        .select({ id: recordReceipts.assetId })
-        .from(recordReceipts)
-        .where(eq(recordReceipts.recordId, id)),
-      tx
-        .select({ id: mediaAssets.id })
-        .from(mediaAssets)
-        .where(
-          and(eq(mediaAssets.recordId, id), eq(mediaAssets.ownerId, ownerId)),
-        ),
-      tx
-        .select({ id: recordChecks.id })
-        .from(recordChecks)
-        .where(
-          and(eq(recordChecks.recordId, id), eq(recordChecks.ownerId, ownerId)),
-        ),
+      tx.recordComponents.findMany({
+        where: { recordId: id },
+        orderBy: { ordinal: 'asc' },
+      }),
+      tx.recordCategories.findMany({ where: { recordId: id } }),
+      tx.recordMaterials.findMany({ where: { recordId: id } }),
+      tx.recordTags.findMany({ where: { recordId: id } }),
+      tx.recordMeasurements.findMany({ where: { recordId: id } }),
+      tx.recordAcquisitions.findMany({ where: { recordId: id } }),
+      tx.recordReceipts.findMany({
+        select: { assetId: true },
+        where: { recordId: id },
+      }),
+      tx.mediaAssets.findMany({
+        select: { id: true },
+        where: { recordId: id, ownerId },
+      }),
+      tx.recordChecks.findMany({
+        select: { id: true },
+        where: { recordId: id, ownerId },
+      }),
       readLatestRunInputVersions(row.latestRunId ? [row.latestRunId] : []),
     ]);
     const acquisition = acquisitions[0];
@@ -231,9 +181,9 @@ export function createRecordRepository(
         acquiredOn: acquisition?.acquiredOn ?? undefined,
         seller: acquisition?.seller ?? undefined,
         method: acquisition?.method ?? undefined,
-        amount: acquisition?.amount ?? undefined,
+        amount: acquisition?.amount?.toFixed(2) ?? undefined,
         currency: acquisition?.currency ?? undefined,
-        receiptAssetIds: receipts.map((item) => item.id),
+        receiptAssetIds: receipts.map((item) => item.assetId),
         provenanceNote: acquisition?.provenanceNote ?? undefined,
       },
       tags: tags.map((item) => item.tag),
@@ -259,7 +209,7 @@ export function createRecordRepository(
   }
 
   async function allocateCode(): Promise<string> {
-    const result = await tx.execute(sql`
+    const result = await tx.$queryRaw<Array<{ value: bigint }>>(Prisma.sql`
       insert into sequence_counters (owner_id, kind, next_value) values (${ownerId}, 'record', 2)
       on conflict (owner_id, kind) do update set next_value = sequence_counters.next_value + 1
       returning next_value - 1 as value
@@ -274,69 +224,61 @@ export function createRecordRepository(
   ): Promise<void> {
     let removedComponentIds: string[] = [];
     if (fields.components) {
-      const existing = await tx
-        .select({ id: recordComponents.id })
-        .from(recordComponents)
-        .where(eq(recordComponents.recordId, id));
+      const existing = await tx.recordComponents.findMany({
+        select: { id: true },
+        where: { recordId: id },
+      });
       const existingIds = new Set(existing.map((item) => item.id));
       const requestedIds = new Set(fields.components.map((item) => item.id));
       removedComponentIds = existing
         .filter((item) => !requestedIds.has(item.id))
         .map((item) => item.id);
       if (existing.length) {
-        await tx
-          .update(recordComponents)
-          .set({ ordinal: sql`-${recordComponents.ordinal} - 1` })
-          .where(eq(recordComponents.recordId, id));
+        await tx.$executeRaw(
+          Prisma.sql`update record_components set ordinal = -ordinal - 1 where record_id = ${id}::uuid`,
+        );
       }
       for (const [ordinal, item] of fields.components.entries()) {
         if (existingIds.has(item.id)) {
-          await tx
-            .update(recordComponents)
-            .set({ label: item.label, ordinal })
-            .where(
-              and(
-                eq(recordComponents.id, item.id),
-                eq(recordComponents.recordId, id),
-              ),
-            );
+          await tx.recordComponents.updateMany({
+            data: { label: item.label, ordinal },
+            where: { id: item.id, recordId: id },
+          });
         } else {
-          await tx
-            .insert(recordComponents)
-            .values({ ...item, recordId: id, ownerId, ordinal });
+          await tx.recordComponents.create({
+            data: { ...item, recordId: id, ownerId, ordinal },
+          });
         }
       }
     }
     if (fields.categoryIds) {
-      await tx
-        .delete(recordCategories)
-        .where(eq(recordCategories.recordId, id));
+      await tx.recordCategories.deleteMany({ where: { recordId: id } });
       if (fields.categoryIds.length) {
-        await tx.insert(recordCategories).values(
-          fields.categoryIds.map((categoryId) => ({
+        await tx.recordCategories.createMany({
+          data: fields.categoryIds.map((categoryId) => ({
             recordId: id,
             categoryId,
           })),
-        );
+        });
       }
     }
     if (fields.materialIds) {
-      await tx.delete(recordMaterials).where(eq(recordMaterials.recordId, id));
+      await tx.recordMaterials.deleteMany({ where: { recordId: id } });
       if (fields.materialIds.length) {
-        await tx.insert(recordMaterials).values(
-          fields.materialIds.map((materialId) => ({
+        await tx.recordMaterials.createMany({
+          data: fields.materialIds.map((materialId) => ({
             recordId: id,
             materialId,
           })),
-        );
+        });
       }
     }
     if (fields.tags) {
-      await tx.delete(recordTags).where(eq(recordTags.recordId, id));
+      await tx.recordTags.deleteMany({ where: { recordId: id } });
       if (fields.tags.length) {
-        await tx
-          .insert(recordTags)
-          .values(fields.tags.map((tag) => ({ recordId: id, tag })));
+        await tx.recordTags.createMany({
+          data: fields.tags.map((tag) => ({ recordId: id, tag })),
+        });
       }
     }
     if (fields.dimensions) {
@@ -351,21 +293,18 @@ export function createRecordRepository(
           continue;
         }
         const value = fields.dimensions[kind];
-        await tx
-          .delete(recordMeasurements)
-          .where(
-            and(
-              eq(recordMeasurements.recordId, id),
-              eq(recordMeasurements.kind, kind),
-            ),
-          );
+        await tx.recordMeasurements.deleteMany({
+          where: { recordId: id, kind },
+        });
         if (value) {
-          await tx.insert(recordMeasurements).values({
-            recordId: id,
-            kind,
-            value: String(value.value),
-            unit: value.unit,
-            componentId: value.componentId ?? null,
+          await tx.recordMeasurements.create({
+            data: {
+              recordId: id,
+              kind,
+              value: String(value.value),
+              unit: value.unit,
+              componentId: value.componentId ?? null,
+            },
           });
         }
       }
@@ -380,35 +319,33 @@ export function createRecordRepository(
         currency: value.currency ?? null,
         provenanceNote: value.provenanceNote ?? null,
       };
-      await tx
-        .insert(recordAcquisitions)
-        .values({ recordId: id, ...acquisition })
-        .onConflictDoUpdate({
-          target: recordAcquisitions.recordId,
-          set: acquisition,
-        });
-      await tx.delete(recordReceipts).where(eq(recordReceipts.recordId, id));
+      await tx.recordAcquisitions.upsert({
+        where: { recordId: id },
+        create: { recordId: id, ...acquisition },
+        update: acquisition,
+      });
+      await tx.recordReceipts.deleteMany({ where: { recordId: id } });
       if (value.receiptAssetIds.length) {
-        await tx
-          .insert(recordReceipts)
-          .values(
-            value.receiptAssetIds.map((assetId) => ({ recordId: id, assetId })),
-          );
+        await tx.recordReceipts.createMany({
+          data: value.receiptAssetIds.map((assetId) => ({
+            recordId: id,
+            assetId,
+          })),
+        });
       }
     }
     for (const componentId of removedComponentIds) {
       try {
-        await tx
-          .delete(recordComponents)
-          .where(
-            and(
-              eq(recordComponents.id, componentId),
-              eq(recordComponents.recordId, id),
-            ),
-          );
+        await tx.recordComponents.deleteMany({
+          where: { id: componentId, recordId: id },
+        });
       } catch (error) {
         const cause = error as { cause?: { code?: string }; code?: string };
-        if (cause.code === '23503' || cause.cause?.code === '23503') {
+        if (
+          cause.code === 'P2003' ||
+          cause.code === '23503' ||
+          cause.cause?.code === '23503'
+        ) {
           throw new ComponentInUseError();
         }
         throw error;
@@ -419,117 +356,106 @@ export function createRecordRepository(
   return {
     allocateCode,
     get,
+
     async getThumbnailTargets(recordIds) {
       if (recordIds.length === 0) {
         return [];
       }
-      const rows = await tx
-        .selectDistinctOn([mediaAssets.recordId], {
-          recordId: records.id,
-          assetOrDerivativeId: mediaDerivatives.id,
-          storageKey: mediaDerivatives.objectKey,
-        })
-        .from(mediaAssets)
-        .innerJoin(
-          records,
-          and(
-            eq(records.id, mediaAssets.recordId),
-            eq(records.ownerId, ownerId),
-          ),
-        )
-        .innerJoin(
-          mediaDerivatives,
-          and(
-            eq(mediaDerivatives.originalAssetId, mediaAssets.id),
-            eq(mediaDerivatives.ownerId, ownerId),
-            eq(mediaDerivatives.kind, 'thumbnail'),
-          ),
-        )
-        .where(
-          and(
-            eq(mediaAssets.ownerId, ownerId),
-            inArray(mediaAssets.recordId, [...recordIds]),
-            eq(mediaAssets.kind, 'photo'),
-            eq(mediaAssets.purpose, 'object'),
-            eq(mediaAssets.state, 'ready'),
-          ),
-        )
-        .orderBy(
-          asc(mediaAssets.recordId),
-          asc(mediaAssets.createdAt),
-          asc(mediaAssets.id),
-          asc(mediaDerivatives.id),
-        );
+      const rows = await tx.$queryRaw<
+        Array<{
+          recordId: string;
+          assetOrDerivativeId: string;
+          storageKey: string;
+        }>
+      >(Prisma.sql`
+        select distinct on (asset.record_id) record.id as "recordId", derivative.id as "assetOrDerivativeId", derivative.object_key as "storageKey"
+        from media_assets asset
+        inner join records record on record.id = asset.record_id and record.owner_id = ${ownerId}
+        inner join media_derivatives derivative on derivative.original_asset_id = asset.id and derivative.owner_id = ${ownerId} and derivative.kind = 'thumbnail'
+        where asset.owner_id = ${ownerId} and asset.record_id in (${Prisma.join(recordIds.map((id) => Prisma.sql`${id}::uuid`))})
+          and asset.kind = 'photo' and asset.purpose = 'object' and asset.state = 'ready'
+        order by asset.record_id asc, asset.created_at asc, asset.id asc, derivative.id asc
+      `);
+
       return rows;
     },
+
     async create(record): Promise<void> {
-      await tx.insert(records).values({
-        id: record.id,
-        ownerId,
-        code: record.code,
-        name: record.name,
-        unitKind: record.unitKind,
-        pieceCount: record.pieceCount,
-        periodLabel: record.period?.label,
-        periodFromYear: record.period?.fromYear,
-        periodToYear: record.period?.toYear,
-        periodStatus: record.period?.status,
-        locationId: record.location.locationId,
-        locationDetail: record.location.detail,
-        description: record.description,
-        collectorJudgment: record.collectorJudgment,
-        recordRevision: record.recordRevision,
-        analysisInputVersion: record.analysisInputVersion,
-        evidenceVersion: record.evidenceVersion,
-        latestRunId: record.latestRunId,
+      await tx.records.create({
+        data: {
+          id: record.id,
+          ownerId,
+          code: record.code,
+          name: record.name,
+          unitKind: record.unitKind,
+          pieceCount: record.pieceCount,
+          periodLabel: record.period?.label,
+          periodFromYear: record.period?.fromYear,
+          periodToYear: record.period?.toYear,
+          periodStatus: record.period?.status,
+          locationId: record.location.locationId,
+          locationDetail: record.location.detail,
+          description: record.description,
+          collectorJudgment: record.collectorJudgment,
+          recordRevision: record.recordRevision,
+          analysisInputVersion: record.analysisInputVersion,
+          evidenceVersion: record.evidenceVersion,
+          latestRunId: record.latestRunId,
+        },
       });
       await saveRelations(record.id, record);
     },
+
     async patch(
       id: string,
       patch: RecordPatch,
       versions: RecordVersions,
     ): Promise<RecordDetail | null> {
       const fields = patch.fields;
-      const changed = await tx
-        .update(records)
-        .set({
-          name: fields.name,
-          unitKind: fields.unitKind,
-          pieceCount: fields.pieceCount,
-          periodLabel:
-            fields.period === undefined
-              ? undefined
-              : (fields.period?.label ?? null),
-          periodFromYear:
-            fields.period === undefined
-              ? undefined
-              : (fields.period?.fromYear ?? null),
-          periodToYear:
-            fields.period === undefined
-              ? undefined
-              : (fields.period?.toYear ?? null),
-          periodStatus:
-            fields.period === undefined
-              ? undefined
-              : (fields.period?.status ?? null),
-          locationId: fields.location?.locationId,
-          locationDetail: fields.location?.detail,
-          description: fields.description,
-          collectorJudgment: fields.collectorJudgment,
-          recordRevision: versions.recordRevision,
-          analysisInputVersion: versions.analysisInputVersion,
-          evidenceVersion: versions.evidenceVersion,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(records.id, id),
-            eq(records.ownerId, ownerId),
-            eq(records.recordRevision, patch.expectedRevision),
-          ),
-        )
-        .returning({ id: records.id });
+      const updates = {
+        name: fields.name,
+        unitKind: fields.unitKind,
+        pieceCount: fields.pieceCount,
+        periodLabel:
+          fields.period === undefined
+            ? undefined
+            : (fields.period?.label ?? null),
+        periodFromYear:
+          fields.period === undefined
+            ? undefined
+            : (fields.period?.fromYear ?? null),
+        periodToYear:
+          fields.period === undefined
+            ? undefined
+            : (fields.period?.toYear ?? null),
+        periodStatus:
+          fields.period === undefined
+            ? undefined
+            : (fields.period?.status ?? null),
+        locationId: fields.location?.locationId,
+        locationDetail: fields.location?.detail,
+        description: fields.description,
+        collectorJudgment: fields.collectorJudgment,
+        recordRevision: versions.recordRevision,
+        analysisInputVersion: versions.analysisInputVersion,
+        evidenceVersion: versions.evidenceVersion,
+      };
+      const assignments = Object.entries(updates)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => {
+          const column = Prisma.raw(
+            key.replace(/[A-Z]/g, (letter) => '_' + letter.toLowerCase()),
+          );
+          const parameter =
+            key === 'locationId' ? Prisma.sql`${value}::uuid` : value;
+
+          return Prisma.sql`${column} = ${parameter}`;
+        });
+      const changed = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        update records set ${Prisma.join(assignments)}, updated_at = now()
+        where id = ${id}::uuid and owner_id = ${ownerId} and record_revision = ${patch.expectedRevision}
+        returning id
+      `);
       if (!changed.length) {
         return null;
       }
@@ -537,38 +463,29 @@ export function createRecordRepository(
 
       return get(id);
     },
+    /**
+     * @param id
+     * @param expectedRevision
+     * @param changes
+     * @param changes.analysisInput
+     * @param changes.evidence
+     */
     async bumpVersions(
       id: string,
       expectedRevision: number,
       changes: { readonly analysisInput: boolean; readonly evidence: boolean },
     ): Promise<RecordVersions | null> {
-      const [row] = await tx
-        .update(records)
-        .set({
-          recordRevision: sql`${records.recordRevision} + 1`,
-          analysisInputVersion: changes.analysisInput
-            ? sql`${records.analysisInputVersion} + 1`
-            : records.analysisInputVersion,
-          evidenceVersion: changes.evidence
-            ? sql`${records.evidenceVersion} + 1`
-            : records.evidenceVersion,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(records.id, id),
-            eq(records.ownerId, ownerId),
-            eq(records.recordRevision, expectedRevision),
-          ),
-        )
-        .returning({
-          recordRevision: records.recordRevision,
-          analysisInputVersion: records.analysisInputVersion,
-          evidenceVersion: records.evidenceVersion,
-        });
+      const [row] = await tx.$queryRaw<RecordVersions[]>(Prisma.sql`
+        update records set record_revision = record_revision + 1,
+          analysis_input_version = analysis_input_version + ${changes.analysisInput ? 1 : 0},
+          evidence_version = evidence_version + ${changes.evidence ? 1 : 0}, updated_at = now()
+        where id = ${id}::uuid and owner_id = ${ownerId} and record_revision = ${expectedRevision}
+        returning record_revision as "recordRevision", analysis_input_version as "analysisInputVersion", evidence_version as "evidenceVersion"
+      `);
 
       return row ?? null;
     },
+
     async query(
       query: CollectionQuery,
     ): Promise<{ items: RecordSummary[]; nextCursor: string | null }> {
@@ -578,145 +495,127 @@ export function createRecordRepository(
       const cursor = query.cursor
         ? decodeCursor(query.cursor, signature, sort)
         : null;
-      const conditions = [eq(records.ownerId, ownerId)];
-      const latestRunInputVersion = sql<number | null>`(
-        select snapshot.analysis_input_version
-        from analysis_runs run
+      const conditions = [Prisma.sql`record.owner_id = ${ownerId}`];
+      const latestRunInputVersion = Prisma.sql`(
+        select snapshot.analysis_input_version from analysis_runs run
         inner join analysis_snapshots snapshot on snapshot.id = run.snapshot_id
-        where run.id = ${records.latestRunId}
-          and run.owner_id = ${ownerId}
-          and run.record_id = ${records.id}
-          and run.status in ('completed', 'partial')
+        where run.id = record.latest_run_id and run.owner_id = ${ownerId}
+          and run.record_id = record.id and run.status in ('completed', 'partial')
       )`;
       if (query.text) {
+        const text = `%${query.text}%`;
         conditions.push(
-          or(
-            ilike(records.name, `%${query.text}%`),
-            ilike(records.code, `%${query.text}%`),
-            ilike(records.description, `%${query.text}%`),
-          )!,
+          Prisma.sql`(record.name ilike ${text} or record.code ilike ${text} or record.description ilike ${text})`,
         );
       }
       if (query.locationId === null) {
-        conditions.push(isNull(records.locationId));
+        conditions.push(Prisma.sql`record.location_id is null`);
       } else if (query.locationId) {
-        conditions.push(eq(records.locationId, query.locationId));
+        conditions.push(
+          Prisma.sql`record.location_id = ${query.locationId}::uuid`,
+        );
       }
       if (query.categoryIds?.length) {
+        const ids = query.categoryIds.map((id) => Prisma.sql`${id}::uuid`);
         conditions.push(
-          sql`exists (select 1 from record_categories c where c.record_id = ${records.id} and c.category_id in (${sql.join(
-            query.categoryIds.map((id) => sql`${id}`),
-            sql`, `,
-          )}))`,
+          Prisma.sql`exists (select 1 from record_categories c where c.record_id = record.id and c.category_id in (${Prisma.join(ids)}))`,
         );
       }
       if (query.materialIds?.length) {
+        const ids = query.materialIds.map((id) => Prisma.sql`${id}::uuid`);
         conditions.push(
-          sql`exists (select 1 from record_materials m where m.record_id = ${records.id} and m.material_id in (${sql.join(
-            query.materialIds.map((id) => sql`${id}`),
-            sql`, `,
-          )}))`,
+          Prisma.sql`exists (select 1 from record_materials m where m.record_id = record.id and m.material_id in (${Prisma.join(ids)}))`,
         );
       }
       if (query.tags?.length) {
         conditions.push(
-          sql`exists (select 1 from record_tags t where t.record_id = ${records.id} and t.tag in (${sql.join(
-            query.tags.map((tag) => sql`${tag}`),
-            sql`, `,
-          )}))`,
+          Prisma.sql`exists (select 1 from record_tags t where t.record_id = record.id and t.tag in (${Prisma.join(query.tags)}))`,
         );
       }
       if (query.hasPendingChecks !== undefined) {
-        const pendingCheck = sql`exists (select 1 from record_checks c where c.record_id = ${records.id} and c.owner_id = ${ownerId} and c.progress <> 'recorded')`;
+        const pendingCheck = Prisma.sql`exists (select 1 from record_checks c where c.record_id = record.id and c.owner_id = ${ownerId} and c.progress <> 'recorded')`;
         conditions.push(
-          query.hasPendingChecks ? pendingCheck : sql`not ${pendingCheck}`,
+          query.hasPendingChecks
+            ? pendingCheck
+            : Prisma.sql`not ${pendingCheck}`,
         );
       }
       if (query.freshness === 'unanalyzed') {
-        conditions.push(isNull(records.latestRunId));
+        conditions.push(Prisma.sql`record.latest_run_id is null`);
       } else if (query.freshness === 'current') {
         conditions.push(
-          sql`${latestRunInputVersion} = ${records.analysisInputVersion}`,
+          Prisma.sql`${latestRunInputVersion} = record.analysis_input_version`,
         );
       } else if (query.freshness === 'outdated') {
         conditions.push(
-          sql`${latestRunInputVersion} <> ${records.analysisInputVersion}`,
+          Prisma.sql`${latestRunInputVersion} <> record.analysis_input_version`,
         );
       }
       if (cursor) {
         if (sort === 'updated') {
           conditions.push(
-            or(
-              lt(records.updatedAt, cursor.value!),
-              and(
-                eq(records.updatedAt, cursor.value!),
-                lt(records.id, cursor.id),
-              ),
-            )!,
+            Prisma.sql`(record.updated_at < ${cursor.value}::timestamptz or (record.updated_at = ${cursor.value}::timestamptz and record.id < ${cursor.id}::uuid))`,
           );
         } else if (sort === 'code') {
           conditions.push(
-            or(
-              gt(records.code, cursor.value!),
-              and(eq(records.code, cursor.value!), gt(records.id, cursor.id)),
-            )!,
+            Prisma.sql`(record.code > ${cursor.value} or (record.code = ${cursor.value} and record.id > ${cursor.id}::uuid))`,
           );
         } else if (cursor.value === null) {
           conditions.push(
-            and(isNull(records.name), gt(records.id, cursor.id))!,
+            Prisma.sql`(record.name is null and record.id > ${cursor.id}::uuid)`,
           );
         } else {
           conditions.push(
-            sql`(${records.name} > ${cursor.value} or (${records.name} = ${cursor.value} and ${records.id} > ${cursor.id}) or ${records.name} is null)`,
+            Prisma.sql`(record.name > ${cursor.value} or (record.name = ${cursor.value} and record.id > ${cursor.id}::uuid) or record.name is null)`,
           );
         }
       }
       const order =
         sort === 'updated'
-          ? [desc(records.updatedAt), desc(records.id)]
+          ? Prisma.sql`record.updated_at desc, record.id desc`
           : sort === 'code'
-            ? [asc(records.code), asc(records.id)]
-            : [sql`${records.name} asc nulls last`, asc(records.id)];
-      const rows = await tx
-        .select()
-        .from(records)
-        .where(and(...conditions))
-        .orderBy(...order)
-        .limit(limit + 1);
+            ? Prisma.sql`record.code asc, record.id asc`
+            : Prisma.sql`record.name asc nulls last, record.id asc`;
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          code: string;
+          name: string | null;
+          locationId: string | null;
+          latestRunId: string | null;
+          analysisInputVersion: number;
+          updatedAt: string;
+        }>
+      >(Prisma.sql`
+        select record.id, record.code, record.name, record.location_id as "locationId",
+          record.latest_run_id as "latestRunId", record.analysis_input_version as "analysisInputVersion",
+          record.updated_at::text as "updatedAt"
+        from records record where ${Prisma.join(conditions, ' and ')}
+        order by ${order} limit ${limit + 1}
+      `);
       const page = rows.slice(0, limit);
       const [pageLocations, pendingChecks, latestRunInputVersions] =
         await Promise.all([
-          tx
-            .select({ id: locations.id, label: locations.label })
-            .from(locations)
-            .where(
-              and(
-                eq(locations.ownerId, ownerId),
-                inArray(
-                  locations.id,
-                  page.flatMap((row) =>
-                    row.locationId ? [row.locationId] : [],
-                  ),
+          tx.locations.findMany({
+            select: { id: true, label: true },
+            where: {
+              ownerId,
+              id: {
+                in: page.flatMap((row) =>
+                  row.locationId ? [row.locationId] : [],
                 ),
-              ),
-            ),
-          tx
-            .select({
-              recordId: recordChecks.recordId,
-              count: sql<number>`count(*)::int`,
-            })
-            .from(recordChecks)
-            .where(
-              and(
-                eq(recordChecks.ownerId, ownerId),
-                inArray(
-                  recordChecks.recordId,
-                  page.map((row) => row.id),
-                ),
-                sql`${recordChecks.progress} <> 'recorded'`,
-              ),
-            )
-            .groupBy(recordChecks.recordId),
+              },
+            },
+          }),
+          tx.recordChecks.groupBy({
+            by: ['recordId'],
+            _count: { _all: true },
+            where: {
+              ownerId,
+              recordId: { in: page.map((row) => row.id) },
+              progress: { not: 'recorded' },
+            },
+          }),
           readLatestRunInputVersions(
             page.flatMap((row) => (row.latestRunId ? [row.latestRunId] : [])),
           ),
@@ -725,7 +624,7 @@ export function createRecordRepository(
         pageLocations.map((location) => [location.id, location.label]),
       );
       const pendingCounts = new Map(
-        pendingChecks.map((check) => [check.recordId, check.count]),
+        pendingChecks.map((check) => [check.recordId, check._count._all]),
       );
       const items = page.map((row): RecordSummary => ({
         id: row.id,
@@ -778,49 +677,39 @@ export function createLocationRepository(
   return {
     /** */
     async query() {
-      return tx
-        .select({ id: locations.id, label: locations.label })
-        .from(locations)
-        .where(eq(locations.ownerId, ownerId))
-        .orderBy(asc(locations.label));
+      return tx.locations.findMany({
+        select: { id: true, label: true },
+        where: { ownerId },
+        orderBy: { label: 'asc' },
+      });
     },
-    async findByLabel(label) {
-      const [row] = await tx
-        .select({ id: locations.id, label: locations.label })
-        .from(locations)
-        .where(
-          and(
-            eq(locations.ownerId, ownerId),
-            eq(
-              locations.normalizedLabel,
-              label.trim().toLocaleLowerCase('en-US'),
-            ),
-          ),
-        );
 
-      return row ?? null;
+    async findByLabel(label) {
+      return tx.locations.findFirst({
+        select: { id: true, label: true },
+        where: {
+          ownerId,
+          normalizedLabel: label.trim().toLocaleLowerCase('en-US'),
+        },
+      });
     },
+
     async create(location) {
       const normalizedLabel = location.label.trim().toLocaleLowerCase('en-US');
-      const [created] = await tx
-        .insert(locations)
-        .values({ ...location, ownerId, normalizedLabel })
-        .onConflictDoNothing({
-          target: [locations.ownerId, locations.normalizedLabel],
-        })
-        .returning({ id: locations.id, label: locations.label });
+      const [created] = await tx.$queryRaw<
+        Array<{ id: string; label: string }>
+      >(Prisma.sql`
+        insert into locations (id, owner_id, label, normalized_label)
+        values (${location.id}::uuid, ${ownerId}, ${location.label}, ${normalizedLabel})
+        on conflict (owner_id, normalized_label) do nothing returning id, label
+      `);
       if (created) {
         return created;
       }
-      const [existing] = await tx
-        .select({ id: locations.id, label: locations.label })
-        .from(locations)
-        .where(
-          and(
-            eq(locations.ownerId, ownerId),
-            eq(locations.normalizedLabel, normalizedLabel),
-          ),
-        );
+      const existing = await tx.locations.findFirst({
+        select: { id: true, label: true },
+        where: { ownerId, normalizedLabel },
+      });
       if (!existing) {
         throw new Error('Conflicting location could not be resolved');
       }

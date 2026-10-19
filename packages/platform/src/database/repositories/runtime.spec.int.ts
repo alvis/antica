@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, inject, it } from 'vitest';
 
 import { createDatabase } from '../connection.js';
-import { outbox } from '../schema/index.js';
 
 import { createTransactionPort } from '../transaction.js';
 
@@ -12,6 +10,7 @@ import { listPendingOutbox } from './runtime.js';
 
 import type { JobEnvelope } from '@antica/contracts';
 
+const resources = inject('platformDatabases');
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL;
 if (!databaseUrl) {
   throw new Error(
@@ -22,9 +21,12 @@ if (!databaseUrl) {
 const startedAt = '2026-10-13T00:00:00.000Z';
 const updatedAt = '2026-10-13T00:00:01.000Z';
 
-describe('fn:createJobRepository', () => {
+describe('fn:createJobRepository', { timeout: 30_000 }, () => {
   it('should keep command receipts, jobs, and outbox delivery scoped to their owner', async () => {
-    const database = createDatabase({ url: databaseUrl, maxConnections: 1 });
+    const database = createDatabase({
+      url: resources.runtime!.url,
+      maxConnections: 1,
+    });
     const transaction = createTransactionPort(database.db);
     const ownerId = randomUUID();
     const otherOwnerId = randomUUID();
@@ -69,10 +71,10 @@ describe('fn:createJobRepository', () => {
 
         return { success: true as const, data: undefined };
       });
-      await database.db
-        .update(outbox)
-        .set({ availableAt: startedAt })
-        .where(eq(outbox.eventId, message.id));
+      await database.db.outbox.updateMany({
+        data: { availableAt: startedAt },
+        where: { eventId: message.id },
+      });
       const saved = await transaction.run(ownerId, async (unit) => ({
         success: true as const,
         data: {
@@ -178,7 +180,10 @@ describe('fn:createJobRepository', () => {
   });
 
   it('should reject stale job and step revisions while deduplicating provider callbacks', async () => {
-    const database = createDatabase({ url: databaseUrl, maxConnections: 1 });
+    const database = createDatabase({
+      url: resources.runtime!.url,
+      maxConnections: 1,
+    });
     const transaction = createTransactionPort(database.db);
     const ownerId = randomUUID();
     const job: JobEnvelope = {
@@ -391,7 +396,10 @@ describe('fn:createJobRepository', () => {
   });
 
   it('should reopen durable waiting, partial, and succeeded job states with their results', async () => {
-    const database = createDatabase({ url: databaseUrl, maxConnections: 1 });
+    const database = createDatabase({
+      url: resources.runtime!.url,
+      maxConnections: 1,
+    });
     const transaction = createTransactionPort(database.db);
     const ownerId = randomUUID();
     const cases: readonly JobEnvelope[] = [

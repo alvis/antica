@@ -57,9 +57,9 @@ export async function provisionDatabaseResources(
     const resources: Record<string, DatabaseResource> = {};
     for (const slot of slots) {
       const name = `antica_platform_${randomUUID().replaceAll('-', '')}`;
-      await administrator.db.execute(`CREATE DATABASE "${name}"`);
+      await administrator.db.$executeRawUnsafe(`CREATE DATABASE "${name}"`);
       disposals.defer(async () => {
-        await administrator.db.execute(`DROP DATABASE "${name}"`);
+        await administrator.db.$executeRawUnsafe(`DROP DATABASE "${name}"`);
       });
       const databaseUrl = new URL(baseUrl);
       databaseUrl.pathname = `/${name}`;

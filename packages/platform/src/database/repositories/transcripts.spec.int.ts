@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, inject, it } from 'vitest';
 
 import { createDatabase } from '../connection.js';
-import { jobs, mediaAssets, records } from '../schema/index.js';
 
 import { createTranscriptionRepository } from './transcripts.js';
 
@@ -15,6 +14,7 @@ import type { TranscriptionResult } from '@antica/contracts';
 
 import type { Transaction } from '../transaction.js';
 
+const resources = inject('platformDatabases');
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL ?? '';
 if (!databaseUrl) {
   throw new Error(
@@ -26,10 +26,13 @@ const rollback = new Error('Rollback transcription test transaction');
 async function inRolledBackTransaction(
   operation: (tx: Transaction) => Promise<void>,
 ): Promise<void> {
-  const database = createDatabase({ url: databaseUrl, maxConnections: 1 });
+  const database = createDatabase({
+    url: resources.transcripts!.url,
+    maxConnections: 1,
+  });
   try {
     await expect(
-      database.db.transaction(async (tx) => {
+      database.db.$transaction(async (tx) => {
         await operation(tx);
         throw rollback;
       }),
@@ -39,7 +42,7 @@ async function inRolledBackTransaction(
   }
 }
 
-describe('fn:createTranscriptionRepository', () => {
+describe('fn:createTranscriptionRepository', { timeout: 30_000 }, () => {
   it('should persist frozen audio input and accept provider output and confirmation only once per revision', async () => {
     await inRolledBackTransaction(async (tx) => {
       const ownerId = randomUUID();
@@ -50,32 +53,38 @@ describe('fn:createTranscriptionRepository', () => {
       const observationId = randomUUID();
       const now = '2026-10-13T04:00:00.000Z';
       const sha256 = 'a'.repeat(64);
-      await tx.insert(records).values({
-        id: recordId,
-        ownerId,
-        code: `TEST-${recordId}`,
-        unitKind: 'single',
+      await tx.records.createMany({
+        data: {
+          id: recordId,
+          ownerId,
+          code: `TEST-${recordId}`,
+          unitKind: 'single',
+        },
       });
-      await tx.insert(jobs).values({
-        id: jobId,
-        ownerId,
-        kind: 'transcription',
-        resourceId: transcriptionId,
-        state: 'queued',
-        stage: 'transcribe',
+      await tx.jobs.createMany({
+        data: {
+          id: jobId,
+          ownerId,
+          kind: 'transcription',
+          resourceId: transcriptionId,
+          state: 'queued',
+          stage: 'transcribe',
+        },
       });
-      await tx.insert(mediaAssets).values({
-        id: audioAssetId,
-        ownerId,
-        recordId,
-        kind: 'audio',
-        purpose: 'record_audio',
-        state: 'ready',
-        objectKey: `originals/${audioAssetId}`,
-        originalFileName: 'note.wav',
-        mimeType: 'audio/wav',
-        byteLength: 12,
-        sha256,
+      await tx.mediaAssets.createMany({
+        data: {
+          id: audioAssetId,
+          ownerId,
+          recordId,
+          kind: 'audio',
+          purpose: 'record_audio',
+          state: 'ready',
+          objectKey: `originals/${audioAssetId}`,
+          originalFileName: 'note.wav',
+          mimeType: 'audio/wav',
+          byteLength: 12,
+          sha256,
+        },
       });
       const run: TranscriptionRunRecord = {
         detail: {

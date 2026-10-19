@@ -359,11 +359,9 @@ describe('fn:createLlamaWebhookReceiver', () => {
       const completedTransportCalls = transport.mock.calls.length;
       const locked = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      const barrier = raceFixture.runtime.database.db.transaction(
+      const barrier = raceFixture.runtime.database.db.$transaction(
         async (transaction) => {
-          await transaction.execute(
-            'LOCK TABLE provider_webhook_inbox IN SHARE MODE',
-          );
+          await transaction.$executeRaw`LOCK TABLE provider_webhook_inbox IN SHARE MODE`;
           locked.resolve();
           await release.promise;
         },
@@ -377,9 +375,9 @@ describe('fn:createLlamaWebhookReceiver', () => {
         await expect
           .poll(
             async () => {
-              const rows = await raceFixture.runtime.database.db.execute(
-                "SELECT count(*)::integer AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%provider_webhook_inbox%'",
-              );
+              const rows = await raceFixture.runtime.database.db.$queryRaw<
+                Array<{ count: number }>
+              >`SELECT count(*)::integer AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%provider_webhook_inbox%'`;
 
               return rows[0]?.count;
             },

@@ -1,18 +1,17 @@
 import { createHash } from 'node:crypto';
 
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { z } from 'zod';
+
+import {
+  canonicalViewSchema,
+  regionSchema,
+  uploadSessionSchema,
+} from '@antica/contracts';
 
 import { originalKey } from '../../storage/media-store.js';
 
-import {
-  canonicalViews,
-  mediaAssetComponents,
-  mediaAssets,
-  mediaDerivatives,
-  sourceIntakes,
-  uploadParts,
-  uploadSessions,
-} from '../schema/index.js';
+import { Prisma } from '../generated/client.js';
+import { jsonValue, nullableJson } from '../json.js';
 
 import type {
   MediaDerivative,
@@ -34,34 +33,24 @@ export function createMediaRepository(
   ownerId: string,
 ): MediaRepository {
   async function get(id: string): Promise<MediaAsset | null> {
-    const [row] = await tx
-      .select()
-      .from(mediaAssets)
-      .where(
-        and(
-          eq(mediaAssets.id, id),
-          eq(mediaAssets.ownerId, ownerId),
-          inArray(mediaAssets.purpose, [
-            'object',
-            'receipt',
-            'voice_note',
-            'book_page',
-            'book_file',
-          ]),
-        ),
-      );
+    const row = await tx.mediaAssets.findFirst({
+      where: {
+        id,
+        ownerId,
+        purpose: {
+          in: ['object', 'receipt', 'voice_note', 'book_page', 'book_file'],
+        },
+      },
+    });
     if (!row) {
       return null;
     }
     const [components, views] = await Promise.all([
-      tx
-        .select({ id: mediaAssetComponents.componentId })
-        .from(mediaAssetComponents)
-        .where(eq(mediaAssetComponents.assetId, id)),
-      tx
-        .select()
-        .from(canonicalViews)
-        .where(eq(canonicalViews.originalAssetId, id)),
+      tx.mediaAssetComponents.findMany({
+        select: { componentId: true },
+        where: { assetId: id },
+      }),
+      tx.canonicalViews.findMany({ where: { originalAssetId: id } }),
     ]);
     const owner = row.recordId
       ? { kind: 'record' as const, recordId: row.recordId }
@@ -78,36 +67,37 @@ export function createMediaRepository(
       kind: row.kind as MediaAsset['kind'],
       purpose: row.purpose as MediaAsset['purpose'],
       state: row.state as MediaAsset['state'],
-      componentIds: components.map((item) => item.id),
+      componentIds: components.map((item) => item.componentId),
       originalFileName: row.originalFileName,
       mimeType: row.mimeType,
-      byteLength: row.byteLength,
+      byteLength: Number(row.byteLength),
       sha256: row.sha256,
       durationMs: row.durationMs === null ? null : Number(row.durationMs),
-      views: views.map((view) => ({
-        id: view.id,
-        originalAssetId: view.originalAssetId,
-        derivativeId: view.derivativeId,
-        width: view.width,
-        height: view.height,
-        originalCoordinateSpace:
-          view.coordinateSpace as CanonicalView['originalCoordinateSpace'],
-        transformToOriginal:
-          view.transformToOriginal as CanonicalView['transformToOriginal'],
-      })),
+      views: views.map((view) =>
+        canonicalViewSchema.parse({
+          id: view.id,
+          originalAssetId: view.originalAssetId,
+          derivativeId: view.derivativeId,
+          width: view.width,
+          height: view.height,
+          originalCoordinateSpace: view.coordinateSpace,
+          transformToOriginal: view.transformToOriginal,
+        }),
+      ),
       createdAt: new Date(row.createdAt).toISOString(),
     };
   }
 
   return {
     get,
+
     async createUpload(request, session) {
       const target = request.target;
       if (target.kind === 'source_intake') {
-        await tx
-          .insert(sourceIntakes)
-          .values({ id: target.intakeKey, ownerId })
-          .onConflictDoNothing();
+        await tx.sourceIntakes.createMany({
+          data: { id: target.intakeKey, ownerId },
+          skipDuplicates: true,
+        });
       }
       const assetId = session.assetId;
       const fingerprint = createHash('sha256')
@@ -124,51 +114,50 @@ export function createMediaRepository(
           }),
         )
         .digest('hex');
-      await tx.insert(mediaAssets).values({
-        id: assetId,
-        ownerId,
-        recordId: target.kind === 'record' ? target.recordId : null,
-        sourceIntakeId:
-          target.kind === 'source_intake' ? target.intakeKey : null,
-        kind: request.kind,
-        purpose: request.purpose,
-        state: 'awaiting_upload',
-        objectKey: originalKey(assetId),
-        originalFileName: request.fileName,
-        mimeType: request.mimeType,
-        byteLength: request.byteLength,
-        sha256: request.sha256.toLowerCase(),
+      await tx.mediaAssets.create({
+        data: {
+          id: assetId,
+          ownerId,
+          recordId: target.kind === 'record' ? target.recordId : null,
+          sourceIntakeId:
+            target.kind === 'source_intake' ? target.intakeKey : null,
+          kind: request.kind,
+          purpose: request.purpose,
+          state: 'awaiting_upload',
+          objectKey: originalKey(assetId),
+          originalFileName: request.fileName,
+          mimeType: request.mimeType,
+          byteLength: request.byteLength,
+          sha256: request.sha256.toLowerCase(),
+        },
       });
       if (request.componentIds.length) {
-        await tx.insert(mediaAssetComponents).values(
-          request.componentIds.map((componentId) => ({
+        await tx.mediaAssetComponents.createMany({
+          data: request.componentIds.map((componentId) => ({
             assetId,
             componentId,
           })),
-        );
+        });
       }
-      await tx.insert(uploadSessions).values({
-        assetId,
-        ownerId,
-        requestKey: request.requestKey,
-        fingerprint,
-        mode: session.mode,
-        signedSession: session,
-        providerUploadId:
-          session.mode === 'multipart' ? session.uploadId : null,
-        expiresAt: session.expiresAt,
-      });
+      await tx.$executeRaw(Prisma.sql`
+        insert into upload_sessions (asset_id, owner_id, request_key, fingerprint, mode, signed_session,
+          provider_upload_id, expires_at)
+        values (${assetId}::uuid, ${ownerId}, ${request.requestKey}::uuid, ${fingerprint}, ${session.mode},
+          ${JSON.stringify(session)}::jsonb, ${session.mode === 'multipart' ? session.uploadId : null},
+          ${session.expiresAt}::timestamptz)
+      `);
       if (session.mode === 'multipart' && session.parts.length) {
-        await tx.insert(uploadParts).values(
-          session.parts.map((part) => ({
+        await tx.uploadParts.createMany({
+          data: session.parts.map((part) => ({
             assetId,
             partNumber: part.partNumber,
             offset: part.offset,
             byteLength: part.byteLength,
           })),
-        );
+        });
       }
     },
+
     async getUploadByRequestKey(
       requestOwnerId,
       requestKey,
@@ -176,61 +165,38 @@ export function createMediaRepository(
       if (requestOwnerId !== ownerId) {
         return null;
       }
-      const [row] = await tx
-        .select()
-        .from(uploadSessions)
-        .where(
-          and(
-            eq(uploadSessions.ownerId, ownerId),
-            eq(uploadSessions.requestKey, requestKey),
-          ),
-        );
+      const row = await tx.uploadSessions.findFirst({
+        where: { ownerId, requestKey },
+      });
 
-      return row ? (row.signedSession as UploadSession) : null;
+      return row ? uploadSessionSchema.parse(row.signedSession) : null;
     },
+
     async getUploadSession(assetId): Promise<UploadSession | null> {
-      const [row] = await tx
-        .select({ signedSession: uploadSessions.signedSession })
-        .from(uploadSessions)
-        .where(
-          and(
-            eq(uploadSessions.assetId, assetId),
-            eq(uploadSessions.ownerId, ownerId),
-          ),
-        );
+      const row = await tx.uploadSessions.findFirst({
+        select: { signedSession: true },
+        where: { assetId, ownerId },
+      });
 
-      return row ? (row.signedSession as UploadSession) : null;
+      return row ? uploadSessionSchema.parse(row.signedSession) : null;
     },
+
     async complete(id, completion) {
-      const [row] = await tx
-        .update(mediaAssets)
-        .set({
-          state: completion.state,
-          verifiedAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(mediaAssets.id, id),
-            eq(mediaAssets.ownerId, ownerId),
-            eq(mediaAssets.state, 'awaiting_upload'),
-          ),
-        )
-        .returning({ id: mediaAssets.id });
+      const [row] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        update media_assets set state = ${completion.state}, verified_at = now(), updated_at = now()
+        where id = ${id}::uuid and owner_id = ${ownerId} and state = 'awaiting_upload'
+        returning id
+      `);
       if (!row) {
         throw new Error('Media upload is missing or already completed');
       }
     },
+
     async addDerivative(derivative) {
-      const [original] = await tx
-        .select({ id: mediaAssets.id })
-        .from(mediaAssets)
-        .where(
-          and(
-            eq(mediaAssets.id, derivative.originalAssetId),
-            eq(mediaAssets.ownerId, ownerId),
-          ),
-        );
+      const original = await tx.mediaAssets.findFirst({
+        select: { id: true },
+        where: { id: derivative.originalAssetId, ownerId },
+      });
       if (!original) {
         throw new Error('Original asset not found');
       }
@@ -240,37 +206,34 @@ export function createMediaRepository(
       ) {
         throw new Error('Frame derivative ID mismatch');
       }
-      await tx.insert(mediaDerivatives).values({
-        id: derivative.id,
-        ownerId,
-        originalAssetId: derivative.originalAssetId,
-        parentDerivativeId: derivative.parentDerivativeId,
-        kind: derivative.kind,
-        objectKey: derivative.storageKey,
-        mimeType: derivative.mimeType,
-        byteLength: derivative.byteLength,
-        sha256: derivative.sha256,
-        region: derivative.region,
-        transform: derivative.transformToOriginal,
-        streamIndex: derivative.frame?.streamIndex,
-        pts: derivative.frame?.pts,
-        timebaseNumerator: derivative.frame?.timeBase.numerator,
-        timebaseDenominator: derivative.frame?.timeBase.denominator,
-        displayTimeMs: derivative.frame
-          ? String(derivative.frame.displayTimeMs)
-          : null,
+      await tx.mediaDerivatives.create({
+        data: {
+          id: derivative.id,
+          ownerId,
+          originalAssetId: derivative.originalAssetId,
+          parentDerivativeId: derivative.parentDerivativeId,
+          kind: derivative.kind,
+          objectKey: derivative.storageKey,
+          mimeType: derivative.mimeType,
+          byteLength: derivative.byteLength,
+          sha256: derivative.sha256,
+          region: nullableJson(derivative.region),
+          transform: jsonValue(derivative.transformToOriginal),
+          streamIndex: derivative.frame?.streamIndex,
+          pts: derivative.frame?.pts,
+          timebaseNumerator: derivative.frame?.timeBase.numerator,
+          timebaseDenominator: derivative.frame?.timeBase.denominator,
+          displayTimeMs: derivative.frame
+            ? String(derivative.frame.displayTimeMs)
+            : null,
+        },
       });
     },
+
     async getDerivative(id): Promise<MediaDerivative | null> {
-      const [row] = await tx
-        .select()
-        .from(mediaDerivatives)
-        .where(
-          and(
-            eq(mediaDerivatives.id, id),
-            eq(mediaDerivatives.ownerId, ownerId),
-          ),
-        );
+      const row = await tx.mediaDerivatives.findFirst({
+        where: { id, ownerId },
+      });
 
       return row
         ? {
@@ -280,11 +243,22 @@ export function createMediaRepository(
             kind: row.kind as MediaDerivative['kind'],
             storageKey: row.objectKey,
             mimeType: row.mimeType,
-            byteLength: row.byteLength,
+            byteLength: Number(row.byteLength),
             sha256: row.sha256,
-            region: row.region as MediaDerivative['region'],
-            transformToOriginal:
-              row.transform as MediaDerivative['transformToOriginal'],
+            region: regionSchema.nullable().parse(row.region),
+            transformToOriginal: z
+              .tuple([
+                z.number(),
+                z.number(),
+                z.number(),
+                z.number(),
+                z.number(),
+                z.number(),
+                z.number(),
+                z.number(),
+                z.number(),
+              ])
+              .parse(row.transform),
             frame:
               row.streamIndex !== null &&
               row.pts !== null &&
@@ -293,7 +267,7 @@ export function createMediaRepository(
               row.displayTimeMs !== null
                 ? {
                     streamIndex: row.streamIndex,
-                    pts: row.pts,
+                    pts: row.pts.toFixed(0),
                     timeBase: {
                       numerator: row.timebaseNumerator,
                       denominator: row.timebaseDenominator,
@@ -305,24 +279,11 @@ export function createMediaRepository(
           }
         : null;
     },
+
     async getFrameByDerivative(id) {
-      const [row] = await tx
-        .select({
-          id: mediaDerivatives.id,
-          streamIndex: mediaDerivatives.streamIndex,
-          pts: mediaDerivatives.pts,
-          timebaseNumerator: mediaDerivatives.timebaseNumerator,
-          timebaseDenominator: mediaDerivatives.timebaseDenominator,
-          displayTimeMs: mediaDerivatives.displayTimeMs,
-        })
-        .from(mediaDerivatives)
-        .where(
-          and(
-            eq(mediaDerivatives.id, id),
-            eq(mediaDerivatives.ownerId, ownerId),
-            eq(mediaDerivatives.kind, 'frame'),
-          ),
-        );
+      const row = await tx.mediaDerivatives.findFirst({
+        where: { id, ownerId, kind: 'frame' },
+      });
 
       if (
         !row ||
@@ -334,9 +295,10 @@ export function createMediaRepository(
       ) {
         return null;
       }
+
       return {
         streamIndex: row.streamIndex,
-        pts: row.pts,
+        pts: row.pts.toFixed(0),
         timeBase: {
           numerator: row.timebaseNumerator,
           denominator: row.timebaseDenominator,
@@ -345,86 +307,66 @@ export function createMediaRepository(
         displayTimeMs: Number(row.displayTimeMs),
       };
     },
+
     async addCanonicalView(view) {
-      const [original] = await tx
-        .select({ id: mediaAssets.id })
-        .from(mediaAssets)
-        .where(
-          and(
-            eq(mediaAssets.id, view.originalAssetId),
-            eq(mediaAssets.ownerId, ownerId),
-          ),
-        );
+      const original = await tx.mediaAssets.findFirst({
+        select: { id: true },
+        where: { id: view.originalAssetId, ownerId },
+      });
       if (!original) {
         throw new Error('Original asset not found');
       }
-      await tx.insert(canonicalViews).values({
-        id: view.id,
-        originalAssetId: view.originalAssetId,
-        derivativeId: view.derivativeId,
-        width: view.width,
-        height: view.height,
-        coordinateSpace: view.originalCoordinateSpace,
-        transformToOriginal: view.transformToOriginal,
+      await tx.canonicalViews.create({
+        data: {
+          id: view.id,
+          originalAssetId: view.originalAssetId,
+          derivativeId: view.derivativeId,
+          width: view.width,
+          height: view.height,
+          coordinateSpace: view.originalCoordinateSpace,
+          transformToOriginal: jsonValue(view.transformToOriginal),
+        },
       });
     },
+
     async getCanonicalView(id): Promise<CanonicalView | null> {
-      const [row] = await tx
-        .select()
-        .from(canonicalViews)
-        .innerJoin(
-          mediaAssets,
-          and(
-            eq(canonicalViews.originalAssetId, mediaAssets.id),
-            eq(mediaAssets.ownerId, ownerId),
-          ),
-        )
-        .where(eq(canonicalViews.id, id));
+      const row = await tx.canonicalViews.findFirst({
+        where: { id, mediaAssets: { ownerId } },
+      });
 
       return row
-        ? {
-            id: row.canonical_views.id,
-            originalAssetId: row.canonical_views.originalAssetId,
-            derivativeId: row.canonical_views.derivativeId,
-            width: row.canonical_views.width,
-            height: row.canonical_views.height,
-            originalCoordinateSpace: row.canonical_views
-              .coordinateSpace as CanonicalView['originalCoordinateSpace'],
-            transformToOriginal: row.canonical_views
-              .transformToOriginal as CanonicalView['transformToOriginal'],
-          }
+        ? canonicalViewSchema.parse({
+            id: row.id,
+            originalAssetId: row.originalAssetId,
+            derivativeId: row.derivativeId,
+            width: row.width,
+            height: row.height,
+            originalCoordinateSpace: row.coordinateSpace,
+            transformToOriginal: row.transformToOriginal,
+          })
         : null;
     },
+
     async getCanonicalViewSource(viewId) {
-      const [row] = await tx
-        .select({
-          originalAssetId: canonicalViews.originalAssetId,
-          derivativeId: canonicalViews.derivativeId,
-          originalKey: mediaAssets.objectKey,
-          originalMimeType: mediaAssets.mimeType,
-          derivativeKey: mediaDerivatives.objectKey,
-          derivativeMimeType: mediaDerivatives.mimeType,
-        })
-        .from(canonicalViews)
-        .innerJoin(
-          mediaAssets,
-          and(
-            eq(canonicalViews.originalAssetId, mediaAssets.id),
-            eq(mediaAssets.ownerId, ownerId),
-          ),
-        )
-        .leftJoin(
-          mediaDerivatives,
-          and(
-            eq(canonicalViews.derivativeId, mediaDerivatives.id),
-            eq(
-              mediaDerivatives.originalAssetId,
-              canonicalViews.originalAssetId,
-            ),
-            eq(mediaDerivatives.ownerId, ownerId),
-          ),
-        )
-        .where(eq(canonicalViews.id, viewId));
+      const [row] = await tx.$queryRaw<
+        Array<{
+          originalAssetId: string;
+          derivativeId: string | null;
+          originalKey: string;
+          originalMimeType: string;
+          derivativeKey: string | null;
+          derivativeMimeType: string | null;
+        }>
+      >(Prisma.sql`
+        select view.original_asset_id as "originalAssetId", view.derivative_id as "derivativeId",
+          original.object_key as "originalKey", original.mime_type as "originalMimeType",
+          derivative.object_key as "derivativeKey", derivative.mime_type as "derivativeMimeType"
+        from canonical_views view
+        inner join media_assets original on view.original_asset_id = original.id and original.owner_id = ${ownerId}
+        left join media_derivatives derivative on view.derivative_id = derivative.id
+          and derivative.original_asset_id = view.original_asset_id and derivative.owner_id = ${ownerId}
+        where view.id = ${viewId}::uuid
+      `);
       if (!row) {
         return null;
       }
@@ -448,23 +390,13 @@ export function createMediaRepository(
         mimeType: row.originalMimeType,
       };
     },
+
     async markReadyOnce(assetId, expectedState) {
-      const [row] = await tx
-        .update(mediaAssets)
-        .set({
-          state: 'ready',
-          readyVersionAppliedAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(mediaAssets.id, assetId),
-            eq(mediaAssets.ownerId, ownerId),
-            eq(mediaAssets.state, expectedState),
-            isNull(mediaAssets.readyVersionAppliedAt),
-          ),
-        )
-        .returning({ id: mediaAssets.id });
+      const [row] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        update media_assets set state = 'ready', ready_version_applied_at = now(), updated_at = now()
+        where id = ${assetId}::uuid and owner_id = ${ownerId} and state = ${expectedState}
+          and ready_version_applied_at is null returning id
+      `);
 
       return Boolean(row);
     },

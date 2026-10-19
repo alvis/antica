@@ -1,41 +1,33 @@
-import { and, eq, isNull } from 'drizzle-orm';
-
 import { transcriptionDetailSchema } from '@antica/contracts';
 
-import {
-  jobs,
-  mediaAssets,
-  records,
-  transcriptionRuns,
-} from '../schema/index.js';
+import { Prisma } from '../generated/client.js';
+import { jsonValue, nullableJson } from '../json.js';
 
 import type {
   TranscriptionRepository,
   TranscriptionRunRecord,
 } from '@antica/application/ports';
+
 import type { Transaction } from '../transaction.js';
 
-function iso(value: string): string {
+/** @param value */
+function iso(value: string | Date): string {
   return new Date(value).toISOString();
 }
 
 /**
  * persists immutable transcription inputs and first-write provider output
+ * @param tx
+ * @param ownerId
  */
 export function createTranscriptionRepository(
   tx: Transaction,
   ownerId: string,
 ): TranscriptionRepository {
   async function get(id: string): Promise<TranscriptionRunRecord | null> {
-    const [row] = await tx
-      .select()
-      .from(transcriptionRuns)
-      .where(
-        and(
-          eq(transcriptionRuns.id, id),
-          eq(transcriptionRuns.ownerId, ownerId),
-        ),
-      );
+    const [row] = await tx.transcriptionRuns.findMany({
+      where: { AND: [{ id }, { ownerId }] },
+    });
     if (!row) {
       return null;
     }
@@ -61,6 +53,7 @@ export function createTranscriptionRepository(
 
   return {
     get,
+    /** @param run */
     async create(run) {
       const { detail, request } = run;
       if (
@@ -77,37 +70,32 @@ export function createTranscriptionRepository(
       }
 
       const [[job], [record], [audio]] = await Promise.all([
-        tx
-          .select({ id: jobs.id })
-          .from(jobs)
-          .where(
-            and(
-              eq(jobs.id, detail.jobId),
-              eq(jobs.ownerId, ownerId),
-              eq(jobs.kind, 'transcription'),
-              eq(jobs.resourceId, detail.transcriptionId),
-            ),
-          ),
-        tx
-          .select({ id: records.id })
-          .from(records)
-          .where(
-            and(
-              eq(records.id, detail.snapshot.recordId),
-              eq(records.ownerId, ownerId),
-            ),
-          ),
-        tx
-          .select({ id: mediaAssets.id, sha256: mediaAssets.sha256 })
-          .from(mediaAssets)
-          .where(
-            and(
-              eq(mediaAssets.id, detail.snapshot.audioAssetId),
-              eq(mediaAssets.ownerId, ownerId),
-              eq(mediaAssets.recordId, detail.snapshot.recordId),
-              eq(mediaAssets.kind, 'audio'),
-            ),
-          ),
+        tx.jobs.findMany({
+          select: { id: true },
+          where: {
+            AND: [
+              { id: detail.jobId },
+              { ownerId },
+              { kind: 'transcription' },
+              { resourceId: detail.transcriptionId },
+            ],
+          },
+        }),
+        tx.records.findMany({
+          select: { id: true },
+          where: { AND: [{ id: detail.snapshot.recordId }, { ownerId }] },
+        }),
+        tx.mediaAssets.findMany({
+          select: { id: true, sha256: true },
+          where: {
+            AND: [
+              { id: detail.snapshot.audioAssetId },
+              { ownerId },
+              { recordId: detail.snapshot.recordId },
+              { kind: 'audio' },
+            ],
+          },
+        }),
       ]);
       if (
         !job ||
@@ -118,37 +106,38 @@ export function createTranscriptionRepository(
         throw new Error('Transcription dependencies are inaccessible');
       }
 
-      await tx.insert(transcriptionRuns).values({
-        id: detail.transcriptionId,
-        ownerId,
-        jobId: detail.jobId,
-        recordId: detail.snapshot.recordId,
-        audioAssetId: detail.snapshot.audioAssetId,
-        revision: detail.revision,
-        status: detail.status,
-        snapshot: detail.snapshot,
-        request,
-        modelSelection: run.modelSelection,
-        result: null,
-        invocation: null,
-        confirmedObservationId: null,
-        createdAt: detail.createdAt,
-        updatedAt: detail.updatedAt,
+      await tx.transcriptionRuns.createMany({
+        data: {
+          id: detail.transcriptionId,
+          ownerId,
+          jobId: detail.jobId,
+          recordId: detail.snapshot.recordId,
+          audioAssetId: detail.snapshot.audioAssetId,
+          revision: detail.revision,
+          status: detail.status,
+          snapshot: jsonValue(detail.snapshot),
+          request: jsonValue(request),
+          modelSelection: jsonValue(run.modelSelection),
+          result: nullableJson(null),
+          invocation: nullableJson(null),
+          confirmedObservationId: null,
+          createdAt: detail.createdAt,
+          updatedAt: detail.updatedAt,
+        },
       });
     },
+    /**
+     * @param id
+     * @param result
+     * @param invocation
+     * @param expectedRevision
+     * @param updatedAt
+     */
     async saveResult(id, result, invocation, expectedRevision, updatedAt) {
-      const [run] = await tx
-        .select({
-          recordId: transcriptionRuns.recordId,
-          audioAssetId: transcriptionRuns.audioAssetId,
-        })
-        .from(transcriptionRuns)
-        .where(
-          and(
-            eq(transcriptionRuns.id, id),
-            eq(transcriptionRuns.ownerId, ownerId),
-          ),
-        );
+      const [run] = await tx.transcriptionRuns.findMany({
+        select: { recordId: true, audioAssetId: true },
+        where: { AND: [{ id }, { ownerId }] },
+      });
       if (
         !run ||
         result.transcriptionId !== id ||
@@ -157,48 +146,54 @@ export function createTranscriptionRepository(
       ) {
         return false;
       }
-      const [changed] = await tx
-        .update(transcriptionRuns)
-        .set({
-          result,
-          invocation,
+      const [changed] = await tx.transcriptionRuns.updateManyAndReturn({
+        data: {
+          result: nullableJson(result),
+          invocation: nullableJson(invocation),
           status: 'ready',
           revision: expectedRevision + 1,
           updatedAt,
-        })
-        .where(
-          and(
-            eq(transcriptionRuns.id, id),
-            eq(transcriptionRuns.ownerId, ownerId),
-            eq(transcriptionRuns.revision, expectedRevision),
-            eq(transcriptionRuns.status, 'pending'),
-            isNull(transcriptionRuns.result),
-            isNull(transcriptionRuns.invocation),
-          ),
-        )
-        .returning({ id: transcriptionRuns.id });
+        },
+        select: { id: true },
+        where: {
+          AND: [
+            { id },
+            { ownerId },
+            { revision: expectedRevision },
+            { status: 'pending' },
+            { result: { equals: Prisma.DbNull } },
+            { invocation: { equals: Prisma.DbNull } },
+          ],
+        },
+      });
 
       return Boolean(changed);
     },
+    /**
+     * @param id
+     * @param expectedRevision
+     * @param observationId
+     * @param updatedAt
+     */
     async confirm(id, expectedRevision, observationId, updatedAt) {
-      const [changed] = await tx
-        .update(transcriptionRuns)
-        .set({
+      const [changed] = await tx.transcriptionRuns.updateManyAndReturn({
+        data: {
           confirmedObservationId: observationId,
           status: 'confirmed',
           revision: expectedRevision + 1,
           updatedAt,
-        })
-        .where(
-          and(
-            eq(transcriptionRuns.id, id),
-            eq(transcriptionRuns.ownerId, ownerId),
-            eq(transcriptionRuns.revision, expectedRevision),
-            eq(transcriptionRuns.status, 'ready'),
-            isNull(transcriptionRuns.confirmedObservationId),
-          ),
-        )
-        .returning({ id: transcriptionRuns.id });
+        },
+        select: { id: true },
+        where: {
+          AND: [
+            { id },
+            { ownerId },
+            { revision: expectedRevision },
+            { status: 'ready' },
+            { confirmedObservationId: null },
+          ],
+        },
+      });
       if (!changed) {
         return null;
       }

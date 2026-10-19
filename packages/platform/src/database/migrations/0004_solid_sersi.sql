@@ -1,1 +1,0 @@
-ALTER TABLE "media_derivatives" ADD COLUMN "display_time_ms" numeric(20, 3);

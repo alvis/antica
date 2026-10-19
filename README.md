@@ -106,3 +106,6 @@ Legend: `| ✅ Supported | ⚠️ Partial (see note) | ❌ Unsupported | 🔜 Pl
 ## Known limits
 
 See [known limitations](docs/known-limitations.md) for product and operational bounds, and [implementation status](docs/implementation-status.md) for the acceptance evidence still needed.
+
+Database schema changes use [Prisma migrations](packages/platform/src/database/README.md).
+Existing local databases from the Drizzle trial must be recreated before applying the Prisma baseline.

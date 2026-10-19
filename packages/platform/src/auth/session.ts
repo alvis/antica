@@ -7,11 +7,10 @@ import { betterAuth } from 'better-auth';
 
 import { z } from 'zod';
 
-import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { phoneNumber } from 'better-auth/plugins';
 
 import { claimOtpSend } from '../database/otp-cooldown.js';
-import { authSchema } from '../database/schema/auth.js';
 
 import type { Database } from '../database/connection.js';
 
@@ -63,7 +62,7 @@ export function createAuthSession(
     throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
   }
   const auth = betterAuth({
-    database: drizzleAdapter(db, { provider: 'pg', schema: authSchema }),
+    database: prismaAdapter(db, { provider: 'postgresql' }),
     secret: config.secret,
     baseURL: config.baseUrl,
     trustedOrigins: [...config.trustedOrigins],

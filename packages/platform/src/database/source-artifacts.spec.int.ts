@@ -3,25 +3,19 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, inject, it } from 'vitest';
 
 import { createLocalMediaStore } from '../storage/local.js';
 import { originalKey } from '../storage/media-store.js';
 
 import { createDatabase } from './connection.js';
-import {
-  canonicalViews,
-  mediaAssets,
-  sourceArtifacts,
-  sources,
-  sourceVersionAssets,
-  sourceVersions,
-} from './schema/index.js';
+import { jsonValue, nullableJson } from './json.js';
+
 import { createSourceArtifactAccess } from './source-artifacts.js';
 
 import type { SourceMetadata } from '@antica/domain';
 
+const resources = inject('platformDatabases');
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL ?? '';
 if (!databaseUrl) {
   throw new Error(
@@ -29,9 +23,12 @@ if (!databaseUrl) {
   );
 }
 
-describe('fn:createSourceArtifactAccess', () => {
+describe('fn:createSourceArtifactAccess', { timeout: 30_000 }, () => {
   it('should bind a stored parser artifact and original asset to their owner and source version', async () => {
-    const database = createDatabase({ url: databaseUrl, maxConnections: 1 });
+    const database = createDatabase({
+      url: resources['source-artifacts']!.url,
+      maxConnections: 1,
+    });
     const root = await mkdtemp(join(tmpdir(), 'antica-source-artifact-'));
     const storage = createLocalMediaStore({
       root,
@@ -60,46 +57,54 @@ describe('fn:createSourceArtifactAccess', () => {
       attributionText: null,
     };
     try {
-      await database.db.insert(sources).values({
-        id: sourceId,
-        ownerId,
-        kind: 'book_pdf',
-        currentVersionId: sourceVersionId,
-        title: metadata.title,
-        authorStatus: metadata.authorStatus,
-        access: metadata.access,
+      await database.db.sources.createMany({
+        data: {
+          id: sourceId,
+          ownerId,
+          kind: 'book_pdf',
+          currentVersionId: sourceVersionId,
+          title: metadata.title,
+          authorStatus: metadata.authorStatus,
+          access: metadata.access,
+        },
       });
-      await database.db.insert(sourceVersions).values({
-        id: sourceVersionId,
-        sourceId,
-        ownerId,
-        sourceHash,
-        metadataSnapshot: metadata,
-        capturedAt: '2026-10-13T04:00:00.000Z',
-        status: 'registered',
-        textIndexStatus: 'registered',
-        imageIndexStatus: 'registered',
+      await database.db.sourceVersions.createMany({
+        data: {
+          id: sourceVersionId,
+          sourceId,
+          ownerId,
+          sourceHash,
+          metadataSnapshot: jsonValue(metadata),
+          capturedAt: '2026-10-13T04:00:00.000Z',
+          status: 'registered',
+          textIndexStatus: 'registered',
+          imageIndexStatus: 'registered',
+        },
       });
       const key = originalKey(originalAssetId);
-      await database.db.insert(mediaAssets).values({
-        id: originalAssetId,
-        ownerId,
-        sourceVersionId,
-        kind: 'document',
-        purpose: 'source_original',
-        state: 'ready',
-        objectKey: key,
-        originalFileName: 'catalog.pdf',
-        mimeType: 'application/pdf',
-        byteLength: originalBytes.byteLength,
-        sha256: sourceHash,
+      await database.db.mediaAssets.createMany({
+        data: {
+          id: originalAssetId,
+          ownerId,
+          sourceVersionId,
+          kind: 'document',
+          purpose: 'source_original',
+          state: 'ready',
+          objectKey: key,
+          originalFileName: 'catalog.pdf',
+          mimeType: 'application/pdf',
+          byteLength: originalBytes.byteLength,
+          sha256: sourceHash,
+        },
       });
-      await database.db.insert(sourceVersionAssets).values({
-        versionId: sourceVersionId,
-        assetId: originalAssetId,
-        ordinal: 0,
-        printedLabel: 'Cover',
-        presentation: null,
+      await database.db.sourceVersionAssets.createMany({
+        data: {
+          versionId: sourceVersionId,
+          assetId: originalAssetId,
+          ordinal: 0,
+          printedLabel: 'Cover',
+          presentation: nullableJson(null),
+        },
       });
       const upload = await storage.signUpload({
         assetId: originalAssetId,
@@ -151,13 +156,15 @@ describe('fn:createSourceArtifactAccess', () => {
       );
       const viewId = randomUUID();
       const transformToOriginal = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-      await database.db.insert(canonicalViews).values({
-        id: viewId,
-        originalAssetId,
-        width: 600,
-        height: 800,
-        coordinateSpace: 'pdf_page_points',
-        transformToOriginal,
+      await database.db.canonicalViews.createMany({
+        data: {
+          id: viewId,
+          originalAssetId,
+          width: 600,
+          height: 800,
+          coordinateSpace: 'pdf_page_points',
+          transformToOriginal,
+        },
       });
       expect(await access.readAsset(originalAssetId)).toMatchObject({
         view: {
@@ -190,10 +197,9 @@ describe('fn:createSourceArtifactAccess', () => {
         bytes: artifactBytes,
         mimeType: 'application/json',
       });
-      const [stored] = await database.db
-        .select()
-        .from(sourceArtifacts)
-        .where(eq(sourceArtifacts.assetId, artifactId));
+      const [stored] = await database.db.sourceArtifacts.findMany({
+        where: { assetId: artifactId },
+      });
       expect(stored).toMatchObject({
         ownerId,
         sourceVersionId,
@@ -207,37 +213,37 @@ describe('fn:createSourceArtifactAccess', () => {
         /inaccessible/i,
       );
 
-      await database.db
-        .update(mediaAssets)
-        .set({ sha256: '0'.repeat(64) })
-        .where(eq(mediaAssets.id, originalAssetId));
+      await database.db.mediaAssets.updateMany({
+        data: { sha256: '0'.repeat(64) },
+        where: { id: originalAssetId },
+      });
       await expect(access.readAsset(originalAssetId)).rejects.toThrow(
         /integrity mismatch/i,
       );
-      await database.db
-        .update(mediaAssets)
-        .set({ sha256: '0'.repeat(64) })
-        .where(eq(mediaAssets.id, artifactId));
+      await database.db.mediaAssets.updateMany({
+        data: { sha256: '0'.repeat(64) },
+        where: { id: artifactId },
+      });
       await expect(access.readArtifact(artifactId)).rejects.toThrow(
         /integrity mismatch/i,
       );
     } finally {
-      await database.db
-        .delete(sourceArtifacts)
-        .where(eq(sourceArtifacts.sourceVersionId, sourceVersionId));
-      await database.db
-        .delete(sourceVersionAssets)
-        .where(eq(sourceVersionAssets.versionId, sourceVersionId));
-      await database.db
-        .delete(canonicalViews)
-        .where(eq(canonicalViews.originalAssetId, originalAssetId));
-      await database.db
-        .delete(mediaAssets)
-        .where(eq(mediaAssets.sourceVersionId, sourceVersionId));
-      await database.db
-        .delete(sourceVersions)
-        .where(eq(sourceVersions.id, sourceVersionId));
-      await database.db.delete(sources).where(eq(sources.id, sourceId));
+      await database.db.sourceArtifacts.deleteMany({
+        where: { sourceVersionId },
+      });
+      await database.db.sourceVersionAssets.deleteMany({
+        where: { versionId: sourceVersionId },
+      });
+      await database.db.canonicalViews.deleteMany({
+        where: { originalAssetId },
+      });
+      await database.db.mediaAssets.deleteMany({
+        where: { sourceVersionId },
+      });
+      await database.db.sourceVersions.deleteMany({
+        where: { id: sourceVersionId },
+      });
+      await database.db.sources.deleteMany({ where: { id: sourceId } });
       await database.close();
       await rm(root, { recursive: true, force: true });
     }

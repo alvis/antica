@@ -3,38 +3,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { eq } from 'drizzle-orm';
-
 import { describe, expect, inject } from 'vitest';
 
 import { createLocalMediaStore } from '../storage/local.js';
 
+import { jsonValue, nullableJson } from './json.js';
+
 import { createRetrievalReaders } from './retrieval.js';
-import {
-  canonicalViews,
-  citations,
-  evidenceAnchors,
-  jobs,
-  knowledgeEntries,
-  knowledgeRevisions,
-  mediaAssets,
-  mediaDerivatives,
-  parseRuns,
-  recordCategories,
-  recordMaterials,
-  records,
-  referenceImages,
-  sourceBlocks,
-  sourceContributors,
-  sourceKnowledgeDrafts,
-  sourceLocators,
-  sourcePageParses,
-  sourcePages,
-  sourceRegions,
-  sources,
-  sourceVersionAssets,
-  sourceVersions,
-} from './schema/index.js';
+
 import { createDatabaseTest } from './spec/fixtures/runner.js';
 import { createTransactionPort } from './transaction.js';
 
@@ -54,7 +30,7 @@ if (!databaseUrl) {
   );
 }
 
-describe('fn:createRetrievalReaders', () => {
+describe('fn:createRetrievalReaders', { timeout: 30_000 }, () => {
   it('should return no entries or query pixels for an owner with no persisted collection or sources', async ({
     connection,
   }) => {
@@ -108,59 +84,69 @@ describe('fn:createRetrievalReaders', () => {
       height: 0.4,
     };
     try {
-      await database.db.insert(records).values({
-        id: recordId,
-        ownerId,
-        code: `TEST-${recordId}`,
-        unitKind: 'single',
+      await database.db.records.createMany({
+        data: {
+          id: recordId,
+          ownerId,
+          code: `TEST-${recordId}`,
+          unitKind: 'single',
+        },
       });
-      await database.db
-        .insert(recordCategories)
-        .values({ recordId, categoryId });
-      await database.db
-        .insert(recordMaterials)
-        .values({ recordId, materialId });
-      await database.db.insert(mediaAssets).values({
-        id: assetId,
-        ownerId,
-        recordId,
-        kind: 'photo',
-        purpose: 'object',
-        state: 'ready',
-        objectKey: `originals/${assetId}`,
-        originalFileName: 'object.png',
-        mimeType: 'image/png',
-        byteLength: bytes.byteLength,
-        sha256,
+      await database.db.recordCategories.createMany({
+        data: { recordId, categoryId },
       });
-      await database.db.insert(mediaDerivatives).values({
-        id: derivativeId,
-        ownerId,
-        originalAssetId: assetId,
-        kind: 'canonical',
-        objectKey: key,
-        mimeType: 'image/png',
-        byteLength: bytes.byteLength,
-        sha256,
+      await database.db.recordMaterials.createMany({
+        data: { recordId, materialId },
       });
-      await database.db.insert(canonicalViews).values({
-        id: viewId,
-        originalAssetId: assetId,
-        derivativeId,
-        width: 100,
-        height: 100,
-        coordinateSpace: 'image_pixels',
-        transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      await database.db.mediaAssets.createMany({
+        data: {
+          id: assetId,
+          ownerId,
+          recordId,
+          kind: 'photo',
+          purpose: 'object',
+          state: 'ready',
+          objectKey: `originals/${assetId}`,
+          originalFileName: 'object.png',
+          mimeType: 'image/png',
+          byteLength: bytes.byteLength,
+          sha256,
+        },
       });
-      await database.db.insert(evidenceAnchors).values({
-        id: anchorId,
-        ownerId,
-        recordId,
-        originalAssetId: assetId,
-        canonicalViewId: viewId,
-        kind: 'photo',
-        scopeKind: 'region',
-        region,
+      await database.db.mediaDerivatives.createMany({
+        data: {
+          id: derivativeId,
+          ownerId,
+          originalAssetId: assetId,
+          kind: 'canonical',
+          objectKey: key,
+          mimeType: 'image/png',
+          byteLength: bytes.byteLength,
+          sha256,
+        },
+      });
+      await database.db.canonicalViews.createMany({
+        data: {
+          id: viewId,
+          originalAssetId: assetId,
+          derivativeId,
+          width: 100,
+          height: 100,
+          coordinateSpace: 'image_pixels',
+          transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        },
+      });
+      await database.db.evidenceAnchors.createMany({
+        data: {
+          id: anchorId,
+          ownerId,
+          recordId,
+          originalAssetId: assetId,
+          canonicalViewId: viewId,
+          kind: 'photo',
+          scopeKind: 'region',
+          region,
+        },
       });
       await storage.writeDerivative({ key, bytes, mimeType: 'image/png' });
       const readers = createRetrievalReaders({
@@ -212,10 +198,10 @@ describe('fn:createRetrievalReaders', () => {
         },
       ]);
       expect(await foreign.readImageEntries()).toEqual([]);
-      await database.db
-        .update(evidenceAnchors)
-        .set({ scopeKind: 'whole', region: null })
-        .where(eq(evidenceAnchors.id, anchorId));
+      await database.db.evidenceAnchors.updateMany({
+        data: { scopeKind: 'whole', region: nullableJson(null) },
+        where: { id: anchorId },
+      });
       expect(await readers.readQuery(anchorId)).toEqual({
         originalAssetId: assetId,
         canonicalViewId: viewId,
@@ -227,8 +213,8 @@ describe('fn:createRetrievalReaders', () => {
         derivativeId: randomUUID(),
         viewId: randomUUID(),
       }));
-      await database.db.insert(mediaAssets).values(
-        additional.map((item) => ({
+      await database.db.mediaAssets.createMany({
+        data: additional.map((item) => ({
           id: item.assetId,
           ownerId,
           recordId,
@@ -241,9 +227,9 @@ describe('fn:createRetrievalReaders', () => {
           byteLength: bytes.byteLength,
           sha256,
         })),
-      );
-      await database.db.insert(mediaDerivatives).values(
-        additional.map((item) => ({
+      });
+      await database.db.mediaDerivatives.createMany({
+        data: additional.map((item) => ({
           id: item.derivativeId,
           ownerId,
           originalAssetId: item.assetId,
@@ -253,9 +239,9 @@ describe('fn:createRetrievalReaders', () => {
           byteLength: bytes.byteLength,
           sha256,
         })),
-      );
-      await database.db.insert(canonicalViews).values(
-        additional.map((item) => ({
+      });
+      await database.db.canonicalViews.createMany({
+        data: additional.map((item) => ({
           id: item.viewId,
           originalAssetId: item.assetId,
           derivativeId: item.derivativeId,
@@ -264,7 +250,7 @@ describe('fn:createRetrievalReaders', () => {
           coordinateSpace: 'image_pixels',
           transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
         })),
-      );
+      });
       for (const item of additional) {
         await storage.writeDerivative({
           key: `derivatives/${item.assetId}/${item.derivativeId}`,
@@ -390,155 +376,189 @@ describe('fn:createRetrievalReaders', () => {
       citations: [pageCitation, webCitation],
     };
     try {
-      await database.db.insert(sources).values({
-        id: sourceId,
-        ownerId,
-        kind: 'book_pages',
-        currentVersionId: sourceVersionId,
-        title: metadata.title,
-        authorStatus: metadata.authorStatus,
-        access: metadata.access,
+      await database.db.sources.createMany({
+        data: {
+          id: sourceId,
+          ownerId,
+          kind: 'book_pages',
+          currentVersionId: sourceVersionId,
+          title: metadata.title,
+          authorStatus: metadata.authorStatus,
+          access: metadata.access,
+        },
       });
-      await database.db.insert(sourceContributors).values({
-        sourceId,
-        ordinal: 0,
-        nameAsPrinted: 'Curator A',
-        role: 'author',
-        attribution: 'as_printed',
+      await database.db.sourceContributors.createMany({
+        data: {
+          sourceId,
+          ordinal: 0,
+          nameAsPrinted: 'Curator A',
+          role: 'author',
+          attribution: 'as_printed',
+        },
       });
-      await database.db.insert(sourceVersions).values({
-        id: sourceVersionId,
-        sourceId,
-        ownerId,
-        sourceHash: sha256,
-        metadataSnapshot: metadata,
-        capturedAt: now,
-        status: 'ready',
-        textIndexStatus: 'ready',
-        imageIndexStatus: 'ready',
-        activeParseRunId: parseRunId,
+      await database.db.sourceVersions.createMany({
+        data: {
+          id: sourceVersionId,
+          sourceId,
+          ownerId,
+          sourceHash: sha256,
+          metadataSnapshot: jsonValue(metadata),
+          capturedAt: now,
+          status: 'ready',
+          textIndexStatus: 'ready',
+          imageIndexStatus: 'ready',
+          activeParseRunId: parseRunId,
+        },
       });
-      await database.db.insert(mediaAssets).values({
-        id: assetId,
-        ownerId,
-        sourceVersionId,
-        kind: 'photo',
-        purpose: 'source_original',
-        state: 'ready',
-        objectKey: `originals/${assetId}`,
-        originalFileName: 'page.png',
-        mimeType: 'image/png',
-        byteLength: bytes.byteLength,
-        sha256,
+      await database.db.mediaAssets.createMany({
+        data: {
+          id: assetId,
+          ownerId,
+          sourceVersionId,
+          kind: 'photo',
+          purpose: 'source_original',
+          state: 'ready',
+          objectKey: `originals/${assetId}`,
+          originalFileName: 'page.png',
+          mimeType: 'image/png',
+          byteLength: bytes.byteLength,
+          sha256,
+        },
       });
-      await database.db.insert(sourceVersionAssets).values({
-        versionId: sourceVersionId,
-        assetId,
-        ordinal: 0,
-        printedLabel: '1',
+      await database.db.sourceVersionAssets.createMany({
+        data: {
+          versionId: sourceVersionId,
+          assetId,
+          ordinal: 0,
+          printedLabel: '1',
+        },
       });
-      await database.db.insert(mediaDerivatives).values({
-        id: derivativeId,
-        ownerId,
-        originalAssetId: assetId,
-        kind: 'canonical',
-        objectKey: key,
-        mimeType: 'image/png',
-        byteLength: bytes.byteLength,
-        sha256,
+      await database.db.mediaDerivatives.createMany({
+        data: {
+          id: derivativeId,
+          ownerId,
+          originalAssetId: assetId,
+          kind: 'canonical',
+          objectKey: key,
+          mimeType: 'image/png',
+          byteLength: bytes.byteLength,
+          sha256,
+        },
       });
-      await database.db.insert(canonicalViews).values({
-        id: viewId,
-        originalAssetId: assetId,
-        derivativeId,
-        width: 100,
-        height: 100,
-        coordinateSpace: 'image_pixels',
-        transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      await database.db.canonicalViews.createMany({
+        data: {
+          id: viewId,
+          originalAssetId: assetId,
+          derivativeId,
+          width: 100,
+          height: 100,
+          coordinateSpace: 'image_pixels',
+          transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        },
       });
-      await database.db.insert(sourcePages).values({
-        id: pageId,
-        sourceVersionId,
-        pageIndex: 0,
-        printedPageLabel: '1',
-        originalAssetId: assetId,
-        canonicalViewId: viewId,
+      await database.db.sourcePages.createMany({
+        data: {
+          id: pageId,
+          sourceVersionId,
+          pageIndex: 0,
+          printedPageLabel: '1',
+          originalAssetId: assetId,
+          canonicalViewId: viewId,
+        },
       });
-      await database.db.insert(jobs).values({
-        id: parseRunId,
-        ownerId,
-        kind: 'sourceIngestion',
-        resourceId: sourceVersionId,
-        state: 'succeeded',
-        stage: 'parse',
+      await database.db.jobs.createMany({
+        data: {
+          id: parseRunId,
+          ownerId,
+          kind: 'sourceIngestion',
+          resourceId: sourceVersionId,
+          state: 'succeeded',
+          stage: 'parse',
+        },
       });
-      await database.db.insert(parseRuns).values({
-        id: parseRunId,
-        sourceVersionId,
-        jobId: parseRunId,
-        provider: 'application',
-        status: 'completed',
+      await database.db.parseRuns.createMany({
+        data: {
+          id: parseRunId,
+          sourceVersionId,
+          jobId: parseRunId,
+          provider: 'application',
+          status: 'completed',
+        },
       });
-      await database.db.insert(sourcePageParses).values({
-        parseRunId,
-        pageId,
-        rawText: 'Original catalogue text',
-        searchText: 'original catalogue text',
-        quality: 'usable',
+      await database.db.sourcePageParses.createMany({
+        data: {
+          parseRunId,
+          pageId,
+          rawText: 'Original catalogue text',
+          searchText: 'original catalogue text',
+          quality: 'usable',
+        },
       });
-      await database.db.insert(sourceRegions).values({
-        id: regionId,
-        sourceVersionId,
-        pageId,
-        parseRunId,
-        kind: 'text',
-        geometry: region,
-        rawText: 'Original catalogue text',
+      await database.db.sourceRegions.createMany({
+        data: {
+          id: regionId,
+          sourceVersionId,
+          pageId,
+          parseRunId,
+          kind: 'text',
+          geometry: region,
+          rawText: 'Original catalogue text',
+        },
       });
-      await database.db.insert(sourceLocators).values({
-        id: locatorId,
-        sourceId,
-        sourceVersionId,
-        kind: 'page',
-        pageId,
-        pageIndex: 0,
-        printedPageLabel: '1',
-        canonicalViewId: viewId,
-        regionId,
-        geometry: region,
+      await database.db.sourceLocators.createMany({
+        data: {
+          id: locatorId,
+          sourceId,
+          sourceVersionId,
+          kind: 'page',
+          pageId,
+          pageIndex: 0,
+          printedPageLabel: '1',
+          canonicalViewId: viewId,
+          regionId,
+          geometry: region,
+        },
       });
-      await database.db.insert(citations).values({
-        id: citationId,
-        locatorId,
-        relation: 'background',
-        availability: 'stored',
-        verification: 'located',
+      await database.db.citations.createMany({
+        data: {
+          id: citationId,
+          locatorId,
+          relation: 'background',
+          availability: 'stored',
+          verification: 'located',
+        },
       });
-      await database.db.insert(referenceImages).values({
-        id: imageId,
-        sourceVersionId,
-        locatorId,
-        storedDerivativeId: derivativeId,
-        captionAssociation: 'none',
+      await database.db.referenceImages.createMany({
+        data: {
+          id: imageId,
+          sourceVersionId,
+          locatorId,
+          storedDerivativeId: derivativeId,
+          captionAssociation: 'none',
+        },
       });
-      await database.db.insert(knowledgeEntries).values({
-        id: entryId,
-        ownerId,
-        displayCode: `K-${entryId}`,
-        currentRevision: 1,
+      await database.db.knowledgeEntries.createMany({
+        data: {
+          id: entryId,
+          ownerId,
+          displayCode: `K-${entryId}`,
+          currentRevision: 1,
+        },
       });
-      await database.db.insert(knowledgeRevisions).values({
-        entryId,
-        revision: 1,
-        status: 'saved',
-        titleZhHant: content.titleZhHant,
-        summaryZhHant: content.summary.textZhHant,
-        content,
-        contentHash: sha256,
+      await database.db.knowledgeRevisions.createMany({
+        data: {
+          entryId,
+          revision: 1,
+          status: 'saved',
+          titleZhHant: content.titleZhHant,
+          summaryZhHant: content.summary.textZhHant,
+          content: jsonValue(content),
+          contentHash: sha256,
+        },
       });
-      await database.db
-        .insert(sourceKnowledgeDrafts)
-        .values({ ownerId, sourceVersionId, entryId });
+      await database.db.sourceKnowledgeDrafts.createMany({
+        data: { ownerId, sourceVersionId, entryId },
+      });
       await storage.writeDerivative({ key, bytes, mimeType: 'image/png' });
       const readers = createRetrievalReaders({
         db: database.db,
@@ -629,71 +649,77 @@ describe('fn:createRetrievalReaders', () => {
       }));
       for (const excludedRegion of excluded) {
         const excludedLocator = randomUUID();
-        await database.db.insert(sourceRegions).values({
-          ...excludedRegion,
-          sourceVersionId,
-          pageId,
-          parseRunId,
-          kind: 'text',
-          geometry: region,
+        await database.db.sourceRegions.createMany({
+          data: {
+            ...excludedRegion,
+            sourceVersionId,
+            pageId,
+            parseRunId,
+            kind: 'text',
+            geometry: region,
+          },
         });
-        await database.db.insert(sourceLocators).values({
-          id: excludedLocator,
-          sourceId,
-          sourceVersionId,
-          kind: 'page',
-          pageId,
-          pageIndex: 0,
-          canonicalViewId: viewId,
-          regionId: excludedRegion.id,
-          geometry: region,
+        await database.db.sourceLocators.createMany({
+          data: {
+            id: excludedLocator,
+            sourceId,
+            sourceVersionId,
+            kind: 'page',
+            pageId,
+            pageIndex: 0,
+            canonicalViewId: viewId,
+            regionId: excludedRegion.id,
+            geometry: region,
+          },
         });
-        await database.db.insert(citations).values({
-          id: randomUUID(),
-          locatorId: excludedLocator,
-          relation: 'background',
-          availability: 'stored',
-          verification: 'located',
+        await database.db.citations.createMany({
+          data: {
+            id: randomUUID(),
+            locatorId: excludedLocator,
+            relation: 'background',
+            availability: 'stored',
+            verification: 'located',
+          },
         });
       }
       expect(await readers.readTextEntries()).toEqual(textEntries);
       const additionalEntries = Array.from({ length: 200 }, () => randomUUID());
-      await database.db.insert(knowledgeEntries).values(
-        additionalEntries.map((id) => ({
+      await database.db.knowledgeEntries.createMany({
+        data: additionalEntries.map((id) => ({
           id,
           ownerId,
           displayCode: `K-${id}`,
           currentRevision: 1,
         })),
-      );
-      await database.db.insert(knowledgeRevisions).values(
-        additionalEntries.map((id) => ({
+      });
+      await database.db.knowledgeRevisions.createMany({
+        data: additionalEntries.map((id) => ({
           entryId: id,
           revision: 1,
           status: 'saved',
           titleZhHant: content.titleZhHant,
           summaryZhHant: content.summary.textZhHant,
-          content,
+          content: jsonValue(content),
           contentHash: sha256,
         })),
-      );
-      await database.db.insert(sourceKnowledgeDrafts).values(
-        additionalEntries.map((id) => ({
+      });
+      await database.db.sourceKnowledgeDrafts.createMany({
+        data: additionalEntries.map((id) => ({
           ownerId,
           sourceVersionId,
           entryId: id,
         })),
-      );
+      });
       const additionalImages = Array.from({ length: 200 }, () => randomUUID());
-      await database.db.insert(referenceImages).values(
-        additionalImages.map((id) => ({
+      await database.db.referenceImages.createMany({
+        data: additionalImages.map((id) => ({
           id,
           sourceVersionId,
           locatorId,
           storedDerivativeId: derivativeId,
           captionAssociation: 'none',
         })),
-      );
+      });
       const allText = await readers.readTextEntries();
       expect(
         allText
@@ -721,10 +747,9 @@ describe('fn:createRetrievalReaders', () => {
         id: randomUUID(),
         locator: { ...webCitation.locator, excerptAsRetrieved: '' },
       };
-      await database.db
-        .update(knowledgeRevisions)
-        .set({
-          content: {
+      await database.db.knowledgeRevisions.updateMany({
+        data: {
+          content: jsonValue({
             ...content,
             citations: [
               ...content.citations,
@@ -732,9 +757,10 @@ describe('fn:createRetrievalReaders', () => {
               mismatchedSourceCitation,
               emptyExcerptCitation,
             ],
-          },
-        })
-        .where(eq(knowledgeRevisions.entryId, entryId));
+          }),
+        },
+        where: { entryId },
+      });
       expect(
         (await readers.readTextEntries()).map((item) => item.citation.id),
       ).toEqual(allText.map((item) => item.citation.id));
@@ -748,24 +774,26 @@ describe('fn:createRetrievalReaders', () => {
         ),
       ).toEqual([imageId, ...additionalImages].sort());
       const blockId = randomUUID();
-      await database.db.insert(sourceBlocks).values({
-        id: blockId,
-        parseRunId,
-        pageId,
-        rawText: 'Catalogue text',
-        searchMapping: [],
-        ordinal: 0,
+      await database.db.sourceBlocks.createMany({
+        data: {
+          id: blockId,
+          parseRunId,
+          pageId,
+          rawText: 'Catalogue text',
+          searchMapping: [],
+          ordinal: 0,
+        },
       });
-      await database.db
-        .update(sourceLocators)
-        .set({
+      await database.db.sourceLocators.updateMany({
+        data: {
           regionId: null,
-          geometry: null,
+          geometry: nullableJson(null),
           blockId,
           rangeStart: 0,
           rangeEnd: 5,
-        })
-        .where(eq(sourceLocators.id, locatorId));
+        },
+        where: { id: locatorId },
+      });
       expect(
         (await readers.readImageEntries())[0]?.match.sourceLocator,
       ).toMatchObject({ region: null, textRange: { start: 0, end: 5 } });
@@ -777,73 +805,87 @@ describe('fn:createRetrievalReaders', () => {
       const webLocatorId = randomUUID();
       const webImageId = randomUUID();
       const webKey = `derivatives/${webAssetId}/${webDerivativeId}`;
-      await database.db.insert(sources).values({
-        id: webSourceId,
-        ownerId,
-        kind: 'web',
-        currentVersionId: webVersionId,
-        title: 'Museum website',
-        authorStatus: 'unknown',
-        access: 'stored_copy',
+      await database.db.sources.createMany({
+        data: {
+          id: webSourceId,
+          ownerId,
+          kind: 'web',
+          currentVersionId: webVersionId,
+          title: 'Museum website',
+          authorStatus: 'unknown',
+          access: 'stored_copy',
+        },
       });
-      await database.db.insert(sourceVersions).values({
-        id: webVersionId,
-        sourceId: webSourceId,
-        ownerId,
-        sourceHash: createHash('sha256').update(webKey).digest('hex'),
-        metadataSnapshot: { ...metadata, title: 'Museum website' },
-        capturedAt: now,
-        status: 'ready',
-        textIndexStatus: 'ready',
-        imageIndexStatus: 'ready',
+      await database.db.sourceVersions.createMany({
+        data: {
+          id: webVersionId,
+          sourceId: webSourceId,
+          ownerId,
+          sourceHash: createHash('sha256').update(webKey).digest('hex'),
+          metadataSnapshot: jsonValue({ ...metadata, title: 'Museum website' }),
+          capturedAt: now,
+          status: 'ready',
+          textIndexStatus: 'ready',
+          imageIndexStatus: 'ready',
+        },
       });
-      await database.db.insert(mediaAssets).values({
-        id: webAssetId,
-        ownerId,
-        sourceVersionId: webVersionId,
-        kind: 'photo',
-        purpose: 'source_original',
-        state: 'ready',
-        objectKey: `originals/${webAssetId}`,
-        originalFileName: 'website.png',
-        mimeType: 'image/png',
-        byteLength: bytes.byteLength,
-        sha256,
+      await database.db.mediaAssets.createMany({
+        data: {
+          id: webAssetId,
+          ownerId,
+          sourceVersionId: webVersionId,
+          kind: 'photo',
+          purpose: 'source_original',
+          state: 'ready',
+          objectKey: `originals/${webAssetId}`,
+          originalFileName: 'website.png',
+          mimeType: 'image/png',
+          byteLength: bytes.byteLength,
+          sha256,
+        },
       });
-      await database.db.insert(mediaDerivatives).values({
-        id: webDerivativeId,
-        ownerId,
-        originalAssetId: webAssetId,
-        kind: 'canonical',
-        objectKey: webKey,
-        mimeType: 'image/png',
-        byteLength: bytes.byteLength,
-        sha256,
+      await database.db.mediaDerivatives.createMany({
+        data: {
+          id: webDerivativeId,
+          ownerId,
+          originalAssetId: webAssetId,
+          kind: 'canonical',
+          objectKey: webKey,
+          mimeType: 'image/png',
+          byteLength: bytes.byteLength,
+          sha256,
+        },
       });
-      await database.db.insert(canonicalViews).values({
-        id: webViewId,
-        originalAssetId: webAssetId,
-        derivativeId: webDerivativeId,
-        width: 100,
-        height: 100,
-        coordinateSpace: 'image_pixels',
-        transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      await database.db.canonicalViews.createMany({
+        data: {
+          id: webViewId,
+          originalAssetId: webAssetId,
+          derivativeId: webDerivativeId,
+          width: 100,
+          height: 100,
+          coordinateSpace: 'image_pixels',
+          transformToOriginal: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        },
       });
-      await database.db.insert(sourceLocators).values({
-        id: webLocatorId,
-        sourceId: webSourceId,
-        sourceVersionId: webVersionId,
-        kind: 'web',
-        url: 'https://museum.example/catalogue',
-        retrievedAt: now,
-        snapshotAssetId: webAssetId,
+      await database.db.sourceLocators.createMany({
+        data: {
+          id: webLocatorId,
+          sourceId: webSourceId,
+          sourceVersionId: webVersionId,
+          kind: 'web',
+          url: 'https://museum.example/catalogue',
+          retrievedAt: now,
+          snapshotAssetId: webAssetId,
+        },
       });
-      await database.db.insert(referenceImages).values({
-        id: webImageId,
-        sourceVersionId: webVersionId,
-        locatorId: webLocatorId,
-        storedDerivativeId: webDerivativeId,
-        captionAssociation: 'none',
+      await database.db.referenceImages.createMany({
+        data: {
+          id: webImageId,
+          sourceVersionId: webVersionId,
+          locatorId: webLocatorId,
+          storedDerivativeId: webDerivativeId,
+          captionAssociation: 'none',
+        },
       });
       await storage.writeDerivative({
         key: webKey,

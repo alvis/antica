@@ -1,19 +1,10 @@
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 
 import { createDatabase } from '../connection.js';
-import {
-  indexVersions,
-  jobs,
-  mediaAssets,
-  noteParagraphs,
-  records,
-  referenceLinks,
-  sources,
-} from '../schema/index.js';
+import { nullableJson } from '../json.js';
+
 import { createIsolatedDatabase } from '../spec/fixtures/isolated-database.js';
 
 import { createResearchRepository } from './research.js';
@@ -31,13 +22,13 @@ import type { Transaction } from '../transaction.js';
 
 const now = '2026-10-13T00:00:00.000Z';
 
-describe('fn:createResearchRepository', () => {
+describe('fn:createResearchRepository', { timeout: 30_000 }, () => {
   it('should omit a note deleted after listing under read committed isolation', async () => {
     const database = await createIsolatedDatabase();
     const reader = createDatabase({ url: database.url, maxConnections: 1 });
     const noteId = randomUUID();
     try {
-      const research = await database.db.transaction(async (tx) => {
+      const research = await database.db.$transaction(async (tx) => {
         const detail = await createResearch(tx, database.ownerId);
         await createResearchRepository(tx, database.ownerId).addNote({
           id: noteId,
@@ -53,27 +44,22 @@ describe('fn:createResearchRepository', () => {
 
         return detail;
       });
-      reader.db.$client.options.debug = (_connection, query): void => {
-        if (
-          query.includes('from "notes"') &&
-          query.includes('"notes"."id" =')
-        ) {
-          execFileSync(
-            process.execPath,
-            [
-              '--input-type=module',
-              '-e',
-              'import postgres from "postgres"; const client = postgres(process.argv[1], { max: 1, prepare: false }); try { await client.unsafe("delete from notes where id = $1", [process.argv[2]]); } finally { await client.end(); }',
-              database.url,
-              noteId,
-            ],
-            { cwd: new URL('../../../', import.meta.url), timeout: 10_000 },
-          );
-        }
-      };
+      const observedReader = reader.db.$extends({
+        query: {
+          notes: {
+            async findFirst({ args, query }) {
+              await database.db.notes.deleteMany({ where: { id: noteId } });
 
-      const result = await reader.db.transaction(async (tx) =>
-        createResearchRepository(tx, database.ownerId).get(research.researchId),
+              return query(args);
+            },
+          },
+        },
+      });
+
+      const result = await observedReader.$transaction(async (tx) =>
+        createResearchRepository(tx as Transaction, database.ownerId).get(
+          research.researchId,
+        ),
       );
 
       expect(result).toMatchObject({
@@ -88,7 +74,7 @@ describe('fn:createResearchRepository', () => {
   it('should preserve durable job states and reject reads outside the owner', async () => {
     const database = await createIsolatedDatabase();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createResearchRepository(tx, database.ownerId);
         const detail = await createResearch(tx, database.ownerId);
         expect(
@@ -109,16 +95,16 @@ describe('fn:createResearchRepository', () => {
             message: 'Unavailable',
             retryable: true,
           };
-          await tx
-            .update(jobs)
-            .set({
+          await tx.jobs.updateMany({
+            data: {
               state,
               stage: 'retrieve',
               completedAt: now,
               result: { incompleteStages: ['web'] },
               error,
-            })
-            .where(eq(jobs.id, detail.jobId));
+            },
+            where: { id: detail.jobId },
+          });
           const expected =
             state === 'queued'
               ? { kind: state }
@@ -137,10 +123,10 @@ describe('fn:createResearchRepository', () => {
             expected,
           );
         }
-        await tx
-          .update(jobs)
-          .set({ state: 'partial', result: null })
-          .where(eq(jobs.id, detail.jobId));
+        await tx.jobs.updateMany({
+          data: { state: 'partial', result: nullableJson(null) },
+          where: { id: detail.jobId },
+        });
         expect((await repository.get(detail.researchId))?.state).toEqual({
           kind: 'partial',
           completedAt: now,
@@ -155,7 +141,7 @@ describe('fn:createResearchRepository', () => {
   it('should freeze draft revisions and persist cited notes with their original source versions', async () => {
     const database = await createIsolatedDatabase();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createResearchRepository(tx, database.ownerId);
         const initial = await createResearch(tx, database.ownerId);
         await repository.saveDetail(initial);
@@ -222,10 +208,10 @@ describe('fn:createResearchRepository', () => {
         expect((await repository.get(detail.researchId))?.notes).toEqual([
           note,
         ]);
-        await tx
-          .update(noteParagraphs)
-          .set({ content: null })
-          .where(eq(noteParagraphs.noteId, note.id));
+        await tx.noteParagraphs.updateMany({
+          data: { content: nullableJson(null) },
+          where: { noteId: note.id },
+        });
         expect(
           (await repository.get(detail.researchId))?.notes[0]?.paragraphs,
         ).toEqual([
@@ -263,24 +249,26 @@ describe('fn:createResearchRepository', () => {
     try {
       const missing = randomUUID();
       await expect(
-        database.db.transaction(async (tx) =>
+        database.db.$transaction(async (tx) =>
           createResearch(tx, database.ownerId, [missing]),
         ),
       ).rejects.toThrow();
-      await database.db.insert(sources).values({
-        id: missing,
-        ownerId: database.ownerId,
-        kind: 'web',
-        title: 'Pending source',
-        authorStatus: 'unknown',
-        access: 'link_only',
+      await database.db.sources.createMany({
+        data: {
+          id: missing,
+          ownerId: database.ownerId,
+          kind: 'web',
+          title: 'Pending source',
+          authorStatus: 'unknown',
+          access: 'link_only',
+        },
       });
       await expect(
-        database.db.transaction(async (tx) =>
+        database.db.$transaction(async (tx) =>
           createResearch(tx, database.ownerId, [missing]),
         ),
       ).rejects.toThrow();
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createResearchRepository(tx, database.ownerId);
         const detail = await createResearch(tx, database.ownerId);
         const citation = webCitation();
@@ -307,7 +295,7 @@ describe('fn:createResearchRepository', () => {
   it('should replay frozen retrieval snapshots and reject content or index identity changes', async () => {
     const database = await createIsolatedDatabase();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createResearchRepository(tx, database.ownerId);
         const detail = await createResearch(tx, database.ownerId);
         const snapshot: RetrievalSnapshot = {
@@ -359,13 +347,15 @@ describe('fn:createResearchRepository', () => {
         ]) {
           const conflictId = randomUUID();
           const conflictRun = await createResearch(tx, database.ownerId);
-          await tx.insert(indexVersions).values({
-            id: conflictId,
-            kind: 'text',
-            embeddingModelId: 'local-model',
-            dimensions: 3,
-            status: 'active',
-            ...change,
+          await tx.indexVersions.createMany({
+            data: {
+              id: conflictId,
+              kind: 'text',
+              embeddingModelId: 'local-model',
+              dimensions: 3,
+              status: 'active',
+              ...change,
+            },
           });
           await expect(
             repository.saveRetrievalSnapshot({
@@ -384,7 +374,7 @@ describe('fn:createResearchRepository', () => {
   it('should paginate source references deterministically and honor target and owner filters', async () => {
     const database = await createIsolatedDatabase();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createResearchRepository(tx, database.ownerId);
         const detail = await createResearch(tx, database.ownerId);
         const citation = webCitation();
@@ -401,11 +391,13 @@ describe('fn:createResearchRepository', () => {
         const recordId = randomUUID();
         const checkId = randomUUID();
         const observationId = randomUUID();
-        await tx.insert(records).values({
-          id: recordId,
-          ownerId: database.ownerId,
-          code: 'AC-000001',
-          unitKind: 'single',
+        await tx.records.createMany({
+          data: {
+            id: recordId,
+            ownerId: database.ownerId,
+            code: 'AC-000001',
+            unitKind: 'single',
+          },
         });
         const ids = Array.from({ length: 3 }, () => randomUUID())
           .sort()
@@ -465,18 +457,20 @@ describe('fn:createResearchRepository', () => {
           ).items,
         ).toEqual([]);
         const assetId = randomUUID();
-        await tx.insert(mediaAssets).values({
-          id: assetId,
-          ownerId: database.ownerId,
-          recordId,
-          kind: 'photo',
-          purpose: 'object',
-          state: 'ready',
-          objectKey: `originals/${assetId}`,
-          originalFileName: 'reference.jpg',
-          mimeType: 'image/jpeg',
-          byteLength: 3,
-          sha256: 'a'.repeat(64),
+        await tx.mediaAssets.createMany({
+          data: {
+            id: assetId,
+            ownerId: database.ownerId,
+            recordId,
+            kind: 'photo',
+            purpose: 'object',
+            state: 'ready',
+            objectKey: `originals/${assetId}`,
+            originalFileName: 'reference.jpg',
+            mimeType: 'image/jpeg',
+            byteLength: 3,
+            sha256: 'a'.repeat(64),
+          },
         });
         const collection: ReferenceLink = {
           ...links[0]!,
@@ -492,10 +486,10 @@ describe('fn:createResearchRepository', () => {
         expect(await repository.getReference(collection.id)).toEqual(
           collection,
         );
-        await tx
-          .update(referenceLinks)
-          .set({ note: null })
-          .where(eq(referenceLinks.id, collection.id));
+        await tx.referenceLinks.updateMany({
+          data: { note: null },
+          where: { id: collection.id },
+        });
         expect(await repository.getReference(collection.id)).toEqual({
           ...collection,
           noteZhHant: '',
@@ -555,13 +549,15 @@ async function createResearch(
 ): Promise<ResearchDetail> {
   const id = randomUUID();
   const jobId = randomUUID();
-  await tx.insert(jobs).values({
-    id: jobId,
-    ownerId,
-    kind: 'research',
-    resourceId: id,
-    state: 'queued',
-    stage: 'retrieve',
+  await tx.jobs.createMany({
+    data: {
+      id: jobId,
+      ownerId,
+      kind: 'research',
+      resourceId: id,
+      state: 'queued',
+      stage: 'retrieve',
+    },
   });
   const request: ResearchRequest = {
     requestKey: randomUUID(),

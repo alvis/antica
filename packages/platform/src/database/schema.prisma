@@ -1,0 +1,1625 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "./generated"
+  previewFeatures     = ["partialIndexes"]
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+// Timestamp dbgenerated() defaults use PostgreSQL now() in the baseline SQL.
+// Keep the database transaction clock; @default(now()) is evaluated by this client.
+datasource db {
+  provider = "postgresql"
+}
+
+model account {
+  id                    String    @id
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(6)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  user                  user      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "account_user_id_user_id_fk")
+
+  @@index([userId])
+}
+
+model actionResolutions {
+  id                     String                   @id @db.Uuid
+  runId                  String                   @map("run_id") @db.Uuid
+  actionId               String                   @map("action_id") @db.Uuid
+  actionRevision         Int                      @map("action_revision")
+  recordRevision         Int                      @map("record_revision")
+  status                 String
+  reason                 String?
+  onSiteDescription      String?                  @map("on_site_description")
+  createdAt              DateTime                 @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  nextActions            nextActions              @relation(fields: [actionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "action_resolutions_action_id_next_actions_id_fk")
+  analysisRuns           analysisRuns             @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "action_resolutions_run_id_analysis_runs_id_fk")
+  resolutionChecks       resolutionChecks[]
+  resolutionEvidence     resolutionEvidence[]
+  resolutionObservations resolutionObservations[]
+  resolutionReferences   resolutionReferences[]
+
+  @@unique([runId, actionId, actionRevision], map: "action_resolutions_revision_uq")
+  @@map("action_resolutions")
+}
+
+model actionStates {
+  runId              String       @map("run_id") @db.Uuid
+  actionId           String       @map("action_id") @db.Uuid
+  recordId           String       @map("record_id") @db.Uuid
+  revision           Int          @default(1)
+  status             String
+  latestResolutionId String?      @map("latest_resolution_id") @db.Uuid
+  updatedAt          DateTime     @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  nextActions        nextActions  @relation(fields: [actionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "action_states_action_id_next_actions_id_fk")
+  records            records      @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "action_states_record_id_records_id_fk")
+  analysisRuns       analysisRuns @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "action_states_run_id_analysis_runs_id_fk")
+
+  @@id([runId, actionId], map: "action_states_run_id_action_id_pk")
+  @@map("action_states")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model adoptionEvents {
+  id             String       @id @db.Uuid
+  runId          String       @map("run_id") @db.Uuid
+  proposalId     String       @map("proposal_id") @db.Uuid
+  status         String
+  recordRevision Int          @map("record_revision")
+  createdAt      DateTime     @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  proposals      proposals    @relation(fields: [proposalId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "adoption_events_proposal_id_proposals_id_fk")
+  analysisRuns   analysisRuns @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "adoption_events_run_id_analysis_runs_id_fk")
+
+  @@unique([runId, proposalId], map: "adoption_events_proposal_uq")
+  @@map("adoption_events")
+}
+
+model analysisRuns {
+  id                  String                @id @db.Uuid
+  ownerId             String                @map("owner_id")
+  recordId            String                @map("record_id") @db.Uuid
+  jobId               String                @unique(map: "analysis_runs_job_uq") @map("job_id") @db.Uuid
+  snapshotId          String                @map("snapshot_id") @db.Uuid
+  retrievalSnapshotId String?               @map("retrieval_snapshot_id") @db.Uuid
+  status              String
+  requestedModelId    String?               @map("requested_model_id")
+  effectiveModelId    String?               @map("effective_model_id")
+  profileVersion      String                @map("profile_version")
+  promptVersion       String                @map("prompt_version")
+  schemaVersion       String                @map("schema_version")
+  providerVersion     String?               @map("provider_version")
+  audit               Json?
+  rawOutput           Json?                 @map("raw_output")
+  createdAt           DateTime              @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  completedAt         DateTime?             @map("completed_at") @db.Timestamptz(6)
+  modelSelection      Json                  @map("model_selection")
+  input               Json?
+  failureAudits       Json                  @default("[]") @map("failure_audits")
+  actionResolutions   actionResolutions[]
+  actionStates        actionStates[]
+  adoptionEvents      adoptionEvents[]
+  jobs                jobs                  @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analysis_runs_job_id_jobs_id_fk")
+  records             records               @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analysis_runs_record_id_records_id_fk")
+  retrievalSnapshots  retrievalSnapshots?   @relation(fields: [retrievalSnapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analysis_runs_retrieval_snapshot_id_retrieval_snapshots_id_fk")
+  analysisSnapshots   analysisSnapshots     @relation(fields: [snapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analysis_runs_snapshot_id_analysis_snapshots_id_fk")
+  claims              claims[]
+  nextActions         nextActions[]
+  proposalStates      proposalStates[]
+  proposals           proposals[]
+  runSuggestedMethods runSuggestedMethods[]
+
+  @@index([ownerId, recordId, createdAt, id], map: "analysis_runs_record_idx")
+  @@map("analysis_runs")
+}
+
+model analysisSnapshots {
+  id                   String                 @id @db.Uuid
+  ownerId              String                 @map("owner_id")
+  recordId             String                 @map("record_id") @db.Uuid
+  recordRevision       Int                    @map("record_revision")
+  analysisInputVersion Int                    @map("analysis_input_version")
+  evidenceVersion      Int                    @map("evidence_version")
+  content              Json
+  contentHash          String                 @map("content_hash")
+  createdAt            DateTime               @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  analysisRuns         analysisRuns[]
+  records              records                @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analysis_snapshots_record_id_records_id_fk")
+  snapshotAssets       snapshotAssets[]
+  snapshotChecks       snapshotChecks[]
+  snapshotEvidence     snapshotEvidence[]
+  snapshotObservations snapshotObservations[]
+
+  @@index([ownerId, recordId, createdAt], map: "analysis_snapshots_record_idx")
+  @@map("analysis_snapshots")
+}
+
+model anchorComponents {
+  anchorId         String           @map("anchor_id") @db.Uuid
+  componentId      String           @map("component_id") @db.Uuid
+  evidenceAnchors  evidenceAnchors  @relation(fields: [anchorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "anchor_components_anchor_id_evidence_anchors_id_fk")
+  recordComponents recordComponents @relation(fields: [componentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "anchor_components_component_id_record_components_id_fk")
+
+  @@id([anchorId, componentId], map: "anchor_components_anchor_id_component_id_pk")
+  @@map("anchor_components")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model canonicalViews {
+  id                  String            @id @db.Uuid
+  originalAssetId     String            @map("original_asset_id") @db.Uuid
+  derivativeId        String?           @unique(map: "canonical_views_derivative_uq") @map("derivative_id") @db.Uuid
+  width               Int
+  height              Int
+  coordinateSpace     String            @map("coordinate_space")
+  transformToOriginal Json              @map("transform_to_original")
+  mediaDerivatives    mediaDerivatives? @relation(fields: [derivativeId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "canonical_views_derivative_id_media_derivatives_id_fk")
+  mediaAssets         mediaAssets       @relation(fields: [originalAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "canonical_views_original_asset_id_media_assets_id_fk")
+  evidenceAnchors     evidenceAnchors[]
+  sourceLocators      sourceLocators[]
+  sourcePages         sourcePages[]
+
+  @@map("canonical_views")
+}
+
+model checkAnchors {
+  checkId         String          @map("check_id") @db.Uuid
+  anchorId        String          @map("anchor_id") @db.Uuid
+  evidenceAnchors evidenceAnchors @relation(fields: [anchorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "check_anchors_anchor_id_evidence_anchors_id_fk")
+  recordChecks    recordChecks    @relation(fields: [checkId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "check_anchors_check_id_record_checks_id_fk")
+
+  @@id([checkId, anchorId], map: "check_anchors_check_id_anchor_id_pk")
+  @@map("check_anchors")
+}
+
+model checkComponents {
+  checkId          String           @map("check_id") @db.Uuid
+  componentId      String           @map("component_id") @db.Uuid
+  recordChecks     recordChecks     @relation(fields: [checkId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "check_components_check_id_record_checks_id_fk")
+  recordComponents recordComponents @relation(fields: [componentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "check_components_component_id_record_components_id_fk")
+
+  @@id([checkId, componentId], map: "check_components_check_id_component_id_pk")
+  @@map("check_components")
+}
+
+model checkObservations {
+  checkId       String       @map("check_id") @db.Uuid
+  observationId String       @map("observation_id") @db.Uuid
+  recordChecks  recordChecks @relation(fields: [checkId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "check_observations_check_id_record_checks_id_fk")
+  observations  observations @relation(fields: [observationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "check_observations_observation_id_observations_id_fk")
+
+  @@id([checkId, observationId], map: "check_observations_check_id_observation_id_pk")
+  @@map("check_observations")
+}
+
+model citations {
+  id                         String                       @id @db.Uuid
+  locatorId                  String                       @map("locator_id") @db.Uuid
+  relation                   String
+  availability               String
+  verification               String
+  sourceLocators             sourceLocators               @relation(fields: [locatorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "citations_locator_id_source_locators_id_fk")
+  knowledgeRevisionCitations knowledgeRevisionCitations[]
+  noteCitations              noteCitations[]
+
+  @@index([locatorId], map: "citations_locator_idx")
+}
+
+model claimCitations {
+  claimId    String @map("claim_id") @db.Uuid
+  citationId String @map("citation_id") @db.Uuid
+  claims     claims @relation(fields: [claimId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "claim_citations_claim_id_claims_id_fk")
+
+  @@id([claimId, citationId], map: "claim_citations_claim_id_citation_id_pk")
+  @@map("claim_citations")
+}
+
+model claimEvidence {
+  claimId         String          @map("claim_id") @db.Uuid
+  anchorId        String          @map("anchor_id") @db.Uuid
+  evidenceAnchors evidenceAnchors @relation(fields: [anchorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "claim_evidence_anchor_id_evidence_anchors_id_fk")
+  claims          claims          @relation(fields: [claimId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "claim_evidence_claim_id_claims_id_fk")
+
+  @@id([claimId, anchorId], map: "claim_evidence_claim_id_anchor_id_pk")
+  @@map("claim_evidence")
+}
+
+model claimObservations {
+  claimId       String       @map("claim_id") @db.Uuid
+  observationId String       @map("observation_id") @db.Uuid
+  claims        claims       @relation(fields: [claimId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "claim_observations_claim_id_claims_id_fk")
+  observations  observations @relation(fields: [observationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "claim_observations_observation_id_observations_id_fk")
+
+  @@id([claimId, observationId], map: "claim_observations_claim_id_observation_id_pk")
+  @@map("claim_observations")
+}
+
+model claims {
+  id                String              @id @db.Uuid
+  runId             String              @map("run_id") @db.Uuid
+  kind              String
+  text              String
+  relation          String
+  certainty         String
+  claimCitations    claimCitations[]
+  claimEvidence     claimEvidence[]
+  claimObservations claimObservations[]
+  analysisRuns      analysisRuns        @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "claims_run_id_analysis_runs_id_fk")
+  proposalFindings  proposalFindings[]
+
+  @@unique([runId, id], map: "claims_run_id_uq")
+}
+
+model comparisonFailures {
+  id        String   @id @db.Uuid
+  ownerId   String   @map("owner_id")
+  query     Json
+  error     Json
+  audit     Json
+  createdAt DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ownerId, id], map: "comparison_failures_owner_id_uq")
+  @@map("comparison_failures")
+}
+
+model comparisonResults {
+  id         String   @id @db.Uuid
+  ownerId    String   @map("owner_id")
+  value      Json
+  invocation Json?
+  createdAt  DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ownerId, id], map: "comparison_results_owner_id_uq")
+  @@map("comparison_results")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model editDraftRuns {
+  id                      String                    @id @db.Uuid
+  ownerId                 String                    @map("owner_id")
+  jobId                   String                    @unique(map: "edit_draft_runs_job_uq") @map("job_id") @db.Uuid
+  recordId                String                    @map("record_id") @db.Uuid
+  revision                Int
+  status                  String
+  snapshot                Json
+  request                 Json
+  modelSelection          Json                      @map("model_selection")
+  result                  Json?
+  invocation              Json?
+  appliedProposalIds      Json                      @default("[]") @map("applied_proposal_ids")
+  createdAt               DateTime                  @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                  @map("updated_at") @db.Timestamptz(6)
+  jobs                    jobs                      @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_runs_job_id_jobs_id_fk")
+  records                 records                   @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_runs_record_id_records_id_fk")
+
+  @@unique([ownerId, id], map: "edit_draft_runs_owner_id_uq")
+  @@index([ownerId, recordId, createdAt], map: "edit_draft_runs_record_idx")
+  @@map("edit_draft_runs")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model evidenceAnchors {
+  id                                                                        String               @id @db.Uuid
+  ownerId                                                                   String               @map("owner_id")
+  recordId                                                                  String               @map("record_id") @db.Uuid
+  originalAssetId                                                           String               @map("original_asset_id") @db.Uuid
+  canonicalViewId                                                           String               @map("canonical_view_id") @db.Uuid
+  kind                                                                      String
+  scopeKind                                                                 String               @map("scope_kind")
+  region                                                                    Json?
+  cropDerivativeId                                                          String?              @map("crop_derivative_id") @db.Uuid
+  frameStreamIndex                                                          Int?                 @map("frame_stream_index")
+  frameTimebaseNumerator                                                    Int?                 @map("frame_timebase_numerator")
+  frameTimebaseDenominator                                                  Int?                 @map("frame_timebase_denominator")
+  framePts                                                                  String?              @map("frame_pts")
+  frameDerivativeId                                                         String?              @map("frame_derivative_id") @db.Uuid
+  frameDisplayTimeMs                                                        Int?                 @map("frame_display_time_ms")
+  createdAt                                                                 DateTime             @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  anchorComponents                                                          anchorComponents[]
+  checkAnchors                                                              checkAnchors[]
+  claimEvidence                                                             claimEvidence[]
+  canonicalViews                                                            canonicalViews       @relation(fields: [canonicalViewId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evidence_anchors_canonical_view_id_canonical_views_id_fk")
+  media_derivatives_evidence_anchors_crop_derivative_idTomedia_derivatives  mediaDerivatives?    @relation("evidence_anchors_crop_derivative_idTomedia_derivatives", fields: [cropDerivativeId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evidence_anchors_crop_derivative_id_media_derivatives_id_fk")
+  media_derivatives_evidence_anchors_frame_derivative_idTomedia_derivatives mediaDerivatives?    @relation("evidence_anchors_frame_derivative_idTomedia_derivatives", fields: [frameDerivativeId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evidence_anchors_frame_derivative_id_media_derivatives_id_fk")
+  mediaAssets                                                               mediaAssets          @relation(fields: [originalAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evidence_anchors_original_asset_id_media_assets_id_fk")
+  records                                                                   records              @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evidence_anchors_record_id_records_id_fk")
+  observationAnchors                                                        observationAnchors[]
+  resolutionEvidence                                                        resolutionEvidence[]
+  snapshotEvidence                                                          snapshotEvidence[]
+
+  @@unique([ownerId, recordId, id], map: "evidence_anchors_owner_record_id_uq")
+  @@index([ownerId, recordId, createdAt, id], map: "evidence_anchors_record_idx")
+  @@map("evidence_anchors")
+}
+
+model idempotencyRequests {
+  ownerId        String   @map("owner_id")
+  operation      String
+  key            String   @db.Uuid
+  fingerprint    String
+  status         String
+  responseStatus Int?     @map("response_status")
+  response       Json?
+  createdAt      DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([ownerId, operation, key], map: "idempotency_requests_owner_id_operation_key_pk")
+  @@map("idempotency_requests")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model imageIndexItems {
+  id               String           @id @db.Uuid
+  indexId          String           @map("index_id") @db.Uuid
+  referenceImageId String?          @map("reference_image_id") @db.Uuid
+  originalAssetId  String?          @map("original_asset_id") @db.Uuid
+  derivativeId     String           @map("derivative_id") @db.Uuid
+  mediaDerivatives mediaDerivatives @relation(fields: [derivativeId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "image_index_items_derivative_id_media_derivatives_id_fk")
+  indexVersions    indexVersions    @relation(fields: [indexId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "image_index_items_index_id_index_versions_id_fk")
+  mediaAssets      mediaAssets?     @relation(fields: [originalAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "image_index_items_original_asset_id_media_assets_id_fk")
+  referenceImages  referenceImages? @relation(fields: [referenceImageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "image_index_items_reference_image_id_reference_images_id_fk")
+
+  @@map("image_index_items")
+}
+
+model indexVersions {
+  id                     String                   @id @db.Uuid
+  kind                   String
+  embeddingModelId       String                   @map("embedding_model_id")
+  dimensions             Int
+  status                 String
+  createdAt              DateTime                 @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  imageIndexItems        imageIndexItems[]
+  sourceChunkMappings    sourceChunkMappings[]
+  sourceIndexMemberships sourceIndexMemberships[]
+
+  @@map("index_versions")
+}
+
+model inspectionMethods {
+  id                       String                     @id @db.Uuid
+  owningEntryId            String                     @map("owning_entry_id") @db.Uuid
+  currentVersionId         String?                    @map("current_version_id") @db.Uuid
+  knowledgeEntries         knowledgeEntries           @relation(fields: [owningEntryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "inspection_methods_owning_entry_id_knowledge_entries_id_fk")
+  knowledgeRevisionMethods knowledgeRevisionMethods[]
+  methodVersions           methodVersions[]
+
+  @@map("inspection_methods")
+}
+
+model jobSteps {
+  jobId      String    @map("job_id") @db.Uuid
+  stageKey   String    @map("stage_key")
+  revision   Int       @default(1)
+  state      String
+  leaseToken String?   @map("lease_token") @db.Uuid
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(6)
+  attempt    Int       @default(0)
+  checkpoint Json?
+  result     Json?
+  updatedAt  DateTime  @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  jobs       jobs      @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "job_steps_job_id_jobs_id_fk")
+
+  @@id([jobId, stageKey], map: "job_steps_job_id_stage_key_pk")
+  @@index([state, leaseUntil], map: "job_steps_claim_idx")
+  @@map("job_steps")
+}
+
+model jobs {
+  id                  String                @id @db.Uuid
+  ownerId             String                @map("owner_id")
+  kind                String
+  resourceId          String                @map("resource_id") @db.Uuid
+  state               String
+  stage               String
+  revision            Int                   @default(1)
+  createdAt           DateTime              @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime              @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  completedAt         DateTime?             @map("completed_at") @db.Timestamptz(6)
+  error               Json?
+  result              Json?
+  analysisRuns        analysisRuns?
+  editDraftRuns       editDraftRuns?
+  jobSteps            jobSteps[]
+  outbox              outbox[]
+  parseRuns           parseRuns[]
+  providerJobMappings providerJobMappings[]
+  referenceImages     referenceImages[]
+  researchRuns        researchRuns[]
+  transcriptionRuns   transcriptionRuns?
+
+  @@unique([ownerId, id], map: "jobs_owner_id_uq")
+  @@index([ownerId, state, createdAt], map: "jobs_owner_state_idx")
+}
+
+model knowledgeEntries {
+  id                         String                       @id @db.Uuid
+  ownerId                    String                       @map("owner_id")
+  displayCode                String                       @map("display_code")
+  currentRevision            Int                          @map("current_revision")
+  createdAt                  DateTime                     @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime                     @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  inspectionMethods          inspectionMethods[]
+  knowledgeRevisionAliases   knowledgeRevisionAliases[]
+  knowledgeRevisionCitations knowledgeRevisionCitations[]
+  knowledgeRevisionKinds     knowledgeRevisionKinds[]
+  knowledgeRevisionMethods   knowledgeRevisionMethods[]
+  knowledgeRevisions         knowledgeRevisions[]
+  notes                      notes[]
+  researchRuns               researchRuns[]
+  sourceKnowledgeDrafts      sourceKnowledgeDrafts[]
+
+  @@unique([ownerId, displayCode], map: "knowledge_entries_owner_code_uq")
+  @@unique([ownerId, id], map: "knowledge_entries_owner_id_uq")
+  @@map("knowledge_entries")
+}
+
+model knowledgeRevisionAliases {
+  entryId          String           @map("entry_id") @db.Uuid
+  revision         Int
+  alias            String
+  knowledgeEntries knowledgeEntries @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_aliases_entry_id_knowledge_entries_id_fk")
+
+  @@id([entryId, revision, alias], map: "knowledge_revision_aliases_entry_id_revision_alias_pk")
+  @@map("knowledge_revision_aliases")
+}
+
+model knowledgeRevisionCitations {
+  entryId          String           @map("entry_id") @db.Uuid
+  revision         Int
+  citationId       String           @map("citation_id") @db.Uuid
+  citations        citations        @relation(fields: [citationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_citations_citation_id_citations_id_fk")
+  knowledgeEntries knowledgeEntries @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_citations_entry_id_knowledge_entries_id_fk")
+
+  @@id([entryId, revision, citationId], map: "knowledge_revision_citations_entry_id_revision_citation_id_pk")
+  @@map("knowledge_revision_citations")
+}
+
+model knowledgeRevisionKinds {
+  entryId          String           @map("entry_id") @db.Uuid
+  revision         Int
+  kind             String
+  knowledgeEntries knowledgeEntries @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_kinds_entry_id_knowledge_entries_id_fk")
+
+  @@id([entryId, revision, kind], map: "knowledge_revision_kinds_entry_id_revision_kind_pk")
+  @@index([kind])
+  @@map("knowledge_revision_kinds")
+}
+
+model knowledgeRevisionMethods {
+  entryId           String            @map("entry_id") @db.Uuid
+  revision          Int
+  methodId          String            @map("method_id") @db.Uuid
+  methodVersionId   String            @map("method_version_id") @db.Uuid
+  knowledgeEntries  knowledgeEntries  @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_methods_entry_id_knowledge_entries_id_fk")
+  inspectionMethods inspectionMethods @relation(fields: [methodId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_methods_method_id_inspection_methods_id_fk")
+  methodVersions    methodVersions    @relation(fields: [methodVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_methods_method_version_id_method_versions_id")
+
+  @@id([entryId, revision, methodId], map: "knowledge_revision_methods_entry_id_revision_method_id_pk")
+  @@map("knowledge_revision_methods")
+}
+
+model knowledgeRevisions {
+  entryId          String           @map("entry_id") @db.Uuid
+  revision         Int
+  status           String
+  savedBy          String?          @map("saved_by")
+  titleZhHant      String           @map("title_zh_hant")
+  summaryZhHant    String           @map("summary_zh_hant")
+  content          Json
+  contentHash      String           @map("content_hash")
+  createdAt        DateTime         @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  knowledgeEntries knowledgeEntries @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revisions_entry_id_knowledge_entries_id_fk")
+
+  @@id([entryId, revision], map: "knowledge_revisions_entry_id_revision_pk")
+  @@index([titleZhHant], map: "knowledge_revisions_title_idx")
+  @@map("knowledge_revisions")
+}
+
+model locations {
+  id              String    @id @db.Uuid
+  ownerId         String    @map("owner_id")
+  label           String
+  normalizedLabel String    @map("normalized_label")
+  createdAt       DateTime  @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  records         records[]
+
+  @@unique([ownerId, normalizedLabel], map: "locations_owner_label_uq")
+}
+
+model mappingRegions {
+  mappingId           String              @map("mapping_id") @db.Uuid
+  regionId            String              @map("region_id") @db.Uuid
+  sourceChunkMappings sourceChunkMappings @relation(fields: [mappingId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "mapping_regions_mapping_id_source_chunk_mappings_id_fk")
+  sourceRegions       sourceRegions       @relation(fields: [regionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "mapping_regions_region_id_source_regions_id_fk")
+
+  @@id([mappingId, regionId], map: "mapping_regions_mapping_id_region_id_pk")
+  @@map("mapping_regions")
+}
+
+model mediaAssetComponents {
+  assetId          String           @map("asset_id") @db.Uuid
+  componentId      String           @map("component_id") @db.Uuid
+  mediaAssets      mediaAssets      @relation(fields: [assetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "media_asset_components_asset_id_media_assets_id_fk")
+  recordComponents recordComponents @relation(fields: [componentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "media_asset_components_component_id_record_components_id_fk")
+
+  @@id([assetId, componentId], map: "media_asset_components_asset_id_component_id_pk")
+  @@map("media_asset_components")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model mediaAssets {
+  id                    String                 @id @db.Uuid
+  ownerId               String                 @map("owner_id")
+  recordId              String?                @map("record_id") @db.Uuid
+  sourceIntakeId        String?                @map("source_intake_id") @db.Uuid
+  sourceVersionId       String?                @map("source_version_id") @db.Uuid
+  kind                  String
+  purpose               String
+  state                 String
+  objectKey             String                 @unique(map: "media_assets_object_key_uq") @map("object_key")
+  originalFileName      String                 @map("original_file_name")
+  mimeType              String                 @map("mime_type")
+  byteLength            BigInt                 @map("byte_length")
+  sha256                String
+  durationMs            Decimal?               @map("duration_ms") @db.Decimal(20, 3)
+  verifiedAt            DateTime?              @map("verified_at") @db.Timestamptz(6)
+  readyVersionAppliedAt DateTime?              @map("ready_version_applied_at") @db.Timestamptz(6)
+  createdAt             DateTime               @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  canonicalViews        canonicalViews[]
+  evidenceAnchors       evidenceAnchors[]
+  imageIndexItems       imageIndexItems[]
+  mediaAssetComponents  mediaAssetComponents[]
+  records               records?               @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "media_assets_record_id_records_id_fk")
+  sourceIntakes         sourceIntakes?         @relation(fields: [sourceIntakeId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "media_assets_source_intake_id_source_intakes_id_fk")
+  mediaDerivatives      mediaDerivatives[]
+  observations          observations[]
+  parseRuns             parseRuns[]
+  referenceLinks        referenceLinks[]
+  snapshotAssets        snapshotAssets[]
+  sourceArtifacts       sourceArtifacts?
+  sourceLocators        sourceLocators[]
+  sourcePages           sourcePages[]
+  sourceVersionAssets   sourceVersionAssets?
+  transcriptionRuns     transcriptionRuns[]
+  uploadParts           uploadParts[]
+  uploadSessions        uploadSessions?
+
+  @@index([ownerId, recordId, createdAt], map: "media_assets_record_idx")
+  @@map("media_assets")
+}
+
+model mediaDerivatives {
+  id                                                                       String            @id @db.Uuid
+  ownerId                                                                  String            @map("owner_id")
+  originalAssetId                                                          String            @map("original_asset_id") @db.Uuid
+  kind                                                                     String
+  objectKey                                                                String            @unique(map: "media_derivatives_key_uq") @map("object_key")
+  mimeType                                                                 String            @map("mime_type")
+  byteLength                                                               BigInt            @map("byte_length")
+  sha256                                                                   String
+  width                                                                    Int?
+  height                                                                   Int?
+  parentViewId                                                             String?           @map("parent_view_id") @db.Uuid
+  region                                                                   Json?
+  transform                                                                Json?
+  streamIndex                                                              Int?              @map("stream_index")
+  pts                                                                      Decimal?          @db.Decimal(20, 0)
+  timebaseNumerator                                                        Int?              @map("timebase_numerator")
+  timebaseDenominator                                                      Int?              @map("timebase_denominator")
+  createdAt                                                                DateTime          @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  parentDerivativeId                                                       String?           @map("parent_derivative_id") @db.Uuid
+  displayTimeMs                                                            Decimal?          @map("display_time_ms") @db.Decimal(20, 3)
+  canonicalViews                                                           canonicalViews?
+  evidence_anchors_evidence_anchors_crop_derivative_idTomedia_derivatives  evidenceAnchors[] @relation("evidence_anchors_crop_derivative_idTomedia_derivatives")
+  evidence_anchors_evidence_anchors_frame_derivative_idTomedia_derivatives evidenceAnchors[] @relation("evidence_anchors_frame_derivative_idTomedia_derivatives")
+  imageIndexItems                                                          imageIndexItems[]
+  mediaAssets                                                              mediaAssets       @relation(fields: [originalAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "media_derivatives_original_asset_id_media_assets_id_fk")
+  referenceImages                                                          referenceImages[]
+
+  @@index([originalAssetId, kind], map: "media_derivatives_original_idx")
+  @@map("media_derivatives")
+}
+
+model methodVersions {
+  id                       String                     @id @db.Uuid
+  methodId                 String                     @map("method_id") @db.Uuid
+  revision                 Int
+  definition               Json
+  contentHash              String                     @map("content_hash")
+  createdAt                DateTime                   @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  knowledgeRevisionMethods knowledgeRevisionMethods[]
+  inspectionMethods        inspectionMethods          @relation(fields: [methodId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "method_versions_method_id_inspection_methods_id_fk")
+
+  @@unique([methodId, revision], map: "method_versions_method_revision_uq")
+  @@map("method_versions")
+}
+
+model nextActions {
+  id                String              @id @db.Uuid
+  runId             String              @map("run_id") @db.Uuid
+  recordId          String              @map("record_id") @db.Uuid
+  kind              String
+  instruction       String
+  reason            String
+  checkId           String?             @map("check_id") @db.Uuid
+  actionResolutions actionResolutions[]
+  actionStates      actionStates[]
+  recordChecks      recordChecks?       @relation(fields: [checkId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "next_actions_check_id_record_checks_id_fk")
+  records           records             @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "next_actions_record_id_records_id_fk")
+  analysisRuns      analysisRuns        @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "next_actions_run_id_analysis_runs_id_fk")
+
+  @@unique([runId, id], map: "next_actions_run_id_uq")
+  @@map("next_actions")
+}
+
+model noteCitations {
+  noteId     String    @map("note_id") @db.Uuid
+  citationId String    @map("citation_id") @db.Uuid
+  citations  citations @relation(fields: [citationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "note_citations_citation_id_citations_id_fk")
+  notes      notes     @relation(fields: [noteId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "note_citations_note_id_notes_id_fk")
+
+  @@id([noteId, citationId], map: "note_citations_note_id_citation_id_pk")
+  @@map("note_citations")
+}
+
+model noteParagraphs {
+  noteId  String @map("note_id") @db.Uuid
+  ordinal Int
+  text    String
+  content Json?
+  notes   notes  @relation(fields: [noteId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "note_paragraphs_note_id_notes_id_fk")
+
+  @@id([noteId, ordinal], map: "note_paragraphs_note_id_ordinal_pk")
+  @@map("note_paragraphs")
+}
+
+model notes {
+  id               String            @id @db.Uuid
+  ownerId          String            @map("owner_id")
+  researchId       String            @map("research_id") @db.Uuid
+  draftRevision    Int               @map("draft_revision")
+  title            String
+  recordId         String?           @map("record_id") @db.Uuid
+  entryId          String?           @map("entry_id") @db.Uuid
+  savedBy          String            @map("saved_by")
+  savedAt          DateTime          @default(dbgenerated()) @map("saved_at") @db.Timestamptz(6)
+  noteCitations    noteCitations[]
+  noteParagraphs   noteParagraphs[]
+  knowledgeEntries knowledgeEntries? @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "notes_entry_id_knowledge_entries_id_fk")
+  records          records?          @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "notes_record_id_records_id_fk")
+  researchRuns     researchRuns      @relation(fields: [researchId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "notes_research_id_research_runs_id_fk")
+}
+
+model observationAnchors {
+  observationId   String          @map("observation_id") @db.Uuid
+  anchorId        String          @map("anchor_id") @db.Uuid
+  evidenceAnchors evidenceAnchors @relation(fields: [anchorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "observation_anchors_anchor_id_evidence_anchors_id_fk")
+  observations    observations    @relation(fields: [observationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "observation_anchors_observation_id_observations_id_fk")
+
+  @@id([observationId, anchorId], map: "observation_anchors_observation_id_anchor_id_pk")
+  @@map("observation_anchors")
+}
+
+model observationComponents {
+  observationId    String           @map("observation_id") @db.Uuid
+  componentId      String           @map("component_id") @db.Uuid
+  recordComponents recordComponents @relation(fields: [componentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "observation_components_component_id_record_components_id_fk")
+  observations     observations     @relation(fields: [observationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "observation_components_observation_id_observations_id_fk")
+
+  @@id([observationId, componentId], map: "observation_components_observation_id_component_id_pk")
+  @@map("observation_components")
+}
+
+model observations {
+  id                     String                   @id @db.Uuid
+  ownerId                String                   @map("owner_id")
+  recordId               String                   @map("record_id") @db.Uuid
+  channel                String
+  text                   String
+  observedAt             DateTime                 @map("observed_at") @db.Timestamptz(6)
+  audioAssetId           String?                  @map("audio_asset_id") @db.Uuid
+  transcriptionId        String?                  @map("transcription_id") @db.Uuid
+  segmentId              String?                  @map("segment_id") @db.Uuid
+  editDraftId            String?                  @map("edit_draft_id") @db.Uuid
+  supersedesId           String?                  @unique(map: "observations_supersedes_uq") @map("supersedes_id") @db.Uuid
+  supersededById         String?                  @unique(map: "observations_superseded_by_uq") @map("superseded_by_id") @db.Uuid
+  createdAt              DateTime                 @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  checkObservations      checkObservations[]
+  claimObservations      claimObservations[]
+  observationAnchors     observationAnchors[]
+  observationComponents  observationComponents[]
+  mediaAssets            mediaAssets?             @relation(fields: [audioAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "observations_audio_asset_id_media_assets_id_fk")
+  records                records                  @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "observations_record_id_records_id_fk")
+  resolutionObservations resolutionObservations[]
+  snapshotObservations   snapshotObservations[]
+
+  @@unique([ownerId, recordId, id], map: "observations_owner_record_id_uq")
+  @@index([ownerId, recordId, createdAt, id], map: "observations_current_idx", where: raw("(superseded_by_id IS NULL)"))
+}
+
+model otpSendCooldown {
+  phoneNumber String   @id @unique(map: "otp_send_cooldown_phone_uq") @map("phone_number")
+  lastSentAt  DateTime @default(dbgenerated()) @map("last_sent_at") @db.Timestamptz(6)
+
+  @@map("otp_send_cooldown")
+}
+
+model outbox {
+  eventId        String    @id @map("event_id") @db.Uuid
+  jobId          String?   @map("job_id") @db.Uuid
+  eventName      String    @map("event_name")
+  schemaVersion  String    @map("schema_version")
+  ownerId        String    @map("owner_id")
+  resourceId     String    @map("resource_id") @db.Uuid
+  idempotencyKey String    @map("idempotency_key")
+  payload        Json
+  attemptCount   Int       @default(0) @map("attempt_count")
+  availableAt    DateTime  @default(dbgenerated()) @map("available_at") @db.Timestamptz(6)
+  leaseToken     String?   @map("lease_token") @db.Uuid
+  leaseUntil     DateTime? @map("lease_until") @db.Timestamptz(6)
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  jobs           jobs?     @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "outbox_job_id_jobs_id_fk")
+
+  @@unique([eventName, idempotencyKey], map: "outbox_idempotency_uq")
+  @@index([availableAt, eventId], map: "outbox_pending_idx", where: raw("(delivered_at IS NULL)"))
+}
+
+model parseRuns {
+  id                  String                @id @db.Uuid
+  sourceVersionId     String                @map("source_version_id") @db.Uuid
+  jobId               String                @map("job_id") @db.Uuid
+  provider            String
+  rawOutputAssetId    String?               @map("raw_output_asset_id") @db.Uuid
+  status              String
+  createdAt           DateTime              @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  jobs                jobs                  @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "parse_runs_job_id_jobs_id_fk")
+  mediaAssets         mediaAssets?          @relation(fields: [rawOutputAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "parse_runs_raw_output_asset_id_media_assets_id_fk")
+  sourceVersions      sourceVersions        @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "parse_runs_source_version_id_source_versions_id_fk")
+  sourceBlocks        sourceBlocks[]
+  sourceChunkMappings sourceChunkMappings[]
+  sourcePageParses    sourcePageParses[]
+  sourceRegions       sourceRegions[]
+
+  @@map("parse_runs")
+}
+
+model proposalFindings {
+  proposalId String    @map("proposal_id") @db.Uuid
+  claimId    String    @map("claim_id") @db.Uuid
+  claims     claims    @relation(fields: [claimId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "proposal_findings_claim_id_claims_id_fk")
+  proposals  proposals @relation(fields: [proposalId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "proposal_findings_proposal_id_proposals_id_fk")
+
+  @@id([proposalId, claimId], map: "proposal_findings_proposal_id_claim_id_pk")
+  @@map("proposal_findings")
+}
+
+model proposalStates {
+  runId         String       @map("run_id") @db.Uuid
+  proposalId    String       @map("proposal_id") @db.Uuid
+  status        String
+  latestEventId String?      @map("latest_event_id") @db.Uuid
+  proposals     proposals    @relation(fields: [proposalId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "proposal_states_proposal_id_proposals_id_fk")
+  analysisRuns  analysisRuns @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "proposal_states_run_id_analysis_runs_id_fk")
+
+  @@id([runId, proposalId], map: "proposal_states_run_id_proposal_id_pk")
+  @@map("proposal_states")
+}
+
+model proposals {
+  id               String             @id @db.Uuid
+  runId            String             @map("run_id") @db.Uuid
+  field            String
+  before           Json
+  proposed         Json
+  adoptionEvents   adoptionEvents[]
+  proposalFindings proposalFindings[]
+  proposalStates   proposalStates[]
+  analysisRuns     analysisRuns       @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "proposals_run_id_analysis_runs_id_fk")
+
+  @@unique([runId, id], map: "proposals_run_id_uq")
+}
+
+model providerCompletions {
+  mappingId           String              @id @map("mapping_id") @db.Uuid
+  result              Json
+  completedAt         DateTime            @default(dbgenerated()) @map("completed_at") @db.Timestamptz(6)
+  providerJobMappings providerJobMappings @relation(fields: [mappingId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "provider_completions_mapping_id_provider_job_mappings_id_fk")
+
+  @@map("provider_completions")
+}
+
+model providerEvents {
+  provider            String
+  eventId             String              @map("event_id")
+  mappingId           String              @map("mapping_id") @db.Uuid
+  payloadHash         String              @map("payload_hash")
+  payload             Json
+  receivedAt          DateTime            @default(dbgenerated()) @map("received_at") @db.Timestamptz(6)
+  providerJobMappings providerJobMappings @relation(fields: [mappingId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "provider_events_mapping_id_provider_job_mappings_id_fk")
+
+  @@id([provider, eventId], map: "provider_events_provider_event_id_pk")
+  @@map("provider_events")
+}
+
+model providerJobMappings {
+  id                  String               @id @db.Uuid
+  provider            String
+  providerJobId       String               @map("provider_job_id")
+  jobId               String               @map("job_id") @db.Uuid
+  stageKey            String               @map("stage_key")
+  correlationToken    String               @unique(map: "provider_job_mappings_token_uq") @map("correlation_token")
+  createdAt           DateTime             @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  providerCompletions providerCompletions?
+  providerEvents      providerEvents[]
+  jobs                jobs                 @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "provider_job_mappings_job_id_jobs_id_fk")
+
+  @@unique([provider, providerJobId], map: "provider_job_mappings_provider_job_uq")
+  @@map("provider_job_mappings")
+}
+
+model providerWebhookInbox {
+  provider      String
+  eventId       String    @map("event_id")
+  providerJobId String    @map("provider_job_id")
+  eventType     String    @map("event_type")
+  signedAt      DateTime  @map("signed_at") @db.Timestamptz(6)
+  payloadHash   String    @map("payload_hash")
+  payload       Json
+  createdAt     DateTime  @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  deliveredAt   DateTime? @map("delivered_at") @db.Timestamptz(6)
+
+  @@id([provider, eventId], map: "provider_webhook_inbox_provider_event_id_pk")
+  @@index([provider, createdAt], map: "provider_webhook_inbox_pending_idx", where: raw("(delivered_at IS NULL)"))
+  @@map("provider_webhook_inbox")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recordAcquisitions {
+  recordId       String   @id @map("record_id") @db.Uuid
+  acquiredOn     String?  @map("acquired_on")
+  seller         String?
+  method         String?
+  amount         Decimal? @db.Decimal(18, 2)
+  currency       String?
+  provenanceNote String?  @map("provenance_note")
+  records        records  @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_acquisitions_record_id_records_id_fk")
+
+  @@map("record_acquisitions")
+}
+
+model recordCategories {
+  recordId   String  @map("record_id") @db.Uuid
+  categoryId String  @map("category_id") @db.Uuid
+  records    records @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_categories_record_id_records_id_fk")
+
+  @@id([recordId, categoryId], map: "record_categories_record_id_category_id_pk")
+  @@index([categoryId], map: "record_categories_category_idx")
+  @@map("record_categories")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recordChecks {
+  id                String              @id @db.Uuid
+  ownerId           String              @map("owner_id")
+  recordId          String              @map("record_id") @db.Uuid
+  methodId          String              @map("method_id") @db.Uuid
+  methodVersionId   String              @map("method_version_id") @db.Uuid
+  scopeKey          String              @map("scope_key")
+  revision          Int                 @default(1)
+  progress          String              @default("not_started")
+  resultKind        String              @default("unrecorded") @map("result_kind")
+  resultReason      String?             @map("result_reason")
+  suggestedByRunId  String?             @map("suggested_by_run_id") @db.Uuid
+  createdAt         DateTime            @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  checkAnchors      checkAnchors[]
+  checkComponents   checkComponents[]
+  checkObservations checkObservations[]
+  nextActions       nextActions[]
+  records           records             @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_checks_record_id_records_id_fk")
+  resolutionChecks  resolutionChecks[]
+  snapshotChecks    snapshotChecks[]
+
+  @@unique([ownerId, recordId, id], map: "record_checks_owner_record_id_uq")
+  @@unique([recordId, methodVersionId, scopeKey], map: "record_checks_scope_uq")
+  @@index([ownerId, progress, createdAt, id], map: "record_checks_owner_progress_idx")
+  @@map("record_checks")
+}
+
+model recordComponents {
+  id                    String                  @id @db.Uuid
+  recordId              String                  @map("record_id") @db.Uuid
+  ownerId               String                  @map("owner_id")
+  label                 String
+  ordinal               Int
+  anchorComponents      anchorComponents[]
+  checkComponents       checkComponents[]
+  mediaAssetComponents  mediaAssetComponents[]
+  observationComponents observationComponents[]
+  records               records                 @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_components_record_id_records_id_fk")
+  recordMeasurements    recordMeasurements[]
+
+  @@unique([recordId, id], map: "record_components_record_id_uq")
+  @@unique([recordId, ordinal], map: "record_components_record_ordinal_uq")
+  @@map("record_components")
+}
+
+model recordMaterials {
+  recordId   String  @map("record_id") @db.Uuid
+  materialId String  @map("material_id") @db.Uuid
+  records    records @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_materials_record_id_records_id_fk")
+
+  @@id([recordId, materialId], map: "record_materials_record_id_material_id_pk")
+  @@index([materialId], map: "record_materials_material_idx")
+  @@map("record_materials")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recordMeasurements {
+  recordId         String            @map("record_id") @db.Uuid
+  kind             String
+  componentId      String?           @map("component_id") @db.Uuid
+  value            Decimal           @db.Decimal(18, 6)
+  unit             String
+  recordComponents recordComponents? @relation(fields: [componentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_measurements_component_id_record_components_id_fk")
+  records          records           @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_measurements_record_id_records_id_fk")
+
+  @@id([recordId, kind], map: "record_measurements_record_id_kind_pk")
+  @@map("record_measurements")
+}
+
+model recordReceipts {
+  recordId String  @map("record_id") @db.Uuid
+  assetId  String  @map("asset_id") @db.Uuid
+  records  records @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_receipts_record_id_records_id_fk")
+
+  @@id([recordId, assetId], map: "record_receipts_record_id_asset_id_pk")
+  @@map("record_receipts")
+}
+
+model recordTags {
+  recordId String  @map("record_id") @db.Uuid
+  tag      String
+  records  records @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_tags_record_id_records_id_fk")
+
+  @@id([recordId, tag], map: "record_tags_record_id_tag_pk")
+  @@index([tag])
+  @@map("record_tags")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model records {
+  id                                                         String                    @id @db.Uuid
+  ownerId                                                    String                    @map("owner_id")
+  code                                                       String
+  name                                                       String?
+  unitKind                                                   String                    @map("unit_kind")
+  pieceCount                                                 Int?                      @map("piece_count")
+  periodLabel                                                String?                   @map("period_label")
+  periodFromYear                                             Int?                      @map("period_from_year")
+  periodToYear                                               Int?                      @map("period_to_year")
+  periodStatus                                               String?                   @map("period_status")
+  locationId                                                 String?                   @map("location_id") @db.Uuid
+  locationDetail                                             String                    @default("") @map("location_detail")
+  description                                                String                    @default("")
+  collectorJudgment                                          String?                   @map("collector_judgment")
+  recordRevision                                             Int                       @default(1) @map("record_revision")
+  analysisInputVersion                                       Int                       @default(1) @map("analysis_input_version")
+  evidenceVersion                                            Int                       @default(1) @map("evidence_version")
+  latestRunId                                                String?                   @map("latest_run_id") @db.Uuid
+  createdAt                                                  DateTime                  @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                                                  DateTime                  @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  actionStates                                               actionStates[]
+  analysisRuns                                               analysisRuns[]
+  analysisSnapshots                                          analysisSnapshots[]
+  editDraftRuns                                              editDraftRuns[]
+  evidenceAnchors                                            evidenceAnchors[]
+  mediaAssets                                                mediaAssets[]
+  nextActions                                                nextActions[]
+  notes                                                      notes[]
+  observations                                               observations[]
+  recordAcquisitions                                         recordAcquisitions?
+  recordCategories                                           recordCategories[]
+  recordChecks                                               recordChecks[]
+  recordComponents                                           recordComponents[]
+  recordMaterials                                            recordMaterials[]
+  recordMeasurements                                         recordMeasurements[]
+  recordReceipts                                             recordReceipts[]
+  recordTags                                                 recordTags[]
+  locations                                                  locations?                @relation(fields: [locationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "records_location_id_locations_id_fk")
+  reference_links_reference_links_subject_record_idTorecords referenceLinks[]          @relation("reference_links_subject_record_idTorecords")
+  reference_links_reference_links_target_record_idTorecords  referenceLinks[]          @relation("reference_links_target_record_idTorecords")
+  researchRuns                                               researchRuns[]
+  transcriptionRuns                                          transcriptionRuns[]
+
+  @@unique([ownerId, code], map: "records_owner_code_uq")
+  @@index([ownerId, name, id], map: "records_owner_name_idx")
+  @@index([ownerId, updatedAt, id], map: "records_owner_updated_idx")
+}
+
+model referenceImages {
+  id                                                                   String            @id @db.Uuid
+  sourceVersionId                                                      String            @map("source_version_id") @db.Uuid
+  locatorId                                                            String            @map("locator_id") @db.Uuid
+  figureRegionId                                                       String?           @map("figure_region_id") @db.Uuid
+  storedDerivativeId                                                   String?           @map("stored_derivative_id") @db.Uuid
+  externalImageUrl                                                     String?           @map("external_image_url")
+  captionText                                                          String?           @map("caption_text")
+  captionLocatorId                                                     String?           @map("caption_locator_id") @db.Uuid
+  generatedDescriptionZhHant                                           String?           @map("generated_description_zh_hant")
+  descriptionJobId                                                     String?           @map("description_job_id") @db.Uuid
+  captionAssociation                                                   String            @map("caption_association")
+  imageIndexItems                                                      imageIndexItems[]
+  source_locators_reference_images_caption_locator_idTosource_locators sourceLocators?   @relation("reference_images_caption_locator_idTosource_locators", fields: [captionLocatorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_caption_locator_id_source_locators_id_fk")
+  jobs                                                                 jobs?             @relation(fields: [descriptionJobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_description_job_id_jobs_id_fk")
+  sourceRegions                                                        sourceRegions?    @relation(fields: [figureRegionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_figure_region_id_source_regions_id_fk")
+  source_locators_reference_images_locator_idTosource_locators         sourceLocators    @relation("reference_images_locator_idTosource_locators", fields: [locatorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_locator_id_source_locators_id_fk")
+  sourceVersions                                                       sourceVersions    @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_source_version_id_source_versions_id_fk")
+  mediaDerivatives                                                     mediaDerivatives? @relation(fields: [storedDerivativeId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_stored_derivative_id_media_derivatives_id_fk")
+  referenceLinks                                                       referenceLinks[]
+
+  @@index([sourceVersionId, id], map: "reference_images_version_idx")
+  @@map("reference_images")
+}
+
+model referenceLinks {
+  id                                                 String           @id @db.Uuid
+  ownerId                                            String           @map("owner_id")
+  targetRecordId                                     String           @map("target_record_id") @db.Uuid
+  targetCheckId                                      String?          @map("target_check_id") @db.Uuid
+  targetObservationId                                String?          @map("target_observation_id") @db.Uuid
+  targetAnchorId                                     String?          @map("target_anchor_id") @db.Uuid
+  subjectKind                                        String           @map("subject_kind")
+  sourceLocatorId                                    String?          @map("source_locator_id") @db.Uuid
+  referenceImageId                                   String?          @map("reference_image_id") @db.Uuid
+  subjectRecordId                                    String?          @map("subject_record_id") @db.Uuid
+  originalAssetId                                    String?          @map("original_asset_id") @db.Uuid
+  subjectAnchorId                                    String?          @map("subject_anchor_id") @db.Uuid
+  comparisonId                                       String?          @map("comparison_id") @db.Uuid
+  note                                               String?
+  targetIdentityKey                                  String           @map("target_identity_key")
+  subjectIdentityKey                                 String           @map("subject_identity_key")
+  createdAt                                          DateTime         @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  versions                                           Json?
+  mediaAssets                                        mediaAssets?     @relation(fields: [originalAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_links_original_asset_id_media_assets_id_fk")
+  referenceImages                                    referenceImages? @relation(fields: [referenceImageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_links_reference_image_id_reference_images_id_fk")
+  sourceLocators                                     sourceLocators?  @relation(fields: [sourceLocatorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_links_source_locator_id_source_locators_id_fk")
+  records_reference_links_subject_record_idTorecords records?         @relation("reference_links_subject_record_idTorecords", fields: [subjectRecordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_links_subject_record_id_records_id_fk")
+  records_reference_links_target_record_idTorecords  records          @relation("reference_links_target_record_idTorecords", fields: [targetRecordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_links_target_record_id_records_id_fk")
+
+  @@unique([ownerId, targetIdentityKey, subjectIdentityKey], map: "reference_links_identity_uq")
+  @@index([ownerId, targetRecordId, createdAt, id], map: "reference_links_record_idx")
+  @@map("reference_links")
+}
+
+model regionRelations {
+  fromId                                                  String        @map("from_id") @db.Uuid
+  toId                                                    String        @map("to_id") @db.Uuid
+  kind                                                    String
+  source_regions_region_relations_from_idTosource_regions sourceRegions @relation("region_relations_from_idTosource_regions", fields: [fromId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "region_relations_from_id_source_regions_id_fk")
+  source_regions_region_relations_to_idTosource_regions   sourceRegions @relation("region_relations_to_idTosource_regions", fields: [toId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "region_relations_to_id_source_regions_id_fk")
+
+  @@id([fromId, toId, kind], map: "region_relations_from_id_to_id_kind_pk")
+  @@map("region_relations")
+}
+
+model researchDraftRevisions {
+  researchId       String       @map("research_id") @db.Uuid
+  revision         Int
+  immutableContent Json         @map("immutable_content")
+  contentHash      String       @map("content_hash")
+  createdAt        DateTime     @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  researchRuns     researchRuns @relation(fields: [researchId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "research_draft_revisions_research_id_research_runs_id_fk")
+
+  @@id([researchId, revision], map: "research_draft_revisions_research_id_revision_pk")
+  @@map("research_draft_revisions")
+}
+
+model researchRuns {
+  id                     String                   @id @db.Uuid
+  ownerId                String                   @map("owner_id")
+  jobId                  String                   @map("job_id") @db.Uuid
+  recordId               String?                  @map("record_id") @db.Uuid
+  entryId                String?                  @map("entry_id") @db.Uuid
+  instruction            String
+  scope                  String
+  preferNamedAuthors     String                   @map("prefer_named_authors")
+  createdAt              DateTime                 @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  requestKey             String                   @map("request_key") @db.Uuid
+  warnings               Json                     @default("[]")
+  notes                  notes[]
+  researchDraftRevisions researchDraftRevisions[]
+  knowledgeEntries       knowledgeEntries?        @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "research_runs_entry_id_knowledge_entries_id_fk")
+  jobs                   jobs                     @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "research_runs_job_id_jobs_id_fk")
+  records                records?                 @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "research_runs_record_id_records_id_fk")
+  researchSources        researchSources[]
+
+  @@map("research_runs")
+}
+
+model researchSources {
+  researchId      String         @map("research_id") @db.Uuid
+  sourceVersionId String         @map("source_version_id") @db.Uuid
+  researchRuns    researchRuns   @relation(fields: [researchId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "research_sources_research_id_research_runs_id_fk")
+  sourceVersions  sourceVersions @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "research_sources_source_version_id_source_versions_id_fk")
+
+  @@id([researchId, sourceVersionId], map: "research_sources_research_id_source_version_id_pk")
+  @@map("research_sources")
+}
+
+model resolutionChecks {
+  resolutionId      String            @map("resolution_id") @db.Uuid
+  checkId           String            @map("check_id") @db.Uuid
+  recordChecks      recordChecks      @relation(fields: [checkId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "resolution_checks_check_id_record_checks_id_fk")
+  actionResolutions actionResolutions @relation(fields: [resolutionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "resolution_checks_resolution_id_action_resolutions_id_fk")
+
+  @@id([resolutionId, checkId], map: "resolution_checks_resolution_id_check_id_pk")
+  @@map("resolution_checks")
+}
+
+model resolutionEvidence {
+  resolutionId      String            @map("resolution_id") @db.Uuid
+  anchorId          String            @map("anchor_id") @db.Uuid
+  evidenceAnchors   evidenceAnchors   @relation(fields: [anchorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "resolution_evidence_anchor_id_evidence_anchors_id_fk")
+  actionResolutions actionResolutions @relation(fields: [resolutionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "resolution_evidence_resolution_id_action_resolutions_id_fk")
+
+  @@id([resolutionId, anchorId], map: "resolution_evidence_resolution_id_anchor_id_pk")
+  @@map("resolution_evidence")
+}
+
+model resolutionObservations {
+  resolutionId      String            @map("resolution_id") @db.Uuid
+  observationId     String            @map("observation_id") @db.Uuid
+  observations      observations      @relation(fields: [observationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "resolution_observations_observation_id_observations_id_fk")
+  actionResolutions actionResolutions @relation(fields: [resolutionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "resolution_observations_resolution_id_action_resolutions_id_fk")
+
+  @@id([resolutionId, observationId], map: "resolution_observations_resolution_id_observation_id_pk")
+  @@map("resolution_observations")
+}
+
+model resolutionReferences {
+  resolutionId      String            @map("resolution_id") @db.Uuid
+  referenceId       String            @map("reference_id") @db.Uuid
+  actionResolutions actionResolutions @relation(fields: [resolutionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "resolution_references_resolution_id_action_resolutions_id_fk")
+
+  @@id([resolutionId, referenceId], map: "resolution_references_resolution_id_reference_id_pk")
+  @@map("resolution_references")
+}
+
+model retrievalSnapshots {
+  id             String         @id @db.Uuid
+  ownerId        String         @map("owner_id")
+  indexVersionId String?        @map("index_version_id") @db.Uuid
+  immutablePack  Json           @map("immutable_pack")
+  contentHash    String         @map("content_hash")
+  createdAt      DateTime       @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  analysisRuns   analysisRuns[]
+
+  @@map("retrieval_snapshots")
+}
+
+model runSuggestedMethods {
+  runId           String       @map("run_id") @db.Uuid
+  methodId        String       @map("method_id") @db.Uuid
+  methodVersionId String       @map("method_version_id") @db.Uuid
+  owningEntryId   String       @map("owning_entry_id") @db.Uuid
+  titleZhHant     String       @map("title_zh_hant")
+  analysisRuns    analysisRuns @relation(fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "run_suggested_methods_run_id_analysis_runs_id_fk")
+
+  @@id([runId, methodId, methodVersionId], map: "run_suggested_methods_run_id_method_id_method_version_id_pk")
+  @@map("run_suggested_methods")
+}
+
+model sequenceCounters {
+  ownerId   String @map("owner_id")
+  kind      String
+  nextValue Int    @default(1) @map("next_value")
+
+  @@id([ownerId, kind], map: "sequence_counters_owner_id_kind_pk")
+  @@map("sequence_counters")
+}
+
+model session {
+  id        String   @id
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  token     String   @unique(map: "session_token_unique")
+  createdAt DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id")
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "session_user_id_user_id_fk")
+
+  @@index([userId])
+}
+
+model snapshotAssets {
+  snapshotId        String            @map("snapshot_id") @db.Uuid
+  assetId           String            @map("asset_id") @db.Uuid
+  mediaAssets       mediaAssets       @relation(fields: [assetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_assets_asset_id_media_assets_id_fk")
+  analysisSnapshots analysisSnapshots @relation(fields: [snapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_assets_snapshot_id_analysis_snapshots_id_fk")
+
+  @@id([snapshotId, assetId], map: "snapshot_assets_snapshot_id_asset_id_pk")
+  @@map("snapshot_assets")
+}
+
+model snapshotChecks {
+  snapshotId        String            @map("snapshot_id") @db.Uuid
+  checkId           String            @map("check_id") @db.Uuid
+  recordChecks      recordChecks      @relation(fields: [checkId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_checks_check_id_record_checks_id_fk")
+  analysisSnapshots analysisSnapshots @relation(fields: [snapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_checks_snapshot_id_analysis_snapshots_id_fk")
+
+  @@id([snapshotId, checkId], map: "snapshot_checks_snapshot_id_check_id_pk")
+  @@map("snapshot_checks")
+}
+
+model snapshotEvidence {
+  snapshotId        String            @map("snapshot_id") @db.Uuid
+  anchorId          String            @map("anchor_id") @db.Uuid
+  evidenceAnchors   evidenceAnchors   @relation(fields: [anchorId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_evidence_anchor_id_evidence_anchors_id_fk")
+  analysisSnapshots analysisSnapshots @relation(fields: [snapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_evidence_snapshot_id_analysis_snapshots_id_fk")
+
+  @@id([snapshotId, anchorId], map: "snapshot_evidence_snapshot_id_anchor_id_pk")
+  @@map("snapshot_evidence")
+}
+
+model snapshotObservations {
+  snapshotId        String            @map("snapshot_id") @db.Uuid
+  observationId     String            @map("observation_id") @db.Uuid
+  observations      observations      @relation(fields: [observationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_observations_observation_id_observations_id_fk")
+  analysisSnapshots analysisSnapshots @relation(fields: [snapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "snapshot_observations_snapshot_id_analysis_snapshots_id_fk")
+
+  @@id([snapshotId, observationId], map: "snapshot_observations_snapshot_id_observation_id_pk")
+  @@map("snapshot_observations")
+}
+
+model sourceArtifacts {
+  assetId         String         @id @map("asset_id") @db.Uuid
+  ownerId         String         @map("owner_id")
+  sourceVersionId String         @map("source_version_id") @db.Uuid
+  parseRunId      String         @map("parse_run_id") @db.Uuid
+  kind            String
+  mediaAssets     mediaAssets    @relation(fields: [assetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_artifacts_asset_id_media_assets_id_fk")
+  sourceVersions  sourceVersions @relation(fields: [ownerId, sourceVersionId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "source_artifacts_owner_id_source_version_id_source_versions_own")
+
+  @@index([parseRunId, kind], map: "source_artifacts_parse_run_idx")
+  @@map("source_artifacts")
+}
+
+model sourceBlocks {
+  id             String           @id @db.Uuid
+  parseRunId     String           @map("parse_run_id") @db.Uuid
+  pageId         String           @map("page_id") @db.Uuid
+  rawText        String           @map("raw_text")
+  searchMapping  Json             @map("search_mapping")
+  ordinal        Int
+  sourcePages    sourcePages      @relation(fields: [pageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_blocks_page_id_source_pages_id_fk")
+  parseRuns      parseRuns        @relation(fields: [parseRunId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_blocks_parse_run_id_parse_runs_id_fk")
+  sourceLocators sourceLocators[]
+
+  @@index([parseRunId, pageId, ordinal], map: "source_blocks_page_idx")
+  @@map("source_blocks")
+}
+
+model sourceChunkMappings {
+  id               String           @id @db.Uuid
+  provider         String
+  indexId          String           @map("index_id") @db.Uuid
+  parseRunId       String           @map("parse_run_id") @db.Uuid
+  providerChunkId  String           @map("provider_chunk_id")
+  providerFigureId String?          @map("provider_figure_id")
+  sourceVersionId  String           @map("source_version_id") @db.Uuid
+  mappingRegions   mappingRegions[]
+  indexVersions    indexVersions    @relation(fields: [indexId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_chunk_mappings_index_id_index_versions_id_fk")
+  parseRuns        parseRuns        @relation(fields: [parseRunId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_chunk_mappings_parse_run_id_parse_runs_id_fk")
+  sourceVersions   sourceVersions   @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_chunk_mappings_source_version_id_source_versions_id_fk")
+
+  @@unique([provider, indexId, providerChunkId], map: "source_chunk_mappings_provider_uq")
+  @@map("source_chunk_mappings")
+}
+
+model sourceContributors {
+  sourceId      String  @map("source_id") @db.Uuid
+  ordinal       Int
+  nameAsPrinted String  @map("name_as_printed")
+  role          String
+  attribution   String
+  sources       sources @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_contributors_source_id_sources_id_fk")
+
+  @@id([sourceId, ordinal], map: "source_contributors_source_id_ordinal_pk")
+  @@map("source_contributors")
+}
+
+model sourceIndexMemberships {
+  indexId         String         @map("index_id") @db.Uuid
+  sourceVersionId String         @map("source_version_id") @db.Uuid
+  status          String
+  indexVersions   indexVersions  @relation(fields: [indexId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_index_memberships_index_id_index_versions_id_fk")
+  sourceVersions  sourceVersions @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_index_memberships_source_version_id_source_versions_id_f")
+
+  @@id([indexId, sourceVersionId], map: "source_index_memberships_index_id_source_version_id_pk")
+  @@map("source_index_memberships")
+}
+
+model sourceIntakes {
+  id          String        @id @db.Uuid
+  ownerId     String        @map("owner_id")
+  createdAt   DateTime      @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  mediaAssets mediaAssets[]
+
+  @@map("source_intakes")
+}
+
+model sourceKnowledgeDrafts {
+  ownerId          String           @map("owner_id")
+  sourceVersionId  String           @map("source_version_id") @db.Uuid
+  entryId          String           @map("entry_id") @db.Uuid
+  knowledgeEntries knowledgeEntries @relation(fields: [ownerId, entryId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "source_knowledge_drafts_owner_id_entry_id_knowledge_entries_own")
+  sourceVersions   sourceVersions   @relation(fields: [ownerId, sourceVersionId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "source_knowledge_drafts_owner_id_source_version_id_source_versi")
+
+  @@id([sourceVersionId, entryId], map: "source_knowledge_drafts_source_version_id_entry_id_pk")
+  @@index([entryId], map: "source_knowledge_drafts_entry_idx")
+  @@map("source_knowledge_drafts")
+}
+
+model sourceLanguages {
+  sourceId String  @map("source_id") @db.Uuid
+  language String
+  sources  sources @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_languages_source_id_sources_id_fk")
+
+  @@id([sourceId, language], map: "source_languages_source_id_language_pk")
+  @@map("source_languages")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sourceLocators {
+  id                                                                    String            @id @db.Uuid
+  sourceId                                                              String            @map("source_id") @db.Uuid
+  sourceVersionId                                                       String            @map("source_version_id") @db.Uuid
+  kind                                                                  String
+  pageId                                                                String?           @map("page_id") @db.Uuid
+  pageIndex                                                             Int?              @map("page_index")
+  printedPageLabel                                                      String?           @map("printed_page_label")
+  canonicalViewId                                                       String?           @map("canonical_view_id") @db.Uuid
+  regionId                                                              String?           @map("region_id") @db.Uuid
+  geometry                                                              Json?
+  blockId                                                               String?           @map("block_id") @db.Uuid
+  rangeStart                                                            Int?              @map("range_start")
+  rangeEnd                                                              Int?              @map("range_end")
+  url                                                                   String?
+  retrievedAt                                                           DateTime?         @map("retrieved_at") @db.Timestamptz(6)
+  snapshotAssetId                                                       String?           @map("snapshot_asset_id") @db.Uuid
+  excerptAsRetrieved                                                    String?           @map("excerpt_as_retrieved")
+  citations                                                             citations[]
+  reference_images_reference_images_caption_locator_idTosource_locators referenceImages[] @relation("reference_images_caption_locator_idTosource_locators")
+  reference_images_reference_images_locator_idTosource_locators         referenceImages[] @relation("reference_images_locator_idTosource_locators")
+  referenceLinks                                                        referenceLinks[]
+  sourceBlocks                                                          sourceBlocks?     @relation(fields: [blockId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_block_id_source_blocks_id_fk")
+  canonicalViews                                                        canonicalViews?   @relation(fields: [canonicalViewId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_canonical_view_id_canonical_views_id_fk")
+  sourcePages                                                           sourcePages?      @relation(fields: [pageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_page_id_source_pages_id_fk")
+  sourceRegions                                                         sourceRegions?    @relation(fields: [regionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_region_id_source_regions_id_fk")
+  mediaAssets                                                           mediaAssets?      @relation(fields: [snapshotAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_snapshot_asset_id_media_assets_id_fk")
+  sources                                                               sources           @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_source_id_sources_id_fk")
+  sourceVersions                                                        sourceVersions    @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_source_version_id_source_versions_id_fk")
+
+  @@index([sourceVersionId, kind], map: "source_locators_version_idx")
+  @@map("source_locators")
+}
+
+model sourcePageParses {
+  parseRunId  String      @map("parse_run_id") @db.Uuid
+  pageId      String      @map("page_id") @db.Uuid
+  rawText     String      @map("raw_text")
+  searchText  String      @map("search_text")
+  quality     String
+  sourcePages sourcePages @relation(fields: [pageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_page_parses_page_id_source_pages_id_fk")
+  parseRuns   parseRuns   @relation(fields: [parseRunId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_page_parses_parse_run_id_parse_runs_id_fk")
+
+  @@id([parseRunId, pageId], map: "source_page_parses_parse_run_id_page_id_pk")
+  @@map("source_page_parses")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sourcePages {
+  id               String             @id @db.Uuid
+  sourceVersionId  String             @map("source_version_id") @db.Uuid
+  pageIndex        Int                @map("page_index")
+  printedPageLabel String?            @map("printed_page_label")
+  originalAssetId  String             @map("original_asset_id") @db.Uuid
+  pdfPageIndex     Int?               @map("pdf_page_index")
+  canonicalViewId  String             @map("canonical_view_id") @db.Uuid
+  sourceBlocks     sourceBlocks[]
+  sourceLocators   sourceLocators[]
+  sourcePageParses sourcePageParses[]
+  canonicalViews   canonicalViews     @relation(fields: [canonicalViewId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_pages_canonical_view_id_canonical_views_id_fk")
+  mediaAssets      mediaAssets        @relation(fields: [originalAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_pages_original_asset_id_media_assets_id_fk")
+  sourceVersions   sourceVersions     @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_pages_source_version_id_source_versions_id_fk")
+  sourceRegions    sourceRegions[]
+
+  @@unique([sourceVersionId, id], map: "source_pages_version_id_uq")
+  @@unique([sourceVersionId, pageIndex], map: "source_pages_version_index_uq")
+  @@map("source_pages")
+}
+
+model sourceRegions {
+  id                                                        String            @id @db.Uuid
+  sourceVersionId                                           String            @map("source_version_id") @db.Uuid
+  pageId                                                    String            @map("page_id") @db.Uuid
+  parseRunId                                                String            @map("parse_run_id") @db.Uuid
+  kind                                                      String
+  geometry                                                  Json
+  rawText                                                   String?           @map("raw_text")
+  mappingRegions                                            mappingRegions[]
+  referenceImages                                           referenceImages[]
+  region_relations_region_relations_from_idTosource_regions regionRelations[] @relation("region_relations_from_idTosource_regions")
+  region_relations_region_relations_to_idTosource_regions   regionRelations[] @relation("region_relations_to_idTosource_regions")
+  sourceLocators                                            sourceLocators[]
+  sourcePages                                               sourcePages       @relation(fields: [pageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_regions_page_id_source_pages_id_fk")
+  parseRuns                                                 parseRuns         @relation(fields: [parseRunId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_regions_parse_run_id_parse_runs_id_fk")
+  sourceVersions                                            sourceVersions    @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_regions_source_version_id_source_versions_id_fk")
+
+  @@index([pageId, kind], map: "source_regions_page_idx")
+  @@map("source_regions")
+}
+
+model sourceVersionAssets {
+  versionId      String         @map("version_id") @db.Uuid
+  assetId        String         @unique(map: "source_version_assets_asset_uq") @map("asset_id") @db.Uuid
+  ordinal        Int
+  printedLabel   String?        @map("printed_label")
+  presentation   Json?
+  mediaAssets    mediaAssets    @relation(fields: [assetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_version_assets_asset_id_media_assets_id_fk")
+  sourceVersions sourceVersions @relation(fields: [versionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_version_assets_version_id_source_versions_id_fk")
+
+  @@id([versionId, assetId], map: "source_version_assets_version_id_asset_id_pk")
+  @@unique([versionId, ordinal], map: "source_version_assets_ordinal_uq")
+  @@map("source_version_assets")
+}
+
+model sourceVersions {
+  id                     String                   @id @db.Uuid
+  sourceId               String                   @map("source_id") @db.Uuid
+  ownerId                String                   @map("owner_id")
+  sourceHash             String                   @map("source_hash")
+  metadataSnapshot       Json                     @map("metadata_snapshot")
+  capturedAt             DateTime                 @map("captured_at") @db.Timestamptz(6)
+  retrievedAt            DateTime?                @map("retrieved_at") @db.Timestamptz(6)
+  status                 String
+  textIndexStatus        String                   @map("text_index_status")
+  imageIndexStatus       String                   @map("image_index_status")
+  activeParseRunId       String?                  @map("active_parse_run_id") @db.Uuid
+  parseRuns              parseRuns[]
+  referenceImages        referenceImages[]
+  researchSources        researchSources[]
+  sourceArtifacts        sourceArtifacts[]
+  sourceChunkMappings    sourceChunkMappings[]
+  sourceIndexMemberships sourceIndexMemberships[]
+  sourceKnowledgeDrafts  sourceKnowledgeDrafts[]
+  sourceLocators         sourceLocators[]
+  sourcePages            sourcePages[]
+  sourceRegions          sourceRegions[]
+  sourceVersionAssets    sourceVersionAssets[]
+  sources                sources                  @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_versions_source_id_sources_id_fk")
+
+  @@unique([ownerId, sourceHash], map: "source_versions_owner_hash_uq")
+  @@unique([ownerId, id], map: "source_versions_owner_id_uq")
+  @@unique([sourceId, id], map: "source_versions_source_id_uq")
+  @@map("source_versions")
+}
+
+model sources {
+  id                       String               @id @db.Uuid
+  ownerId                  String               @map("owner_id")
+  kind                     String
+  revision                 Int                  @default(1)
+  currentVersionId         String?              @map("current_version_id") @db.Uuid
+  title                    String
+  authorStatus             String               @map("author_status")
+  editionStatement         String?              @map("edition_statement")
+  publisher                String?
+  publicationDateAsPrinted String?              @map("publication_date_as_printed")
+  isbn                     String?
+  canonicalUrl             String?              @map("canonical_url")
+  access                   String
+  rightsStatement          String?              @map("rights_statement")
+  attributionText          String?              @map("attribution_text")
+  createdAt                DateTime             @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime             @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  sourceContributors       sourceContributors[]
+  sourceLanguages          sourceLanguages[]
+  sourceLocators           sourceLocators[]
+  sourceVersions           sourceVersions[]
+
+  @@unique([ownerId, id], map: "sources_owner_id_uq")
+  @@index([ownerId, title, id], map: "sources_owner_title_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transcriptionRuns {
+  id                     String      @id @db.Uuid
+  ownerId                String      @map("owner_id")
+  jobId                  String      @unique(map: "transcription_runs_job_uq") @map("job_id") @db.Uuid
+  recordId               String      @map("record_id") @db.Uuid
+  audioAssetId           String      @map("audio_asset_id") @db.Uuid
+  revision               Int
+  status                 String
+  snapshot               Json
+  request                Json
+  modelSelection         Json        @map("model_selection")
+  result                 Json?
+  invocation             Json?
+  confirmedObservationId String?     @map("confirmed_observation_id") @db.Uuid
+  createdAt              DateTime    @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime    @map("updated_at") @db.Timestamptz(6)
+  mediaAssets            mediaAssets @relation(fields: [audioAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "transcription_runs_audio_asset_id_media_assets_id_fk")
+  jobs                   jobs        @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "transcription_runs_job_id_jobs_id_fk")
+  records                records     @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "transcription_runs_record_id_records_id_fk")
+
+  @@unique([ownerId, id], map: "transcription_runs_owner_id_uq")
+  @@index([ownerId, recordId, createdAt], map: "transcription_runs_record_idx")
+  @@map("transcription_runs")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model uploadParts {
+  assetId     String      @map("asset_id") @db.Uuid
+  partNumber  Int         @map("part_number")
+  etag        String?
+  offset      BigInt
+  byteLength  BigInt      @map("byte_length")
+  mediaAssets mediaAssets @relation(fields: [assetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "upload_parts_asset_id_media_assets_id_fk")
+
+  @@id([assetId, partNumber], map: "upload_parts_asset_id_part_number_pk")
+  @@map("upload_parts")
+}
+
+model uploadSessions {
+  assetId          String      @id @map("asset_id") @db.Uuid
+  ownerId          String      @map("owner_id")
+  requestKey       String      @map("request_key") @db.Uuid
+  fingerprint      String
+  mode             String
+  providerUploadId String?     @map("provider_upload_id")
+  expiresAt        DateTime    @map("expires_at") @db.Timestamptz(6)
+  createdAt        DateTime    @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  signedSession    Json        @map("signed_session")
+  mediaAssets      mediaAssets @relation(fields: [assetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "upload_sessions_asset_id_media_assets_id_fk")
+
+  @@unique([ownerId, requestKey], map: "upload_sessions_owner_request_uq")
+  @@map("upload_sessions")
+}
+
+model user {
+  id                  String    @id
+  name                String
+  email               String    @unique(map: "user_email_unique")
+  emailVerified       Boolean   @default(false) @map("email_verified")
+  image               String?
+  phoneNumber         String?   @unique(map: "user_phone_number_unique") @map("phone_number")
+  phoneNumberVerified Boolean?  @map("phone_number_verified")
+  createdAt           DateTime  @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  account             account[]
+  session             session[]
+}
+
+model verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([identifier])
+}

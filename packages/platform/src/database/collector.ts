@@ -1,6 +1,4 @@
-import { eq } from 'drizzle-orm';
 import type { Database } from './connection.js';
-import { user } from './schema/auth.js';
 
 export const collectorUserId = 'antica-collector';
 
@@ -12,29 +10,34 @@ export interface CollectorParams {
 
 /**
  * ensures the one configured collector account exists before authentication
+ * @param params database and configured collector phone
+ * @param params.db
+ * @param params.phoneNumber
+ * @returns the stable collector identity
  */
 export async function ensureCollectorUser({
   db,
   phoneNumber,
 }: CollectorParams): Promise<string> {
-  await db
-    .insert(user)
-    .values({
+  await db.user.createMany({
+    data: {
       id: collectorUserId,
       name: 'Collector',
       email: 'collector@antica.invalid',
       phoneNumber,
       phoneNumberVerified: true,
-    })
-    .onConflictDoNothing();
-  const [collector] = await db
-    .select({ phoneNumber: user.phoneNumber })
-    .from(user)
-    .where(eq(user.id, collectorUserId));
+    },
+    skipDuplicates: true,
+  });
+  const collector = await db.user.findUnique({
+    where: { id: collectorUserId },
+    select: { phoneNumber: true },
+  });
   if (collector?.phoneNumber !== phoneNumber) {
     throw new Error(
       'Configured collector phone does not match persisted account',
     );
   }
+
   return collectorUserId;
 }

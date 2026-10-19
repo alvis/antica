@@ -85,6 +85,7 @@ describe('fn:setup', () => {
           { id: 'generated', migrate: false },
           { id: 'upgrade', migrate: false },
           { id: 'backfill', migrate: false },
+          { id: 'shadow', migrate: false },
           { id: 'evidence-create', migrate: true },
         ],
       ],

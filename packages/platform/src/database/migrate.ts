@@ -1,6 +1,9 @@
+import { execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { createDatabase } from './connection.js';
+import { promisify } from 'node:util';
+
+const execute = promisify(execFile);
 
 /** database connection used for committed PostgreSQL migrations */
 export interface MigrateParams {
@@ -8,19 +11,24 @@ export interface MigrateParams {
 }
 
 /**
- * applies committed SQL migrations to a PostgreSQL database
+ * applies committed Prisma migrations to a PostgreSQL database
+ * @param params target PostgreSQL database
+ * @param params.url
+ * @returns completion once Prisma migrate deploy succeeds
  */
 export async function migrateDatabase({ url }: MigrateParams): Promise<void> {
-  const connection = createDatabase({ url, maxConnections: 1 });
-  try {
-    await migrate(connection.db, {
-      migrationsFolder: fileURLToPath(
-        new URL('./migrations/', import.meta.url),
-      ),
-    });
-  } finally {
-    await connection.close();
-  }
+  await execute(
+    process.execPath,
+    [
+      createRequire(import.meta.url).resolve('prisma/build/index.js'),
+      'migrate',
+      'deploy',
+    ],
+    {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATABASE_URL: url },
+    },
+  );
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

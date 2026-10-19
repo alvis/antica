@@ -1,19 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm';
-
 import { knowledgeDetailSchema } from '@antica/contracts';
 
-import {
-  inspectionMethods,
-  knowledgeEntries,
-  knowledgeRevisionAliases,
-  knowledgeRevisionCitations,
-  knowledgeRevisionKinds,
-  knowledgeRevisionMethods,
-  knowledgeRevisions,
-  methodVersions,
-} from '../schema/index.js';
+import { Prisma } from '../generated/client.js';
+import { jsonValue } from '../json.js';
 
 import { readCitation, readReferenceImage } from './sources.js';
 
@@ -33,6 +23,12 @@ import type {
   SourceCitation,
 } from '@antica/domain';
 
+import type {
+  knowledgeEntries,
+  knowledgeRevisions,
+  methodVersions,
+} from '../generated/client.js';
+
 import type { Transaction } from '../transaction.js';
 
 type KnowledgeCursor = {
@@ -41,25 +37,44 @@ type KnowledgeCursor = {
   readonly id: string;
 };
 
-interface KnowledgeQueryRow {
-  readonly entry: typeof knowledgeEntries.$inferSelect;
-  readonly revision: typeof knowledgeRevisions.$inferSelect;
+interface MethodVersionRow extends Omit<methodVersions, 'definition'> {
+  readonly definition: InspectionMethodVersion['definition'];
 }
 
+interface KnowledgeRevisionRow extends Omit<knowledgeRevisions, 'content'> {
+  readonly content: KnowledgeContent;
+}
+
+type KnowledgeQueryRow = Pick<
+  knowledgeEntries,
+  'id' | 'displayCode' | 'currentRevision'
+> &
+  Pick<knowledgeRevisions, 'titleZhHant' | 'summaryZhHant' | 'status'> & {
+    readonly updatedAt: string;
+    readonly content: KnowledgeContent;
+  };
+
+/** @param value */
 function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function iso(value: string): string {
+/** @param value */
+function iso(value: Date | string): string {
   return new Date(value).toISOString();
 }
 
+/** @param query */
 function querySignature(query: KnowledgeQuery): string {
   const { cursor: _cursor, limit: _limit, ...filters } = query;
 
   return hash(filters);
 }
 
+/**
+ * @param value
+ * @param signature
+ */
 function decodeCursor(value: string, signature: string): KnowledgeCursor {
   const cursor = JSON.parse(
     Buffer.from(value, 'base64url').toString('utf8'),
@@ -75,54 +90,65 @@ function decodeCursor(value: string, signature: string): KnowledgeCursor {
   return cursor;
 }
 
+/** @param cursor */
 function encodeCursor(cursor: KnowledgeCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
+/**
+ * @param tx
+ * @param entry
+ */
 async function saveRevision(
   tx: Transaction,
   entry: KnowledgeEntry,
 ): Promise<void> {
-  await tx.insert(knowledgeRevisions).values({
-    entryId: entry.id,
-    revision: entry.revision,
-    status: entry.status,
-    savedBy: entry.savedBy,
-    titleZhHant: entry.content.titleZhHant,
-    summaryZhHant: entry.content.summary.textZhHant,
-    content: entry.content,
-    contentHash: hash(entry.content),
-    createdAt: entry.updatedAt,
+  await tx.knowledgeRevisions.createMany({
+    data: {
+      entryId: entry.id,
+      revision: entry.revision,
+      status: entry.status,
+      savedBy: entry.savedBy,
+      titleZhHant: entry.content.titleZhHant,
+      summaryZhHant: entry.content.summary.textZhHant,
+      content: jsonValue(entry.content),
+      contentHash: hash(entry.content),
+      createdAt: entry.updatedAt,
+    },
   });
   if (entry.content.aliases.length) {
-    await tx.insert(knowledgeRevisionAliases).values(
-      entry.content.aliases.map((alias) => ({
+    await tx.knowledgeRevisionAliases.createMany({
+      data: entry.content.aliases.map((alias) => ({
         entryId: entry.id,
         revision: entry.revision,
         alias,
       })),
-    );
+    });
   }
   if (entry.content.kinds.length) {
-    await tx.insert(knowledgeRevisionKinds).values(
-      entry.content.kinds.map((kind) => ({
+    await tx.knowledgeRevisionKinds.createMany({
+      data: entry.content.kinds.map((kind) => ({
         entryId: entry.id,
         revision: entry.revision,
         kind,
       })),
-    );
+    });
   }
   if (entry.content.citations.length) {
-    await tx.insert(knowledgeRevisionCitations).values(
-      entry.content.citations.map((citation) => ({
+    await tx.knowledgeRevisionCitations.createMany({
+      data: entry.content.citations.map((citation) => ({
         entryId: entry.id,
         revision: entry.revision,
         citationId: citation.id,
       })),
-    );
+    });
   }
 }
 
+/**
+ * @param content
+ * @param query
+ */
 function matchesFilters(
   content: KnowledgeContent,
   query: KnowledgeQuery,
@@ -176,23 +202,15 @@ export function createKnowledgeRepository(
   ownerId: string,
 ): KnowledgeRepository {
   async function getMethod(id: string): Promise<InspectionMethod | null> {
-    const [row] = await tx
-      .select()
-      .from(inspectionMethods)
-      .innerJoin(
-        knowledgeEntries,
-        and(
-          eq(inspectionMethods.owningEntryId, knowledgeEntries.id),
-          eq(knowledgeEntries.ownerId, ownerId),
-        ),
-      )
-      .where(eq(inspectionMethods.id, id));
+    const row = await tx.inspectionMethods.findFirst({
+      where: { id, knowledgeEntries: { ownerId } },
+    });
 
     return row
       ? {
-          id: row.inspection_methods.id,
-          owningEntryId: row.inspection_methods.owningEntryId,
-          currentVersionId: row.inspection_methods.currentVersionId!,
+          id: row.id,
+          owningEntryId: row.owningEntryId,
+          currentVersionId: row.currentVersionId!,
         }
       : null;
   }
@@ -200,30 +218,26 @@ export function createKnowledgeRepository(
   async function getMethodVersion(
     id: string,
   ): Promise<InspectionMethodVersion | null> {
-    const [row] = await tx
-      .select()
-      .from(methodVersions)
-      .innerJoin(
-        inspectionMethods,
-        eq(methodVersions.methodId, inspectionMethods.id),
-      )
-      .innerJoin(
-        knowledgeEntries,
-        and(
-          eq(inspectionMethods.owningEntryId, knowledgeEntries.id),
-          eq(knowledgeEntries.ownerId, ownerId),
-        ),
-      )
-      .where(eq(methodVersions.id, id));
+    const [row] = await tx.$queryRaw<MethodVersionRow[]>(Prisma.sql`
+      select v."id" as "id",
+      v."method_id" as "methodId",
+      v."revision" as "revision",
+      v."definition" as "definition",
+      v."content_hash" as "contentHash",
+      v."created_at" as "createdAt"
+    from method_versions v
+      join inspection_methods m on m.id = v.method_id
+      join knowledge_entries e on e.id = m.owning_entry_id
+      where v.id = ${id}::uuid and e.owner_id = ${ownerId}
+    `);
 
     return row
       ? {
-          id: row.method_versions.id,
-          methodId: row.method_versions.methodId,
-          revision: row.method_versions.revision,
-          definition: row.method_versions
-            .definition as InspectionMethodVersion['definition'],
-          createdAt: iso(row.method_versions.createdAt),
+          id: row.id,
+          methodId: row.methodId,
+          revision: row.revision,
+          definition: row.definition,
+          createdAt: iso(row.createdAt),
         }
       : null;
   }
@@ -233,65 +247,51 @@ export function createKnowledgeRepository(
     requestedRevision?: number,
     requestedMethodVersionId?: string,
   ): Promise<KnowledgeDetail | null> {
-    const [base] = await tx
-      .select()
-      .from(knowledgeEntries)
-      .where(
-        and(eq(knowledgeEntries.id, id), eq(knowledgeEntries.ownerId, ownerId)),
-      );
+    const [base] = await tx.knowledgeEntries.findMany({
+      where: { AND: [{ id }, { ownerId }] },
+    });
     if (!base) {
       return null;
     }
     const revision = requestedRevision ?? base.currentRevision;
-    const [row] = await tx
-      .select()
-      .from(knowledgeRevisions)
-      .where(
-        and(
-          eq(knowledgeRevisions.entryId, id),
-          eq(knowledgeRevisions.revision, revision),
-        ),
-      );
+    const [row] = await tx.$queryRaw<KnowledgeRevisionRow[]>(Prisma.sql`
+      select r."entry_id" as "entryId",
+      r."revision" as "revision",
+      r."status" as "status",
+      r."saved_by" as "savedBy",
+      r."title_zh_hant" as "titleZhHant",
+      r."summary_zh_hant" as "summaryZhHant",
+      r."content" as "content",
+      r."content_hash" as "contentHash",
+      r."created_at" as "createdAt"
+    from knowledge_revisions r
+      where r.entry_id = ${id}::uuid and r.revision = ${revision}
+    `);
     if (!row) {
       return null;
     }
     const [aliases, kinds, links, citationRows] = await Promise.all([
-      tx
-        .select({ value: knowledgeRevisionAliases.alias })
-        .from(knowledgeRevisionAliases)
-        .where(
-          and(
-            eq(knowledgeRevisionAliases.entryId, id),
-            eq(knowledgeRevisionAliases.revision, revision),
-          ),
-        ),
-      tx
-        .select({ value: knowledgeRevisionKinds.kind })
-        .from(knowledgeRevisionKinds)
-        .where(
-          and(
-            eq(knowledgeRevisionKinds.entryId, id),
-            eq(knowledgeRevisionKinds.revision, revision),
-          ),
-        ),
-      tx
-        .select()
-        .from(knowledgeRevisionMethods)
-        .where(
-          and(
-            eq(knowledgeRevisionMethods.entryId, id),
-            eq(knowledgeRevisionMethods.revision, revision),
-          ),
-        ),
-      tx
-        .select({ id: knowledgeRevisionCitations.citationId })
-        .from(knowledgeRevisionCitations)
-        .where(
-          and(
-            eq(knowledgeRevisionCitations.entryId, id),
-            eq(knowledgeRevisionCitations.revision, revision),
-          ),
-        ),
+      tx.knowledgeRevisionAliases
+        .findMany({
+          where: { AND: [{ entryId: id }, { revision }] },
+          select: { alias: true },
+        })
+        .then((rows) => rows.map((row) => ({ value: row.alias }))),
+      tx.knowledgeRevisionKinds
+        .findMany({
+          where: { AND: [{ entryId: id }, { revision }] },
+          select: { kind: true },
+        })
+        .then((rows) => rows.map((row) => ({ value: row.kind }))),
+      tx.knowledgeRevisionMethods.findMany({
+        where: { AND: [{ entryId: id }, { revision }] },
+      }),
+      tx.knowledgeRevisionCitations
+        .findMany({
+          where: { AND: [{ entryId: id }, { revision }] },
+          select: { citationId: true },
+        })
+        .then((rows) => rows.map((row) => ({ id: row.citationId }))),
     ]);
     const selectedLinks = requestedMethodVersionId
       ? links.filter(
@@ -320,7 +320,7 @@ export function createKnowledgeRepository(
         ),
       )
     ).filter((citation): citation is SourceCitation => citation !== null);
-    const content = row.content as KnowledgeContent;
+    const content = row.content;
     const images = (
       await Promise.all(
         content.exampleReferenceImageIds.map(async (imageId) =>
@@ -361,7 +361,7 @@ export function createKnowledgeRepository(
   return {
     /** */
     async allocateCode() {
-      const result = await tx.execute(sql`
+      const result = await tx.$queryRaw<Array<{ value: bigint }>>(Prisma.sql`
         insert into sequence_counters (owner_id, kind, next_value) values (${ownerId}, 'knowledge', 2)
         on conflict (owner_id, kind) do update set next_value = sequence_counters.next_value + 1
         returning next_value - 1 as value
@@ -370,6 +370,7 @@ export function createKnowledgeRepository(
       return `KN-${String(result[0]?.value).padStart(6, '0')}`;
     },
     get,
+    /** @param query */
     async query(query): Promise<CursorPage<KnowledgeSummary>> {
       const limit = Math.min(query.limit ?? 30, 100);
       const signature = querySignature(query);
@@ -377,46 +378,54 @@ export function createKnowledgeRepository(
       const searchPattern = query.q ? `%${query.q}%` : null;
       const filtered: KnowledgeQueryRow[] = [];
       for (;;) {
-        const rows = await tx
-          .select({ entry: knowledgeEntries, revision: knowledgeRevisions })
-          .from(knowledgeEntries)
-          .innerJoin(
-            knowledgeRevisions,
-            and(
-              eq(knowledgeRevisions.entryId, knowledgeEntries.id),
-              eq(knowledgeRevisions.revision, knowledgeEntries.currentRevision),
-            ),
+        const rows = await tx.$queryRaw<KnowledgeQueryRow[]>(Prisma.sql`
+          select knowledge_entries.id,
+          knowledge_entries.display_code as "displayCode",
+          knowledge_entries.current_revision as "currentRevision",
+          knowledge_entries.updated_at::text as "updatedAt",
+          knowledge_revisions.title_zh_hant as "titleZhHant",
+          knowledge_revisions.summary_zh_hant as "summaryZhHant",
+          knowledge_revisions.content,
+          knowledge_revisions.status
+          from knowledge_entries
+          join knowledge_revisions on knowledge_revisions.entry_id = knowledge_entries.id
+          and knowledge_revisions.revision = knowledge_entries.current_revision
+          where knowledge_entries.owner_id = ${ownerId}
+          ${query.status ? Prisma.sql`and knowledge_revisions.status = ${query.status}` : Prisma.empty}
+          ${
+            searchPattern
+              ? Prisma.sql`and (
+          knowledge_revisions.title_zh_hant ilike ${searchPattern}
+          or exists (
+          select 1 from knowledge_revision_aliases a
+          where a.entry_id = knowledge_entries.id
+          and a.revision = knowledge_entries.current_revision
+          and a.alias ilike ${searchPattern}
           )
-          .where(
-            and(
-              eq(knowledgeEntries.ownerId, ownerId),
-              query.status
-                ? eq(knowledgeRevisions.status, query.status)
-                : undefined,
-              searchPattern
-                ? or(
-                    ilike(knowledgeRevisions.titleZhHant, searchPattern),
-                    sql`exists (select 1 from knowledge_revision_aliases a where a.entry_id = ${knowledgeEntries.id} and a.revision = ${knowledgeEntries.currentRevision} and a.alias ilike ${searchPattern})`,
-                  )
-                : undefined,
-              query.kinds?.length
-                ? sql`exists (select 1 from knowledge_revision_kinds where knowledge_revision_kinds.entry_id = ${knowledgeEntries.id} and knowledge_revision_kinds.revision = ${knowledgeEntries.currentRevision} and ${inArray(knowledgeRevisionKinds.kind, query.kinds)})`
-                : undefined,
-              cursor
-                ? or(
-                    lt(knowledgeEntries.updatedAt, cursor.updatedAt),
-                    and(
-                      eq(knowledgeEntries.updatedAt, cursor.updatedAt),
-                      lt(knowledgeEntries.id, cursor.id),
-                    ),
-                  )
-                : undefined,
-            ),
-          )
-          .orderBy(desc(knowledgeEntries.updatedAt), desc(knowledgeEntries.id))
-          .limit(200);
+          )`
+              : Prisma.empty
+          }
+          ${
+            query.kinds?.length
+              ? Prisma.sql`and exists (
+          select 1 from knowledge_revision_kinds k
+          where k.entry_id = knowledge_entries.id
+          and k.revision = knowledge_entries.current_revision
+          and k.kind in (${Prisma.join(query.kinds)})
+          )`
+              : Prisma.empty
+          }
+          ${
+            cursor
+              ? Prisma.sql`and (knowledge_entries.updated_at, knowledge_entries.id)
+          < (${cursor.updatedAt}::timestamptz, ${cursor.id}::uuid)`
+              : Prisma.empty
+          }
+          order by knowledge_entries.updated_at desc, knowledge_entries.id desc
+          limit 200
+        `);
         for (const row of rows) {
-          if (matchesFilters(row.revision.content as KnowledgeContent, query)) {
+          if (matchesFilters(row.content, query)) {
             filtered.push(row);
           }
           if (filtered.length > limit) {
@@ -426,52 +435,42 @@ export function createKnowledgeRepository(
         if (filtered.length > limit || rows.length < 200) {
           break;
         }
-        const last = rows.at(-1)!.entry;
+        const last = rows.at(-1)!;
         cursor = { signature, updatedAt: last.updatedAt, id: last.id };
       }
       const page = filtered.slice(0, limit);
       const summaries = await Promise.all(
         page.map(async (row) => {
           const [kinds, citationCount] = await Promise.all([
-            tx
-              .select({ kind: knowledgeRevisionKinds.kind })
-              .from(knowledgeRevisionKinds)
-              .where(
-                and(
-                  eq(knowledgeRevisionKinds.entryId, row.entry.id),
-                  eq(
-                    knowledgeRevisionKinds.revision,
-                    row.entry.currentRevision,
-                  ),
-                ),
-              ),
-            tx.$count(
-              knowledgeRevisionCitations,
-              and(
-                eq(knowledgeRevisionCitations.entryId, row.entry.id),
-                eq(
-                  knowledgeRevisionCitations.revision,
-                  row.entry.currentRevision,
-                ),
-              ),
-            ),
+            tx.knowledgeRevisionKinds.findMany({
+              where: {
+                AND: [{ entryId: row.id }, { revision: row.currentRevision }],
+              },
+              select: { kind: true },
+            }),
+            tx.knowledgeRevisionCitations.count({
+              where: {
+                entryId: row.id,
+                revision: row.currentRevision,
+              },
+            }),
           ]);
 
           return {
-            id: row.entry.id,
-            displayCode: row.entry.displayCode,
-            revision: row.entry.currentRevision,
-            titleZhHant: row.revision.titleZhHant,
+            id: row.id,
+            displayCode: row.displayCode,
+            revision: row.currentRevision,
+            titleZhHant: row.titleZhHant,
             kinds: kinds.map(
               (item) => item.kind as KnowledgeSummary['kinds'][number],
             ),
-            status: row.revision.status as KnowledgeSummary['status'],
-            summaryZhHant: row.revision.summaryZhHant,
+            status: row.status as KnowledgeSummary['status'],
+            summaryZhHant: row.summaryZhHant,
             citationCount,
           };
         }),
       );
-      const last = page.at(-1)?.entry;
+      const last = page.at(-1);
 
       return {
         items: summaries,
@@ -485,29 +484,36 @@ export function createKnowledgeRepository(
             : null,
       };
     },
+    /** @param entry */
     async create(entry) {
-      await tx.insert(knowledgeEntries).values({
-        id: entry.id,
-        ownerId,
-        displayCode: entry.displayCode,
-        currentRevision: entry.revision,
-        createdAt: entry.createdAt,
-        updatedAt: entry.updatedAt,
+      await tx.knowledgeEntries.createMany({
+        data: {
+          id: entry.id,
+          ownerId,
+          displayCode: entry.displayCode,
+          currentRevision: entry.revision,
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt,
+        },
       });
       await saveRevision(tx, entry);
     },
+    /**
+     * @param entry
+     * @param expectedRevision
+     */
     async addRevision(entry, expectedRevision) {
-      const [changed] = await tx
-        .update(knowledgeEntries)
-        .set({ currentRevision: entry.revision, updatedAt: entry.updatedAt })
-        .where(
-          and(
-            eq(knowledgeEntries.id, entry.id),
-            eq(knowledgeEntries.ownerId, ownerId),
-            eq(knowledgeEntries.currentRevision, expectedRevision),
-          ),
-        )
-        .returning({ id: knowledgeEntries.id });
+      const [changed] = await tx.knowledgeEntries.updateManyAndReturn({
+        data: { currentRevision: entry.revision, updatedAt: entry.updatedAt },
+        where: {
+          AND: [
+            { id: entry.id },
+            { ownerId },
+            { currentRevision: expectedRevision },
+          ],
+        },
+        select: { id: true },
+      });
       if (!changed) {
         return false;
       }
@@ -517,16 +523,15 @@ export function createKnowledgeRepository(
     },
     getMethod,
     getMethodVersion,
+    /**
+     * @param method
+     * @param version
+     */
     async createMethod(method, version) {
-      const [entry] = await tx
-        .select({ id: knowledgeEntries.id })
-        .from(knowledgeEntries)
-        .where(
-          and(
-            eq(knowledgeEntries.id, method.owningEntryId),
-            eq(knowledgeEntries.ownerId, ownerId),
-          ),
-        );
+      const [entry] = await tx.knowledgeEntries.findMany({
+        where: { AND: [{ id: method.owningEntryId }, { ownerId }] },
+        select: { id: true },
+      });
       if (
         !entry ||
         version.methodId !== method.id ||
@@ -536,67 +541,68 @@ export function createKnowledgeRepository(
           'Inspection method ownership or initial version is invalid',
         );
       }
-      await tx.insert(inspectionMethods).values({
-        id: method.id,
-        owningEntryId: method.owningEntryId,
-        currentVersionId: null,
+      await tx.inspectionMethods.createMany({
+        data: {
+          id: method.id,
+          owningEntryId: method.owningEntryId,
+          currentVersionId: null,
+        },
       });
-      await tx.insert(methodVersions).values({
-        id: version.id,
-        methodId: version.methodId,
-        revision: version.revision,
-        definition: version.definition,
-        contentHash: hash(version.definition),
-        createdAt: version.createdAt,
+      await tx.methodVersions.createMany({
+        data: {
+          id: version.id,
+          methodId: version.methodId,
+          revision: version.revision,
+          definition: jsonValue(version.definition),
+          contentHash: hash(version.definition),
+          createdAt: version.createdAt,
+        },
       });
-      await tx
-        .update(inspectionMethods)
-        .set({ currentVersionId: version.id })
-        .where(eq(inspectionMethods.id, method.id));
+      await tx.inspectionMethods.updateMany({
+        data: { currentVersionId: version.id },
+        where: { id: method.id },
+      });
     },
+    /**
+     * @param entryId
+     * @param revision
+     * @param methodVersionIds
+     */
     async linkMethods(entryId, revision, methodVersionIds) {
-      const [entry] = await tx
-        .select({ id: knowledgeEntries.id })
-        .from(knowledgeEntries)
-        .where(
-          and(
-            eq(knowledgeEntries.id, entryId),
-            eq(knowledgeEntries.ownerId, ownerId),
-          ),
-        );
+      const [entry] = await tx.knowledgeEntries.findMany({
+        where: { AND: [{ id: entryId }, { ownerId }] },
+        select: { id: true },
+      });
       if (!entry) {
         throw new Error('Knowledge entry is inaccessible');
       }
       if (!methodVersionIds.length) {
         return;
       }
-      const versions = await tx
-        .select({ id: methodVersions.id, methodId: methodVersions.methodId })
-        .from(methodVersions)
-        .innerJoin(
-          inspectionMethods,
-          eq(methodVersions.methodId, inspectionMethods.id),
-        )
-        .innerJoin(
-          knowledgeEntries,
-          and(
-            eq(inspectionMethods.owningEntryId, knowledgeEntries.id),
-            eq(knowledgeEntries.ownerId, ownerId),
-          ),
-        )
-        .where(inArray(methodVersions.id, [...methodVersionIds]));
+      const versions = await tx.methodVersions.findMany({
+        where: {
+          id: { in: [...methodVersionIds] },
+          inspectionMethods: { knowledgeEntries: { ownerId } },
+        },
+        select: { id: true, methodId: true },
+      });
       if (versions.length !== new Set(methodVersionIds).size) {
         throw new Error('Inspection method version is inaccessible');
       }
-      await tx.insert(knowledgeRevisionMethods).values(
-        versions.map((version) => ({
+      await tx.knowledgeRevisionMethods.createMany({
+        data: versions.map((version) => ({
           entryId,
           revision,
           methodId: version.methodId,
           methodVersionId: version.id,
         })),
-      );
+      });
     },
+    /**
+     * @param methodId
+     * @param expectedVersionId
+     * @param version
+     */
     async addMethodVersion(methodId, expectedVersionId, version) {
       if (version.methodId !== methodId) {
         throw new Error('Inspection method version has the wrong owner');
@@ -605,24 +611,23 @@ export function createKnowledgeRepository(
       if (!method || method.currentVersionId !== expectedVersionId) {
         return false;
       }
-      await tx.insert(methodVersions).values({
-        id: version.id,
-        methodId,
-        revision: version.revision,
-        definition: version.definition,
-        contentHash: hash(version.definition),
-        createdAt: version.createdAt,
+      await tx.methodVersions.createMany({
+        data: {
+          id: version.id,
+          methodId,
+          revision: version.revision,
+          definition: jsonValue(version.definition),
+          contentHash: hash(version.definition),
+          createdAt: version.createdAt,
+        },
       });
-      const [changed] = await tx
-        .update(inspectionMethods)
-        .set({ currentVersionId: version.id })
-        .where(
-          and(
-            eq(inspectionMethods.id, methodId),
-            eq(inspectionMethods.currentVersionId, expectedVersionId),
-          ),
-        )
-        .returning({ id: inspectionMethods.id });
+      const [changed] = await tx.inspectionMethods.updateManyAndReturn({
+        data: { currentVersionId: version.id },
+        where: {
+          AND: [{ id: methodId }, { currentVersionId: expectedVersionId }],
+        },
+        select: { id: true },
+      });
 
       return Boolean(changed);
     },

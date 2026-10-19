@@ -1,32 +1,27 @@
 import { isDeepStrictEqual } from 'node:util';
 
-import { and, eq } from 'drizzle-orm';
-
 import { imageComparisonResultSchema } from '@antica/contracts';
 
-import { comparisonFailures, comparisonResults } from '../schema/index.js';
+import { jsonValue, nullableJson } from '../json.js';
 
 import type { ComparisonRepository } from '@antica/application/ports';
 import type { ImageComparisonResult } from '@antica/contracts';
+
 import type { Transaction } from '../transaction.js';
 
 /**
  * persists comparison successes and rejected provider output for one owner
+ * @param tx
+ * @param ownerId
  */
 export function createComparisonRepository(
   tx: Transaction,
   ownerId: string,
 ): ComparisonRepository {
   async function get(id: string): Promise<ImageComparisonResult | null> {
-    const [row] = await tx
-      .select()
-      .from(comparisonResults)
-      .where(
-        and(
-          eq(comparisonResults.id, id),
-          eq(comparisonResults.ownerId, ownerId),
-        ),
-      );
+    const [row] = await tx.comparisonResults.findMany({
+      where: { AND: [{ id }, { ownerId }] },
+    });
     if (!row) {
       return null;
     }
@@ -39,19 +34,20 @@ export function createComparisonRepository(
 
   return {
     get,
+    /** @param result */
     async save(result) {
       const parsed = imageComparisonResultSchema.parse(result);
       const id = parsed.value.comparisonId;
-      const [inserted] = await tx
-        .insert(comparisonResults)
-        .values({
+      const [inserted] = await tx.comparisonResults.createManyAndReturn({
+        data: {
           id,
           ownerId,
-          value: parsed.value,
-          invocation: parsed.invocation,
-        })
-        .onConflictDoNothing()
-        .returning({ id: comparisonResults.id });
+          value: jsonValue(parsed.value),
+          invocation: nullableJson(parsed.invocation),
+        },
+        skipDuplicates: true,
+        select: { id: true },
+      });
       if (inserted) {
         return;
       }
@@ -60,14 +56,17 @@ export function createComparisonRepository(
         throw new Error('Comparison ID is already used by different content');
       }
     },
+    /** @param failure */
     async recordFailure(failure) {
-      await tx.insert(comparisonFailures).values({
-        id: failure.id,
-        ownerId,
-        query: failure.query,
-        error: failure.error,
-        audit: failure.audit,
-        createdAt: failure.createdAt,
+      await tx.comparisonFailures.createMany({
+        data: {
+          id: failure.id,
+          ownerId,
+          query: jsonValue(failure.query),
+          error: jsonValue(failure.error),
+          audit: jsonValue(failure.audit),
+          createdAt: failure.createdAt,
+        },
       });
     },
   };

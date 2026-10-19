@@ -23,7 +23,7 @@ describe('database migration generator command', () => {
     process.exitCode = originalExitCode;
   });
 
-  it('should run Drizzle Kit from the platform package and forward success', async () => {
+  it('should run Prisma from the platform package and forward success', async () => {
     const child = new EventEmitter();
     spawn.mockReturnValue(child);
 
@@ -31,18 +31,13 @@ describe('database migration generator command', () => {
 
     expect(spawn).toHaveBeenCalledWith(
       process.execPath,
-      [
-        expect.any(String),
-        'generate',
-        '--config',
-        './src/database/drizzle.config.ts',
-      ],
+      [expect.any(String), 'generate'],
       { cwd: expect.any(URL), stdio: 'inherit', shell: false },
     );
     const executable = spawn.mock.calls[0]?.[1]?.[0] as string;
     expect(realpathSync(executable)).toBe(
       realpathSync(
-        new URL('../../node_modules/drizzle-kit/bin.cjs', import.meta.url),
+        new URL('../../node_modules/prisma/build/index.js', import.meta.url),
       ),
     );
     const options = spawn.mock.calls[0]?.[2] as { cwd: URL };

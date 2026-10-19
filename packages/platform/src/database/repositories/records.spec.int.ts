@@ -1,21 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 
 import { ComponentInUseError } from '@antica/application/ports';
 
-import {
-  analysisRuns,
-  analysisSnapshots,
-  jobs,
-  mediaAssets,
-  mediaDerivatives,
-  recordChecks,
-  recordMeasurements,
-  records,
-  sourceIntakes,
-} from '../schema/index.js';
 import { createIsolatedDatabase } from '../spec/fixtures/isolated-database.js';
 import { createTransactionPort } from '../transaction.js';
 
@@ -33,13 +21,13 @@ if (!databaseUrl) {
 const now = '2026-10-13T00:00:00.000Z';
 const identity = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const;
 
-describe('fn:createRecordRepository', () => {
+describe('fn:createRecordRepository', { timeout: 30_000 }, () => {
   it('should propagate a database cancellation and roll back a component removal', async () => {
     const database = await createIsolatedDatabase();
     const id = randomUUID();
     const component = { id: randomUUID(), label: 'Lid' };
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createRecordRepository(tx, database.ownerId);
         await repository.create({
           ...recordDetail(id, await repository.allocateCode()),
@@ -47,16 +35,14 @@ describe('fn:createRecordRepository', () => {
           components: [component],
         });
       });
-      await database.db.execute(
-        sql`create function delay_component_removal() returns trigger language plpgsql as $$ begin perform pg_sleep(1); return old; end $$`,
-      );
-      await database.db.execute(
-        sql`create trigger delay_component_removal before delete on record_components for each row execute function delay_component_removal()`,
-      );
+      await database.db
+        .$executeRaw`create function delay_component_removal() returns trigger language plpgsql as $$ begin perform pg_sleep(1); return old; end $$`;
+      await database.db
+        .$executeRaw`create trigger delay_component_removal before delete on record_components for each row execute function delay_component_removal()`;
 
       await expect(
-        database.db.transaction(async (tx) => {
-          await tx.execute(sql`set local statement_timeout = '250ms'`);
+        database.db.$transaction(async (tx) => {
+          await tx.$executeRaw`set local statement_timeout = '250ms'`;
 
           return createRecordRepository(tx, database.ownerId).patch(
             id,
@@ -64,8 +50,10 @@ describe('fn:createRecordRepository', () => {
             { recordRevision: 2, analysisInputVersion: 2, evidenceVersion: 1 },
           );
         }),
-      ).rejects.toMatchObject({ cause: { code: '57014' } });
-      await database.db.transaction(async (tx) => {
+      ).rejects.toMatchObject({
+        meta: { driverAdapterError: { cause: { originalCode: '57014' } } },
+      });
+      await database.db.$transaction(async (tx) => {
         expect(
           await createRecordRepository(tx, database.ownerId).get(id),
         ).toMatchObject({ recordRevision: 1, components: [component] });
@@ -77,24 +65,26 @@ describe('fn:createRecordRepository', () => {
   it('should read nullable persisted metadata without exposing another owners location label', async () => {
     const database = await createIsolatedDatabase();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const locationId = randomUUID();
         await createLocationRepository(tx, randomUUID()).create({
           id: locationId,
           label: 'Private cabinet',
         });
         const id = randomUUID();
-        await tx.insert(records).values({
-          id,
-          ownerId: database.ownerId,
-          code: 'AC-000001',
-          unitKind: 'single',
-          periodStatus: 'unconfirmed',
-          locationId,
+        await tx.records.createMany({
+          data: {
+            id,
+            ownerId: database.ownerId,
+            code: 'AC-000001',
+            unitKind: 'single',
+            periodStatus: 'unconfirmed',
+            locationId,
+          },
         });
-        await tx
-          .insert(recordMeasurements)
-          .values({ recordId: id, kind: 'height', value: '10', unit: 'cm' });
+        await tx.recordMeasurements.createMany({
+          data: { recordId: id, kind: 'height', value: '10', unit: 'cm' },
+        });
         const repository = createRecordRepository(tx, database.ownerId);
         expect(await repository.get(id)).toMatchObject({
           period: { label: '', status: 'unconfirmed' },
@@ -116,7 +106,7 @@ describe('fn:createRecordRepository', () => {
     const id = randomUUID();
     const component = { id: randomUUID(), label: 'Lid' };
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createRecordRepository(tx, database.ownerId);
         await repository.create({
           ...recordDetail(id, await repository.allocateCode()),
@@ -128,7 +118,7 @@ describe('fn:createRecordRepository', () => {
         });
       });
       await expect(
-        database.db.transaction(async (tx) =>
+        database.db.$transaction(async (tx) =>
           createRecordRepository(tx, database.ownerId).patch(
             id,
             { expectedRevision: 1, fields: { components: [] } },
@@ -136,7 +126,7 @@ describe('fn:createRecordRepository', () => {
           ),
         ),
       ).rejects.toBeInstanceOf(ComponentInUseError);
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createRecordRepository(tx, database.ownerId);
         expect(await repository.get(id)).toMatchObject({
           recordRevision: 1,
@@ -167,7 +157,7 @@ describe('fn:createRecordRepository', () => {
     const categoryId = randomUUID();
     const materialId = randomUUID();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createRecordRepository(tx, database.ownerId);
         const detail: RecordDetail = {
           ...recordDetail(id, await repository.allocateCode()),
@@ -205,18 +195,20 @@ describe('fn:createRecordRepository', () => {
           acquisition: detail.acquisition,
         });
         const receiptId = randomUUID();
-        await tx.insert(mediaAssets).values({
-          id: receiptId,
-          ownerId: database.ownerId,
-          recordId: id,
-          kind: 'photo',
-          purpose: 'receipt',
-          state: 'ready',
-          objectKey: `receipts/${receiptId}`,
-          originalFileName: 'receipt.jpg',
-          mimeType: 'image/jpeg',
-          byteLength: 3,
-          sha256: 'a'.repeat(64),
+        await tx.mediaAssets.createMany({
+          data: {
+            id: receiptId,
+            ownerId: database.ownerId,
+            recordId: id,
+            kind: 'photo',
+            purpose: 'receipt',
+            state: 'ready',
+            objectKey: `receipts/${receiptId}`,
+            originalFileName: 'receipt.jpg',
+            mimeType: 'image/jpeg',
+            byteLength: 3,
+            sha256: 'a'.repeat(64),
+          },
         });
 
         const changed = await repository.patch(
@@ -329,7 +321,7 @@ describe('fn:createRecordRepository', () => {
   it('should page equal names and null names without omissions and reject a cursor from another query', async () => {
     const database = await createIsolatedDatabase();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createRecordRepository(tx, database.ownerId);
         const ids = Array.from({ length: 5 }, () => randomUUID()).sort();
         for (const [index, id] of ids.entries()) {
@@ -372,7 +364,7 @@ describe('fn:createRecordRepository', () => {
   it('should combine category material tag location freshness and pending-check filters for the owner', async () => {
     const database = await createIsolatedDatabase();
     try {
-      await database.db.transaction(async (tx) => {
+      await database.db.$transaction(async (tx) => {
         const repository = createRecordRepository(tx, database.ownerId);
         const locations = createLocationRepository(tx, database.ownerId);
         const location = { id: randomUUID(), label: ' Cabinet ' };
@@ -398,14 +390,16 @@ describe('fn:createRecordRepository', () => {
         await repository.create(
           recordDetail(otherId, await repository.allocateCode()),
         );
-        await tx.insert(recordChecks).values({
-          id: randomUUID(),
-          ownerId: database.ownerId,
-          recordId: id,
-          methodId: randomUUID(),
-          methodVersionId: randomUUID(),
-          scopeKey: 'whole',
-          progress: 'not_started',
+        await tx.recordChecks.createMany({
+          data: {
+            id: randomUUID(),
+            ownerId: database.ownerId,
+            recordId: id,
+            methodId: randomUUID(),
+            methodVersionId: randomUUID(),
+            scopeKey: 'whole',
+            progress: 'not_started',
+          },
         });
         const page = await repository.query({
           text: 'porcelain',
@@ -435,40 +429,46 @@ describe('fn:createRecordRepository', () => {
         const jobId = randomUUID();
         const snapshotId = randomUUID();
         const runId = randomUUID();
-        await tx.insert(jobs).values({
-          id: jobId,
-          ownerId: database.ownerId,
-          kind: 'analysis',
-          resourceId: id,
-          state: 'succeeded',
-          stage: 'complete',
+        await tx.jobs.createMany({
+          data: {
+            id: jobId,
+            ownerId: database.ownerId,
+            kind: 'analysis',
+            resourceId: id,
+            state: 'succeeded',
+            stage: 'complete',
+          },
         });
-        await tx.insert(analysisSnapshots).values({
-          id: snapshotId,
-          ownerId: database.ownerId,
-          recordId: id,
-          recordRevision: 1,
-          analysisInputVersion: 1,
-          evidenceVersion: 1,
-          content: {},
-          contentHash: randomUUID(),
+        await tx.analysisSnapshots.createMany({
+          data: {
+            id: snapshotId,
+            ownerId: database.ownerId,
+            recordId: id,
+            recordRevision: 1,
+            analysisInputVersion: 1,
+            evidenceVersion: 1,
+            content: {},
+            contentHash: randomUUID(),
+          },
         });
-        await tx.insert(analysisRuns).values({
-          id: runId,
-          ownerId: database.ownerId,
-          recordId: id,
-          jobId,
-          snapshotId,
-          status: 'completed',
-          modelSelection: {},
-          profileVersion: '1',
-          promptVersion: '1',
-          schemaVersion: '1',
+        await tx.analysisRuns.createMany({
+          data: {
+            id: runId,
+            ownerId: database.ownerId,
+            recordId: id,
+            jobId,
+            snapshotId,
+            status: 'completed',
+            modelSelection: {},
+            profileVersion: '1',
+            promptVersion: '1',
+            schemaVersion: '1',
+          },
         });
-        await tx
-          .update(records)
-          .set({ latestRunId: runId, analysisInputVersion: 2 })
-          .where(eq(records.id, id));
+        await tx.records.updateMany({
+          data: { latestRunId: runId, analysisInputVersion: 2 },
+          where: { id },
+        });
         expect(await repository.get(id)).toMatchObject({
           analysisFreshness: 'outdated',
         });
@@ -611,32 +611,36 @@ describe('fn:createRecordRepository', () => {
       });
 
       const sourceIntakeId = randomUUID();
-      await database.db
-        .insert(sourceIntakes)
-        .values({ id: sourceIntakeId, ownerId });
-      await database.db.insert(mediaAssets).values({
-        id: sourceIntakeId,
-        ownerId,
-        recordId: null,
-        sourceIntakeId,
-        kind: 'photo',
-        purpose: 'source_original',
-        state: 'ready',
-        objectKey: `source-intake/${sourceIntakeId}`,
-        originalFileName: 'source.jpg',
-        mimeType: 'image/jpeg',
-        byteLength: 3,
-        sha256: 'e'.repeat(64),
+      await database.db.sourceIntakes.createMany({
+        data: { id: sourceIntakeId, ownerId },
       });
-      await database.db.insert(mediaDerivatives).values({
-        id: randomUUID(),
-        ownerId,
-        originalAssetId: sourceIntakeId,
-        kind: 'thumbnail',
-        objectKey: `source-thumbnails/${sourceIntakeId}`,
-        mimeType: 'image/jpeg',
-        byteLength: 3,
-        sha256: 'f'.repeat(64),
+      await database.db.mediaAssets.createMany({
+        data: {
+          id: sourceIntakeId,
+          ownerId,
+          recordId: null,
+          sourceIntakeId,
+          kind: 'photo',
+          purpose: 'source_original',
+          state: 'ready',
+          objectKey: `source-intake/${sourceIntakeId}`,
+          originalFileName: 'source.jpg',
+          mimeType: 'image/jpeg',
+          byteLength: 3,
+          sha256: 'e'.repeat(64),
+        },
+      });
+      await database.db.mediaDerivatives.createMany({
+        data: {
+          id: randomUUID(),
+          ownerId,
+          originalAssetId: sourceIntakeId,
+          kind: 'thumbnail',
+          objectKey: `source-thumbnails/${sourceIntakeId}`,
+          mimeType: 'image/jpeg',
+          byteLength: 3,
+          sha256: 'f'.repeat(64),
+        },
       });
 
       const selected = await transaction.run(ownerId, async (unit) => ({

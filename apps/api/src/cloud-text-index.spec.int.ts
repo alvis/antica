@@ -40,9 +40,8 @@ describe('Configured durable cloud text indexing', () => {
     fixture,
   }) => {
     expect(
-      await fixture.runtime.database.db.execute(
-        'SELECT id FROM index_versions',
-      ),
+      await fixture.runtime.database.db
+        .$queryRaw`SELECT id FROM index_versions`,
     ).toHaveLength(0);
     const providerJobId = randomUUID();
     const uploadedOriginals: Uint8Array[] = [];
@@ -240,9 +239,9 @@ describe('Configured durable cloud text indexing', () => {
       indexVersion: 'test-v1',
       canonicalRegionIds: metadata.anticaRegionIds,
     });
-    const registeredIndexes = await fixture.runtime.database.db.execute(
-      'SELECT kind, embedding_model_id, dimensions FROM index_versions',
-    );
+    const registeredIndexes = await fixture.runtime.database.db.$queryRaw<
+      Array<{ kind: string; embedding_model_id: string; dimensions: number }>
+    >`SELECT kind, embedding_model_id, dimensions FROM index_versions`;
     expect(registeredIndexes.map((row) => ({ ...row }))).toEqual([
       { kind: 'text', embedding_model_id: 'embedding', dimensions: 8 },
     ]);

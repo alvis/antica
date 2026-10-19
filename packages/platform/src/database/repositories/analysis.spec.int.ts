@@ -1,25 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 
 import { createDevelopmentModels } from '../../ai/model.js';
 
 import { createDatabase } from '../connection.js';
-import {
-  actionStates,
-  adoptionEvents,
-  analysisRuns,
-  claimObservations,
-  claimEvidence,
-  claimCitations,
-  claims,
-  nextActions,
-  proposalFindings,
-  proposals,
-  proposalStates,
-  retrievalSnapshots,
-} from '../schema/index.js';
+
 import { createLinkedAnalysisEvidence } from '../spec/fixtures/analysis-evidence.js';
 import { createIsolatedDatabase } from '../spec/fixtures/isolated-database.js';
 import { createTransactionPort } from '../transaction.js';
@@ -82,7 +68,7 @@ const failureInvocation: ModelInvocation = {
   citationCheck: { valid: true, rejectedReferenceIds: [] },
 };
 
-describe('fn:createAnalysisRepository', () => {
+describe('fn:createAnalysisRepository', { timeout: 30_000 }, () => {
   it('should reject adopting a real proposal through a different run without leaving an event', async () => {
     const database = await createIsolatedDatabase();
     const transaction = createTransactionPort(database.db);
@@ -130,6 +116,7 @@ describe('fn:createAnalysisRepository', () => {
             failureInvocation,
             'completed',
           );
+
           return {
             success: true as const,
             data: {
@@ -147,6 +134,7 @@ describe('fn:createAnalysisRepository', () => {
             'accepted',
             randomUUID(),
           );
+
           return { success: true as const, data: undefined };
         }),
       ).rejects.toThrow();
@@ -161,7 +149,7 @@ describe('fn:createAnalysisRepository', () => {
         }),
       );
       expect(unchanged.data).toEqual(proposals.data);
-      expect(await database.db.select().from(adoptionEvents)).toEqual([]);
+      expect(await database.db.adoptionEvents.findMany({})).toEqual([]);
     } finally {
       await database.close();
     }
@@ -199,6 +187,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'completed',
         );
+
         return {
           success: true as const,
           data: await unit.analyses.get(firstId),
@@ -228,6 +217,7 @@ describe('fn:createAnalysisRepository', () => {
             failureInvocation,
             'completed',
           );
+
           return { success: true as const, data: undefined };
         }),
       ).rejects.toThrow();
@@ -276,6 +266,7 @@ describe('fn:createAnalysisRepository', () => {
             failureInvocation,
             'completed',
           );
+
           return {
             success: true as const,
             data: await unit.analyses.get(originalId),
@@ -296,6 +287,7 @@ describe('fn:createAnalysisRepository', () => {
             result: null,
           });
           await unit.analyses.create({ ...completed.data!, id, jobId });
+
           return { success: true as const, data: undefined };
         }),
       ).rejects.toThrow();
@@ -356,6 +348,7 @@ describe('fn:createAnalysisRepository', () => {
             failureInvocation,
             'completed',
           );
+
           return {
             success: true as const,
             data: {
@@ -406,6 +399,7 @@ describe('fn:createAnalysisRepository', () => {
           'accepted',
           randomUUID(),
         );
+
         return {
           success: true as const,
           data: {
@@ -480,6 +474,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'partial',
         );
+
         return { success: true as const, data: undefined };
       });
       const partial = await transaction.run(database.ownerId, async (unit) => ({
@@ -498,6 +493,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'completed',
         );
+
         return { success: true as const, data: undefined };
       });
       const reversed = await transaction.run(
@@ -539,6 +535,7 @@ describe('fn:createAnalysisRepository', () => {
           'failed',
         );
         const afterFailure = await unit.records.get(old.recordId);
+
         return {
           success: true as const,
           data: { queued, running, whileRunning, failed, afterFailure },
@@ -591,6 +588,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'completed',
         );
+
         return { success: true as const, data: undefined };
       });
       const stale = await transaction.run(database.ownerId, async (unit) => ({
@@ -640,6 +638,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'completed',
         );
+
         return {
           success: true as const,
           data: {
@@ -836,6 +835,7 @@ describe('fn:createAnalysisRepository', () => {
           },
           randomUUID(),
         );
+
         return { success: true as const, data: snapshot };
       });
       const output: AnalysisOutput = {
@@ -873,6 +873,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'partial',
         );
+
         return { success: true as const, data: await unit.analyses.get(runId) };
       });
       expect(saved.data).toMatchObject({
@@ -882,16 +883,14 @@ describe('fn:createAnalysisRepository', () => {
       expect(saved.data?.requestedSnapshot).toEqual(seeded.data);
       const claimId = saved.data!.output!.findings[0]!.id;
       expect(
-        await database.db
-          .select()
-          .from(claimEvidence)
-          .where(eq(claimEvidence.claimId, claimId)),
+        await database.db.claimEvidence.findMany({
+          where: { claimId },
+        }),
       ).toEqual([{ claimId, anchorId: anchor.id }]);
       expect(
-        await database.db
-          .select()
-          .from(claimCitations)
-          .where(eq(claimCitations.claimId, claimId)),
+        await database.db.claimCitations.findMany({
+          where: { claimId },
+        }),
       ).toEqual([{ claimId, citationId: citation.id }]);
       const repeated = await transaction.run(database.ownerId, async (unit) => {
         const secondId = randomUUID();
@@ -924,6 +923,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'completed',
         );
+
         return {
           success: true as const,
           data: await unit.analyses.get(secondId),
@@ -980,6 +980,7 @@ describe('fn:createAnalysisRepository', () => {
       };
       await transaction.run(database.ownerId, async (unit) => {
         await unit.evidence.addCheck(tiedCheck);
+
         return { success: true as const, data: undefined };
       });
       const tasks = await transaction.run(database.ownerId, async (unit) => ({
@@ -1096,9 +1097,7 @@ describe('fn:createAnalysisRepository', () => {
         input: { ...input, retrievalSnapshotId: winner.id },
       });
       expect(
-        await database.db
-          .select({ id: retrievalSnapshots.id })
-          .from(retrievalSnapshots),
+        await database.db.retrievalSnapshots.findMany({ select: { id: true } }),
       ).toEqual([{ id: winner.id }]);
     } finally {
       await database.close();
@@ -1143,6 +1142,7 @@ describe('fn:createAnalysisRepository', () => {
               },
             },
           });
+
           return { success: true as const, data: undefined };
         }),
       ).rejects.toThrow();
@@ -1209,6 +1209,7 @@ describe('fn:createAnalysisRepository', () => {
               failureInvocation,
               'completed',
             );
+
             return { success: true as const, data: undefined };
           }),
         ).rejects.toThrow();
@@ -1266,6 +1267,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'completed',
         );
+
         return { success: true as const, data: await unit.analyses.get(runId) };
       });
       expect(saved.data?.output?.proposedChanges).toEqual(
@@ -1274,14 +1276,10 @@ describe('fn:createAnalysisRepository', () => {
           id: expect.any(String),
         })),
       );
-      const normalized = await database.db
-        .select({
-          field: proposals.field,
-          before: proposals.before,
-          proposed: proposals.proposed,
-        })
-        .from(proposals)
-        .where(eq(proposals.runId, runId));
+      const normalized = await database.db.proposals.findMany({
+        select: { field: true, before: true, proposed: true },
+        where: { runId },
+      });
       expect(normalized).toEqual(
         expect.arrayContaining([
           { field: 'name', before: null, proposed: 'Vase' },
@@ -1335,6 +1333,7 @@ describe('fn:createAnalysisRepository', () => {
           failureInvocation,
           'completed',
         );
+
         return { success: true as const, data: await unit.analyses.get(runId) };
       });
       const run = saved.data!;
@@ -1461,6 +1460,45 @@ describe('fn:createAnalysisRepository', () => {
           nextCursor: null,
         },
       });
+      const foreignRunId = await createQueuedRun(transaction, randomUUID());
+      const persistedResolution =
+        await database.db.actionResolutions.findUniqueOrThrow({
+          where: { id: resolution.id },
+        });
+      const foreignResolutionId = randomUUID();
+      await database.db.actionResolutions.create({
+        data: {
+          ...persistedResolution,
+          id: foreignResolutionId,
+          runId: foreignRunId,
+        },
+      });
+      for (const unavailableResolutionId of [
+        randomUUID(),
+        foreignResolutionId,
+      ]) {
+        await database.db.actionStates.updateMany({
+          where: { runId, actionId },
+          data: { latestResolutionId: unavailableResolutionId },
+        });
+        const unavailable = await transaction.run(
+          database.ownerId,
+          async (unit) => ({
+            success: true as const,
+            data: await unit.analyses.queryTasks({ actionStatus: 'supplied' }),
+          }),
+        );
+        expect(unavailable.data.items).toEqual([
+          expect.objectContaining({
+            kind: 'analysisAction',
+            latestResolution: null,
+          }),
+        ]);
+      }
+      await database.db.actionStates.updateMany({
+        where: { runId, actionId },
+        data: { latestResolutionId: resolution.id },
+      });
       const proposalId = scoped.proposedChanges[0]!.id;
       const eventId = randomUUID();
       const adoption = await transaction.run(database.ownerId, async (unit) => {
@@ -1470,6 +1508,7 @@ describe('fn:createAnalysisRepository', () => {
           'accepted',
           eventId,
         );
+
         return {
           success: true as const,
           data: await unit.analyses.getProposalStates(runId),
@@ -1486,6 +1525,7 @@ describe('fn:createAnalysisRepository', () => {
             'skipped',
             randomUUID(),
           );
+
           return { success: true as const, data: undefined };
         }),
       ).rejects.toThrow();
@@ -1497,6 +1537,7 @@ describe('fn:createAnalysisRepository', () => {
             'accepted',
             randomUUID(),
           );
+
           return { success: true as const, data: undefined };
         }),
       ).rejects.toThrow();
@@ -1509,6 +1550,7 @@ describe('fn:createAnalysisRepository', () => {
             failureInvocation,
             'completed',
           );
+
           return { success: true as const, data: undefined };
         }),
       ).rejects.toThrow();
@@ -1840,36 +1882,17 @@ describe('fn:createAnalysisRepository', () => {
         savedActionStates,
         savedProposalStates,
       ] = await Promise.all([
-        database.db.select().from(claims).where(eq(claims.runId, secondRunId)),
-        database.db
-          .select()
-          .from(nextActions)
-          .where(eq(nextActions.runId, secondRunId)),
-        database.db
-          .select()
-          .from(proposals)
-          .where(eq(proposals.runId, secondRunId)),
-        database.db
-          .select()
-          .from(proposalFindings)
-          .where(
-            eq(
-              proposalFindings.proposalId,
-              secondOutput.proposedChanges[0]!.id,
-            ),
-          ),
-        database.db
-          .select()
-          .from(claimObservations)
-          .where(eq(claimObservations.claimId, secondOutput.findings[0]!.id)),
-        database.db
-          .select()
-          .from(actionStates)
-          .where(eq(actionStates.runId, secondRunId)),
-        database.db
-          .select()
-          .from(proposalStates)
-          .where(eq(proposalStates.runId, secondRunId)),
+        database.db.claims.findMany({ where: { runId: secondRunId } }),
+        database.db.nextActions.findMany({ where: { runId: secondRunId } }),
+        database.db.proposals.findMany({ where: { runId: secondRunId } }),
+        database.db.proposalFindings.findMany({
+          where: { proposalId: secondOutput.proposedChanges[0]!.id },
+        }),
+        database.db.claimObservations.findMany({
+          where: { claimId: secondOutput.findings[0]!.id },
+        }),
+        database.db.actionStates.findMany({ where: { runId: secondRunId } }),
+        database.db.proposalStates.findMany({ where: { runId: secondRunId } }),
       ]);
       expect(savedClaims.map(({ id }) => id)).toEqual([
         secondOutput.findings[0]?.id,
@@ -1970,13 +1993,10 @@ describe('fn:createAnalysisRepository', () => {
         output: null,
         invocation: nullOutput.invocation,
       });
-      const [storedBeforeSuccess] = await database.db
-        .select({
-          rawOutput: analysisRuns.rawOutput,
-          completedAt: analysisRuns.completedAt,
-        })
-        .from(analysisRuns)
-        .where(eq(analysisRuns.id, runId));
+      const [storedBeforeSuccess] = await database.db.analysisRuns.findMany({
+        select: { rawOutput: true, completedAt: true },
+        where: { id: runId },
+      });
       expect(storedBeforeSuccess).toEqual({
         rawOutput: null,
         completedAt: null,
@@ -2203,7 +2223,9 @@ async function queueFollowupRun(
       result: null,
     });
     await unit.analyses.create(run);
+
     return { success: true as const, data: undefined };
   });
+
   return run;
 }

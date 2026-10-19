@@ -225,6 +225,7 @@ export function createEslintAsset(
   return asset<Record<string, unknown>>((current) =>
     merge(current, {
       default: [
+        { ignores: ['**/src/database/generated/**'] },
         ...baseConfigs,
         ...boundaryConfigs(context),
         ...(context.isRepoRoot ||

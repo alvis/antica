@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
-import { createDatabase } from './connection.js';
+
 import { ensureCollectorUser } from './collector.js';
-import { locations, records } from './schema/index.js';
+import { createDatabase } from './connection.js';
 
 /** development database and collector identity for illustrative fixtures */
 export interface SeedParams {
@@ -11,6 +11,9 @@ export interface SeedParams {
 
 /**
  * inserts visibly illustrative development fixtures without touching existing rows
+ * @param root0
+ * @param root0.url
+ * @param root0.phoneNumber
  */
 export async function seedIllustrativeData({
   url,
@@ -25,20 +28,19 @@ export async function seedIllustrativeData({
       db: connection.db,
       phoneNumber,
     });
-    await connection.db.transaction(async (tx) => {
+    await connection.db.$transaction(async (tx) => {
       const locationId = '00000000-0000-4000-8000-000000000101';
-      await tx
-        .insert(locations)
-        .values({
+      await tx.locations.createMany({
+        data: {
           id: locationId,
           ownerId,
           label: 'Illustrative shelf',
           normalizedLabel: 'illustrative shelf',
-        })
-        .onConflictDoNothing();
-      await tx
-        .insert(records)
-        .values({
+        },
+        skipDuplicates: true,
+      });
+      await tx.records.createMany({
+        data: {
           id: '00000000-0000-4000-8000-000000000201',
           ownerId,
           code: 'AC-ILLUSTRATIVE-001',
@@ -47,8 +49,9 @@ export async function seedIllustrativeData({
           locationId,
           description:
             'Synthetic fixture for local development; not an attributed antique.',
-        })
-        .onConflictDoNothing();
+        },
+        skipDuplicates: true,
+      });
     });
   } finally {
     await connection.close();

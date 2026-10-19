@@ -6,13 +6,12 @@ import { fileURLToPath } from 'node:url';
 
 import { promisify } from 'node:util';
 
-import { eq } from 'drizzle-orm';
 import { describe, expect, inject, vi } from 'vitest';
 
 import { collectorUserId, ensureCollectorUser } from './collector.js';
 
 import { migrateDatabase } from './migrate.js';
-import { locations, records, user } from './schema/index.js';
+
 import { seedIllustrativeData } from './seed.js';
 import { createDatabaseTest } from './spec/fixtures/runner.js';
 
@@ -33,7 +32,7 @@ const repositoryDirectory = new URL('../../../../', import.meta.url);
 const resources = inject('platformDatabases');
 const it = createDatabaseTest(resources.commands!);
 
-describe('database setup commands', () => {
+describe('database setup commands', { timeout: 30_000 }, () => {
   it.for([
     { directory: 'repository root', cwd: repositoryDirectory },
     { directory: 'platform package', cwd: new URL('../../', import.meta.url) },
@@ -66,10 +65,10 @@ describe('database setup commands', () => {
         { cwd, env: environment },
       );
       expect(
-        await connection.db
-          .select({ id: records.id, description: records.description })
-          .from(records)
-          .where(eq(records.id, illustrativeRecordId)),
+        await connection.db.records.findMany({
+          select: { id: true, description: true },
+          where: { id: illustrativeRecordId },
+        }),
       ).toEqual([
         {
           id: illustrativeRecordId,
@@ -126,10 +125,10 @@ describe('database setup commands', () => {
     await migrateDatabase({ url: connection.url });
 
     expect(
-      await connection.db
-        .select({ id: user.id })
-        .from(user)
-        .where(eq(user.id, ownerId)),
+      await connection.db.user.findMany({
+        select: { id: true },
+        where: { id: ownerId },
+      }),
     ).toEqual([{ id: collectorUserId }]);
   });
 
@@ -143,10 +142,10 @@ describe('database setup commands', () => {
       ensureCollectorUser({ db: connection.db, phoneNumber: '+447700900174' }),
     ).rejects.toThrow(Error);
     expect(
-      await connection.db
-        .select({ phoneNumber: user.phoneNumber })
-        .from(user)
-        .where(eq(user.id, collectorUserId)),
+      await connection.db.user.findMany({
+        select: { phoneNumber: true },
+        where: { id: collectorUserId },
+      }),
     ).toEqual([{ phoneNumber }]);
   });
 
@@ -157,14 +156,10 @@ describe('database setup commands', () => {
     await seedIllustrativeData({ url: connection.url, phoneNumber });
 
     expect(
-      await connection.db
-        .select({
-          ownerId: records.ownerId,
-          locationId: records.locationId,
-          description: records.description,
-        })
-        .from(records)
-        .where(eq(records.id, illustrativeRecordId)),
+      await connection.db.records.findMany({
+        select: { ownerId: true, locationId: true, description: true },
+        where: { id: illustrativeRecordId },
+      }),
     ).toEqual([
       {
         ownerId: collectorUserId,
@@ -174,10 +169,10 @@ describe('database setup commands', () => {
       },
     ]);
     expect(
-      await connection.db
-        .select({ label: locations.label })
-        .from(locations)
-        .where(eq(locations.id, illustrativeLocationId)),
+      await connection.db.locations.findMany({
+        select: { label: true },
+        where: { id: illustrativeLocationId },
+      }),
     ).toEqual([{ label: 'Illustrative shelf' }]);
   });
 

@@ -74,9 +74,9 @@ describe('Location HTTP transport', () => {
     ];
     const locked = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const barrier = fixture.runtime.database.db.transaction(
+    const barrier = fixture.runtime.database.db.$transaction(
       async (transaction) => {
-        await transaction.execute('LOCK TABLE locations IN SHARE MODE');
+        await transaction.$executeRaw`LOCK TABLE locations IN SHARE MODE`;
         locked.resolve();
         await release.promise;
       },
@@ -91,9 +91,9 @@ describe('Location HTTP transport', () => {
       await expect
         .poll(
           async () => {
-            const rows = await fixture.runtime.database.db.execute(
-              "SELECT count(*)::integer AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
-            );
+            const rows = await fixture.runtime.database.db.$queryRaw<
+              Array<{ count: number }>
+            >`SELECT count(*)::integer AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
 
             return rows[0]?.count;
           },

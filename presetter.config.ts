@@ -47,6 +47,13 @@ function createVitestAsset(
           test: {
             ...baseConfig.default.test,
             ...automaticMockCleanup,
+            coverage: {
+              ...baseConfig.default.test?.coverage,
+              exclude: [
+                ...(baseConfig.default.test?.coverage?.exclude ?? []),
+                'packages/platform/src/database/generated/**',
+              ],
+            },
             projects: [
               'apps/api/vitest.config{,.int}.ts',
               'packages/*/vitest.config{,.int}.ts',
@@ -143,7 +150,9 @@ export default preset(name, {
             name: `${context.packageJson.name}:INT`,
             include: ['src/**/*.spec.int.{ts,tsx}'],
             ...(context.packageJson.name === '@antica/api'
-              ? { globalSetup: ['src/fixtures/http-global-setup.ts'] }
+              ? {
+                  globalSetup: ['src/fixtures/http-global-setup.ts'],
+                }
               : {}),
             ...(context.packageJson.name === '@antica/platform'
               ? { globalSetup: ['src/database/spec/global-setup.ts'] }
