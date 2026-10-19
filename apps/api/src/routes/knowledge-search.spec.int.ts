@@ -107,6 +107,32 @@ describe('Knowledge discovery HTTP boundaries', () => {
     }
   });
 
+  it('should fill natural-language best matches within two statements including fresh authentication', async ({
+    fixture,
+  }) => {
+    const created = await fixture.request('/v1/knowledge', 'POST', draft());
+    const detail = knowledgeEntryDetailV2Schema.parse(await created.json());
+    const statements: string[] = [];
+    fixture.runtime.database.db.$on('query', (event) =>
+      statements.push(event.query),
+    );
+    const response = await fixture.request(
+      '/v1/knowledge/search?view=working&q=how%20porcelain%20jade',
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      hits: expect.arrayContaining([
+        expect.objectContaining({
+          id: detail.id,
+          matchReason: 'best_match',
+          matchedTokens: ['porcelain'],
+        }),
+      ]),
+    });
+    expect(statements).toHaveLength(2);
+    expect(statements.some((query) => query.includes('session'))).toBe(true);
+  });
+
   it('should preserve legacy detail and bound missing and foreign detail requests', async ({
     fixture,
   }) => {

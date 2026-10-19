@@ -53,13 +53,20 @@ describe('fn:createKnowledgeSearchRepository', { timeout: 30_000 }, () => {
     const id = await createEntry(connection.db, ownerId, envelope('青花瓷碗'));
     const repository = createKnowledgeSearchRepository(connection.db, ownerId);
     for (const q of ['青花', '康熙', '康', 'blue and white', 'CAFÉ']) {
-      expect(await repository.search({ ...input, q })).toMatchObject({
+      const result = await repository.search({ ...input, q });
+      expect(result).toMatchObject({
         success: true,
         data: {
           hits: [expect.objectContaining({ id, revision: 1 })],
           total: 1,
         },
       });
+      if (q === '康' || q === '康熙') {
+        expect(result).toMatchObject({
+          success: true,
+          data: { hits: [{ id, matchedTokens: expect.arrayContaining([q]) }] },
+        });
+      }
     }
     expect(await repository.search({ ...input, q: '青花瓷碗' })).toMatchObject({
       success: true,
@@ -73,6 +80,181 @@ describe('fn:createKnowledgeSearchRepository', { timeout: 30_000 }, () => {
     expect(await repository.search({ ...input, q: '釉里红' })).toMatchObject({
       success: true,
       data: { total: 0, hits: [] },
+    });
+  });
+
+  it('should fill strict results with best matches and paginate the same ranking', async ({
+    connection,
+  }) => {
+    const ownerId = randomUUID();
+    const strict = await createEntry(
+      connection.db,
+      ownerId,
+      envelope('amber cobalt jade vessel'),
+    );
+    const partial = await createEntry(
+      connection.db,
+      ownerId,
+      envelope('amber cobalt vessel'),
+    );
+    const single = await createEntry(
+      connection.db,
+      ownerId,
+      envelope('amber vessel'),
+    );
+    const repository = createKnowledgeSearchRepository(connection.db, ownerId);
+    const query = { ...input, q: 'how amber cobalt jade', limit: 3 };
+    const result = await repository.search(query);
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        total: 3,
+        hits: [
+          {
+            id: strict,
+            matchReason: 'full_text',
+            matchedTokens: ['amber', 'cobalt', 'jade'],
+          },
+          {
+            id: partial,
+            matchReason: 'best_match',
+            matchedTokens: ['amber', 'cobalt'],
+          },
+          { id: single, matchReason: 'best_match', matchedTokens: ['amber'] },
+        ],
+      },
+    });
+    const first = await repository.search({ ...query, limit: 2 });
+    if (!first.success) {
+      throw new Error('Expected first best-match page');
+    }
+    const next = { ...query, limit: 2, cursor: first.data.nextCursor! };
+    const second = await repository.search(next);
+    expect(second).toEqual(await repository.search(next));
+    expect(second).toMatchObject({
+      success: true,
+      data: { hits: [{ id: single }], nextCursor: null },
+    });
+  });
+
+  it('should prioritize distinct coverage over repeated words and weight title coverage above claims', async ({
+    connection,
+  }) => {
+    const ownerId = randomUUID();
+    const broad = await createEntry(
+      connection.db,
+      ownerId,
+      envelope('amber cobalt vessel'),
+    );
+    const repeated = await createEntry(
+      connection.db,
+      ownerId,
+      envelope('amber '.repeat(30) + 'vessel'),
+    );
+    const base = envelope('Unrelated vessel');
+    const claim = await createEntry(connection.db, ownerId, {
+      ...base,
+      claims: base.claims.map((item) => ({
+        ...item,
+        originalLanguage: 'zh-Hant',
+        originalText: 'amber cobalt',
+      })),
+      sections: {
+        ...base.sections,
+        summary: { ...base.sections.summary, text: 'amber cobalt' },
+      },
+    });
+    const result = await createKnowledgeSearchRepository(
+      connection.db,
+      ownerId,
+    ).search({ ...input, q: 'amber cobalt jade' });
+    if (!result.success) {
+      throw new Error('Expected coverage-ranked matches');
+    }
+    const ids = result.data.hits.map((hit) => hit.id);
+    expect(ids[0]).toBe(broad);
+    expect(ids).toContain(claim);
+    expect(ids.indexOf(broad)).toBeLessThan(ids.indexOf(repeated));
+    expect(ids.indexOf(broad)).toBeLessThan(ids.indexOf(claim));
+  });
+
+  it('should reject stop-only queries without turning them into browse results', async ({
+    connection,
+  }) => {
+    const ownerId = randomUUID();
+    await createEntry(connection.db, ownerId, envelope('青花'));
+    expect(
+      await createKnowledgeSearchRepository(connection.db, ownerId).search({
+        ...input,
+        q: '如何 與 的 how museum evidence',
+      }),
+    ).toMatchObject({
+      success: true,
+      data: { total: 0, hits: [] },
+    });
+  });
+
+  it('should identify a quoted compact mark as an exact phrase with the whole matched token', async ({
+    connection,
+  }) => {
+    const ownerId = randomUUID();
+    const id = await createEntry(
+      connection.db,
+      ownerId,
+      envelope('大明成化年製'),
+    );
+    expect(
+      await createKnowledgeSearchRepository(connection.db, ownerId).search({
+        ...input,
+        q: '如何說明「大明成化年製」的資料？',
+      }),
+    ).toMatchObject({
+      success: true,
+      data: {
+        hits: [
+          {
+            id,
+            matchReason: 'exact_mark_phrase',
+            matchedTokens: ['大明成化年製'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('should retrieve an unknown quoted Han phrase through the lowest-weight bigram lane', async ({
+    connection,
+  }) => {
+    const ownerId = randomUUID();
+    const base = envelope('Unrelated vessel');
+    const id = await createEntry(connection.db, ownerId, {
+      ...base,
+      claims: base.claims.map((item) => ({
+        ...item,
+        originalLanguage: 'zh-Hant',
+        originalText: '髹漆犀皮紋',
+      })),
+      sections: {
+        ...base.sections,
+        summary: { ...base.sections.summary, text: '髹漆犀皮紋' },
+      },
+    });
+    expect(
+      await createKnowledgeSearchRepository(connection.db, ownerId).search({
+        ...input,
+        q: '「髹漆犀皮」',
+      }),
+    ).toMatchObject({
+      success: true,
+      data: {
+        hits: [
+          {
+            id,
+            matchReason: 'bigram',
+            matchedTokens: expect.arrayContaining(['髹漆', '漆犀', '犀皮']),
+          },
+        ],
+      },
     });
   });
 

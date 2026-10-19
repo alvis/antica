@@ -159,10 +159,13 @@ export const knowledgeSearchHitSchema = z.strictObject({
     'exact_title_alias',
     'exact_mark_phrase',
     'full_text',
+    'best_match',
+    'bigram',
     'trigram',
     'prefix',
     'browse',
   ]),
+  matchedTokens: z.array(z.string()).default([]),
   excerpt: z
     .strictObject({
       claimKey: z.string(),
