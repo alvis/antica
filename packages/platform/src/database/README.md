@@ -7,7 +7,7 @@ verified for this migration. At implementation time the registry's Prisma CLI
 adapter packages. PostgreSQL connections use the driver adapter and the
 TypeScript `prisma-client` generator with ESM output.
 
-`schema.prisma` describes all 102 tables. Field and model mappings preserve the
+`schema.prisma` describes all 104 tables. Field and model mappings preserve the
 existing PostgreSQL names. `prisma.config.ts` in the package selects the schema,
 migrations, seed command, and `DATABASE_URL`. The generated client lives in
 `generated/`, is ignored by Git, and is regenerated during installation and the
@@ -29,8 +29,7 @@ database or a configured connection URL.
 
 ## Native SQL and baseline
 
-`migrations/0_init/migration.sql` is the main schema from migrations 0000–0008, including all 20 check constraints, partial indexes, composite owner
-identities, cascading authentication ownership, defaults, and foreign keys.
+`migrations/0_init/migration.sql` reproduces main's schema from migrations 0000–0008: 102 tables, 20 check constraints and 168 foreign keys. `1_edit_draft_adoption_events/migration.sql` adds adoption history and its owner-scoped draft identity; `2_record_messages/migration.sql` adds record messages, bringing the chain to 104 tables, 24 checks and 172 foreign keys. Native SQL retains partial indexes, composite owner identities, cascading authentication ownership, defaults and foreign keys.
 Prisma's partial-index support is enabled by introspection; check constraints
 remain native SQL in the migration. The actual schema contains no generated
 columns, extensions, or triggers. The previous `generated.spec.int.ts` tests
@@ -43,9 +42,7 @@ values through tagged templates or `Prisma.sql`. Never interpolate an unchecked
 identifier or use an unsafe raw-query call with user input.
 
 The idempotent repair for missing latest-analysis pointers is retained at the
-end of the baseline. It does nothing on a fresh database. A baseline deployment
-reproduces the previous final database; it does not upgrade an existing
-Drizzle-managed database. There are no deployed databases to upgrade.
+end of the baseline. It does nothing on a fresh database. Deploying the complete migration chain reproduces the previous final database; it does not upgrade an existing Drizzle-managed database. There are no deployed databases to upgrade.
 
 Database `now()` defaults are represented as `@default(dbgenerated())`. Their
 expressions remain in the baseline SQL. This preserves PostgreSQL transaction
@@ -62,12 +59,11 @@ matching the previous pool's behavior.
 
 ## Equivalence verification
 
-The baseline matches main's migrations 0000–0008 at commit `012f1504e730`. Schema-only dumps from throwaway PostgreSQL 16 databases are identical, with 102 application tables, 20 checks and 168 foreign keys. Prisma's migration diff also reports no schema drift.
+The split chain was deployed with Prisma to a throwaway PostgreSQL 16 database and compared with ORM01's original post-0010 `0_init`. Schema-only `pg_dump --no-owner --no-privileges` outputs were identical: **zero differing lines**, with 104 application tables, 24 checks and 172 foreign keys. The stage-01 baseline independently matched main's migrations 0000–0008 at `012f1504e730`, with 102 tables, 20 checks and 168 foreign keys.
 
 For the comparison, omit only the `drizzle` bookkeeping schema and
 `public._prisma_migrations`, then discard pg_dump comments and its random
-`\restrict`/`\unrestrict` tokens. Do not normalize application DDL. Retrieve the
-historical SQL from main at the above commit to repeat the proof; it is intentionally
+`\restrict`/`\unrestrict` tokens. Do not normalize application DDL. Retrieve the historical SQL from main at `012f1504e730` and the original feature tip `015dd9a982005b4b832532a91470f69d4952b92f` to repeat the proof; it is intentionally
 absent from the Prisma migration directory.
 
 The generated-schema integration suite independently runs `prisma migrate diff`
