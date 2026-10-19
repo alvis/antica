@@ -1,88 +1,119 @@
-import { useQuery } from '@tanstack/react-query';
-
 import { useRouter } from 'expo-router';
+import { View } from 'react-native';
 
-import { useState } from 'react';
+import { knowledgeSearchQuerySchema } from '@antica/contracts';
+import { ActionButton, TextField } from '@antica/ui';
 
-import { Text, View } from 'react-native';
-
-import { knowledgePageSchema } from '@antica/contracts';
-import { ActionButton, TextField, styles } from '@antica/ui';
-
-import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
 import { SettingsAction } from '../../../components/SettingsAction';
-import { localizeKnowledgeKind, localizeStatus } from '../../../i18n/messages';
-import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
+
+import { KnowledgeBrowse } from '../components/KnowledgeBrowse';
+import { KnowledgeFilters } from '../components/KnowledgeFilters';
+import { KnowledgeSearchResults } from '../components/KnowledgeSearchResults';
+import { useKnowledgeSearch } from '../hooks/useKnowledgeSearch';
+import { useKnowledgeSelection } from '../hooks/useKnowledgeSelection';
+import { useKnowledgeTopics } from '../hooks/useKnowledgeTopics';
 
 import type { FC } from 'react';
 
+/**
+ * keeps browse choices and results mounted while a detail route is pushed
+ * @returns the knowledge discovery screen
+ */
 export const KnowledgeContainer: FC = () => {
-  const router = useRouter();
-  const { api } = useAuth();
   const { t } = useLocale();
-  const [query, setQuery] = useState('');
-  const [cursor, setCursor] = useState<string | null>(null);
-  const parameters = new URLSearchParams({ limit: '50' });
-  if (query) {
-    parameters.set('q', query);
-  }
-  if (cursor) {
-    parameters.set('cursor', cursor);
-  }
-  const entries = useQuery({
-    queryKey: ['knowledge', query, cursor],
-    queryFn: async ({ signal }) =>
-      api.get(`/v1/knowledge?${parameters}`, knowledgePageSchema, signal),
-  });
+  const router = useRouter();
+  const state = useKnowledgeSelection();
+  const entries = useKnowledgeSearch(state.selection);
+  const taxonomy = useKnowledgeTopics(state.topicId, state.filtersOpen);
 
   return (
     <Screen title={t('knowledge')} action={<SettingsAction />}>
+      <View testID="knowledge-search">
+        <TextField
+          label={t('search')}
+          value={state.selection.query}
+          onChangeText={state.setQuery}
+        />
+      </View>
+      <KnowledgeBrowse {...state} {...taxonomy} />
+      <FilterControls {...state} {...taxonomy} entries={entries} />
+      <KnowledgeSearchResults
+        entries={entries}
+        hasFilters={state.hasFilters}
+        onOpen={(id) =>
+          router.push(`/knowledge/${id}?view=${state.selection.view}`)
+        }
+      />
       <ActionButton
         label={t('importBook')}
         onPress={() => router.push('/sources/new')}
+        secondary
       />
-      <TextField
-        label={t('search')}
-        value={query}
-        onChangeText={(value) => {
-          setQuery(value);
-          setCursor(null);
-        }}
-      />
-      <QueryState
-        loading={entries.isPending}
-        error={entries.error}
-        retry={() => void entries.refetch()}>
-        {entries.data?.items.length === 0 && (
-          <Text style={styles.body}>{t('empty')}</Text>
-        )}
-        {entries.data?.items.map((entry) => (
-          <View key={entry.id} style={styles.card}>
-            <Text style={styles.heading}>{entry.titleZhHant}</Text>
-            <Text style={styles.secondary}>
-              {entry.displayCode} · {localizeStatus(entry.status, t)} ·{' '}
-              {entry.kinds
-                .map((kind) => localizeKnowledgeKind(kind, t))
-                .join(', ')}
-            </Text>
-            <Text style={styles.body}>{entry.summaryZhHant}</Text>
-            <ActionButton
-              label={t('view')}
-              onPress={() => router.push(`/knowledge/${entry.id}`)}
-              secondary
-            />
-          </View>
-        ))}
-        {entries.data?.nextCursor && (
-          <ActionButton
-            label={t('more')}
-            onPress={() => setCursor(entries.data.nextCursor)}
-            secondary
-          />
-        )}
-      </QueryState>
     </Screen>
+  );
+};
+/**
+ * expands every explicit facet group without inferring hidden choices
+ * @param props browse state and current facet responses
+ * @returns expandable facet alternatives with an explicit reset
+ */
+const FilterControls: FC<
+  ReturnType<typeof useKnowledgeSelection> &
+    ReturnType<typeof useKnowledgeTopics> & {
+      entries: ReturnType<typeof useKnowledgeSearch>;
+    }
+> = (props) => {
+  const { locale, t } = useLocale();
+  const {
+    selection,
+    filtersOpen,
+    setFiltersOpen,
+    groups,
+    entries,
+    toggleTopic,
+    toggleValue,
+    clear,
+  } = props;
+  const { query: queryText, ...searchFilters } = selection;
+
+  return (
+    <>
+      <ActionButton
+        label={t(filtersOpen ? 'knowledgeHideFilters' : 'knowledgeShowFilters')}
+        onPress={() => setFiltersOpen((value) => !value)}
+        secondary
+      />
+      {filtersOpen && (
+        <>
+          {groups.some((group) => group.isError) && (
+            <ActionButton
+              label={t('retry')}
+              onPress={() => {
+                for (const group of groups) {
+                  if (group.isError) {
+                    void group.refetch();
+                  }
+                }
+              }}
+            />
+          )}
+          <KnowledgeFilters
+            options={groups.map((group) => group.data ?? [])}
+            facets={entries.data?.pages[0]?.facets ?? []}
+            selection={knowledgeSearchQuerySchema.parse({
+              ...searchFilters,
+              q: queryText,
+              locale,
+              limit: 20,
+            })}
+            onTopic={toggleTopic}
+            onValue={toggleValue}
+            onClear={clear}
+          />
+        </>
+      )}
+    </>
   );
 };

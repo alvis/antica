@@ -1,0 +1,186 @@
+# Runs in two stages so the runner can read the development OTP between them.
+# The corpus seed support saves the selected entry and supplies stable IDs.
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      true: ${STAGE == 'request-code'}
+    commands:
+      - launchApp:
+          clearState: true
+      - extendedWaitUntil:
+          visible:
+            id: login-start
+          timeout: 120000
+      - openLink: antica://?devLocale=${APP_LOCALE}
+      - extendedWaitUntil:
+          visible:
+            id: login-start
+          timeout: 60000
+      - tapOn:
+          id: login-start
+      - tapOn:
+          id: login-phone
+      - inputText: ${PHONE_NUMBER}
+      - tapOn:
+          id: login-send-code
+      - extendedWaitUntil:
+          visible:
+            id: login-code
+          timeout: 30000
+- runFlow:
+    when:
+      true: ${STAGE == 'signed-in'}
+    commands:
+      - tapOn:
+          id: login-code-input
+      - inputText: ${OTP_CODE}
+      - tapOn:
+          id: login-verify
+      - extendedWaitUntil:
+          visible:
+            id: collection-add-item
+          timeout: 60000
+      - runFlow: support/dismiss-dev-logbox.yaml
+      - tapOn: ${KNOWLEDGE_TAB}
+      - extendedWaitUntil:
+          visible:
+            id: knowledge-category-${CATEGORY_ID}
+          timeout: 60000
+      - assertVisible:
+          id: knowledge-status-saved
+      - tapOn:
+          id: knowledge-category-${CATEGORY_ID}
+      # The v1 corpus has no parent-child topic edges. The category itself
+      # appears in the topic path; a separate material topic is exercised below.
+      - extendedWaitUntil:
+          visible:
+            id: knowledge-topic-${TOPIC_ID}
+          timeout: 30000
+      - tapOn:
+          id: knowledge-topic-${TOPIC_ID}
+      - tapOn: ${SHOW_FILTERS}
+      - extendedWaitUntil:
+          visible:
+            id: knowledge-filters
+          timeout: 30000
+      - scrollUntilVisible:
+          element:
+            id: knowledge-filter-${MATERIAL_ID}
+          direction: DOWN
+          timeout: 60000
+      - tapOn:
+          id: knowledge-filter-${MATERIAL_ID}
+      - scrollUntilVisible:
+          element:
+            id: knowledge-clear-filters
+          direction: UP
+          timeout: 60000
+      - tapOn:
+          id: knowledge-clear-filters
+      - scrollUntilVisible:
+          element:
+            id: knowledge-category-${CATEGORY_ID}
+          direction: UP
+          timeout: 60000
+      - tapOn:
+          id: knowledge-category-${CATEGORY_ID}
+      - tapOn: ${HIDE_FILTERS}
+      - tapOn:
+          id: knowledge-search
+          point: 80%,75%
+      - inputText: 斗彩
+      - hideKeyboard
+      - scrollUntilVisible:
+          element:
+            id: knowledge-result-${ENTRY_ID}
+          direction: DOWN
+          timeout: 60000
+      - assertVisible:
+          id: knowledge-result-${ENTRY_ID}
+      - scrollUntilVisible:
+          element:
+            id: knowledge-search
+          direction: UP
+          timeout: 60000
+      - tapOn:
+          id: knowledge-search
+          point: 80%,75%
+      - eraseText: 30
+      - inputText: Doucai
+      - hideKeyboard
+      - scrollUntilVisible:
+          element:
+            id: knowledge-result-${ENTRY_ID}
+          direction: DOWN
+          timeout: 60000
+      - scrollUntilVisible:
+          element: ${OPEN_ENTRY}
+          direction: DOWN
+          timeout: 60000
+      - tapOn: ${OPEN_ENTRY}
+      - extendedWaitUntil:
+          visible:
+            id: knowledge-detail
+          timeout: 60000
+      - scrollUntilVisible:
+          element:
+            id: knowledge-citation-${CLAIM_KEY}-${CITATION_ID}
+          direction: DOWN
+          timeout: 60000
+      - tapOn:
+          id: knowledge-citation-${CLAIM_KEY}-${CITATION_ID}
+      - extendedWaitUntil:
+          visible:
+            id: knowledge-citation-panel-${CITATION_ID}
+          timeout: 30000
+      - scrollUntilVisible:
+          element: ${CLOSE_LABEL}
+          direction: DOWN
+          timeout: 30000
+      - tapOn: ${CLOSE_LABEL}
+      - scrollUntilVisible:
+          element:
+            id: knowledge-language-original
+          direction: UP
+          timeout: 60000
+      - tapOn:
+          id: knowledge-language-original
+      - tapOn:
+          id: knowledge-language-translated
+      - scrollUntilVisible:
+          element:
+            id: knowledge-image-${IMAGE_ID}
+          direction: DOWN
+          timeout: 90000
+      - assertVisible:
+          id: knowledge-image-${IMAGE_ID}
+      - scrollUntilVisible:
+          element:
+            id: knowledge-image-source-${IMAGE_ID}
+          direction: DOWN
+          timeout: 60000
+      - assertVisible:
+          id: knowledge-image-source-${IMAGE_ID}
+      - back
+      - scrollUntilVisible:
+          element:
+            id: knowledge-search
+          direction: UP
+          timeout: 60000
+      - assertVisible:
+          id: knowledge-search
+      - assertVisible:
+          text: Doucai
+          above:
+            id: knowledge-category-${CATEGORY_ID}
+      - assertVisible:
+          id: knowledge-category-${CATEGORY_ID}
+          selected: true
+      - scrollUntilVisible:
+          element:
+            id: knowledge-result-${ENTRY_ID}
+          direction: DOWN
+          timeout: 60000
+      - assertVisible:
+          id: knowledge-result-${ENTRY_ID}

@@ -2,13 +2,26 @@ import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
-import { Linking } from 'react-native';
 
-import { knowledgeDetailSchema, knowledgePageSchema } from '@antica/contracts';
+import { ApiError } from '@antica/client';
 
 import KnowledgeRoute from '../../../app/(private)/(tabs)/knowledge';
 import KnowledgeDetailRoute from '../../../app/(private)/knowledge/[entryId]';
 import { renderMobile, savedLanguage } from '../../../mobile.spec.fixtures';
+
+import {
+  citation,
+  claim,
+  hit,
+  topic,
+} from '../components/knowledge.spec.fixtures';
+
+import {
+  knowledgeEntry,
+  searchPage,
+  topicTree,
+  topicsPage,
+} from './knowledge-journey.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({
@@ -20,409 +33,292 @@ jest.mock('expo-crypto', () => ({
     jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID,
 }));
 
-const entryId = '00000000-0000-4000-8000-000000000061';
-const sourceId = '00000000-0000-4000-8000-000000000062';
-const pageId = '00000000-0000-4000-8000-000000000063';
-const citationId = '00000000-0000-4000-8000-000000000064';
-const locator = {
-  kind: 'page' as const,
-  sourceId,
-  sourceVersionId: sourceId,
-  pageId,
-  pageIndex: 2,
-  printedPageLabel: 'iii',
-  canonicalViewId: pageId,
-  regionId: null,
-  region: null,
-  textRange: null,
-};
-const citation = {
-  id: citationId,
-  locator,
-  relation: 'supports' as const,
-  availability: 'stored' as const,
-  verification: 'located' as const,
-};
-const entry = knowledgeDetailSchema.parse({
-  entry: {
-    id: entryId,
-    revision: 3,
-    createdAt: '2026-10-13T00:00:00.000Z',
-    updatedAt: '2026-10-13T00:00:00.000Z',
-    displayCode: 'K-1',
-    status: 'draft',
-    content: {
-      titleZhHant: 'Glaze study',
-      aliases: [],
-      kinds: ['surface'],
-      otherKindLabel: null,
-      summary: {
-        textZhHant: 'Initial summary',
-        citationIds: [citationId],
-        support: 'cited',
-      },
-      history: [
-        {
-          textZhHant: 'Earlier observation',
-          citationIds: [],
-          support: 'needs_source',
-        },
-      ],
-      features: [],
-      applicability: [],
-      exampleReferenceImageIds: [],
-      relatedEntryIds: [],
-      citations: [citation],
-    },
-    methodIds: [],
-    savedBy: null,
-  },
-  methods: [],
-  methodVersions: [],
-  referenceImages: [],
-  citations: [citation],
-});
-
-it('should search and paginate knowledge entries and open the selected entry', async () => {
+it('should browse a category and search in both scripts with Saved selected by default', async () => {
   const view = await renderMobile(<KnowledgeRoute />, {
     get: async (path) =>
-      knowledgePageSchema.parse({
-        items: path.includes('cursor=next')
-          ? []
-          : [
-              {
-                id: entryId,
-                displayCode: 'K-1',
-                revision: 3,
-                titleZhHant: 'Glaze study',
-                kinds: ['surface'],
-                status: 'draft',
-                summaryZhHant: 'Initial summary',
-                citationCount: 1,
-              },
-            ],
-        nextCursor: path.includes('cursor=next') ? null : 'next',
-      }),
+      path.includes('/topics/')
+        ? topicTree
+        : path.includes('/topics?')
+          ? topicsPage
+          : searchPage,
   });
-  await waitFor(() => expect(screen.getByText('Glaze study')).toBeTruthy());
-  await fireEvent.press(screen.getByRole('button', { name: 'View' }));
-  expect(view.router.push).toHaveBeenCalledWith(`/knowledge/${entryId}`);
-  await fireEvent.press(screen.getByRole('button', { name: 'More' }));
+
   await waitFor(() =>
-    expect(
-      view.reads.mock.calls.some(([path]) => path.includes('cursor=next')),
-    ).toBe(true),
+    expect(screen.getByTestId(`knowledge-category-${topic.id}`)).toBeTruthy(),
   );
-  await fireEvent.changeText(screen.getByLabelText('Search'), 'blue glaze');
+  expect(screen.getByTestId('knowledge-status-saved')).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.getByTestId(`knowledge-result-${hit.id}`)).toBeTruthy(),
+  );
+  expect(
+    view.reads.mock.calls.some(
+      ([path]) =>
+        path.includes('/knowledge/search?') && path.includes('view=saved'),
+    ),
+  ).toBe(true);
+
+  await fireEvent.press(screen.getByTestId(`knowledge-category-${topic.id}`));
+  await waitFor(() => expect(screen.getByText('Glazes')).toBeTruthy());
+  await fireEvent.changeText(screen.getByLabelText('Search'), '黃花梨');
   await waitFor(() =>
     expect(
-      view.reads.mock.calls.some(
-        ([path]) => path.includes('q=blue+glaze') && !path.includes('cursor='),
+      view.reads.mock.calls.some(([path]) =>
+        path.includes('q=%E9%BB%83%E8%8A%B1%E6%A2%A8'),
       ),
     ).toBe(true),
   );
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Import book or page' }),
+  await fireEvent.changeText(screen.getByLabelText('Search'), 'huanghuali');
+  await waitFor(() =>
+    expect(
+      view.reads.mock.calls.some(([path]) => path.includes('q=huanghuali')),
+    ).toBe(true),
   );
-  expect(view.router.push).toHaveBeenCalledWith('/sources/new');
+
+  await fireEvent.press(screen.getByRole('button', { name: 'View' }));
+  expect(view.router.push).toHaveBeenCalledWith(
+    `/knowledge/${hit.id}?view=saved`,
+  );
 });
 
-it('should retry a failed knowledge list request', async () => {
+it('should switch explicitly to working drafts and retry a failed first page', async () => {
   const view = await renderMobile(<KnowledgeRoute />, {
-    get: async () => {
+    get: async (path) => {
+      if (path.includes('/topics?')) {
+        return topicsPage;
+      }
       throw new Error('Offline');
     },
   });
+
   await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent(/\S/),
+    expect(screen.getByTestId('knowledge-error')).toBeTruthy(),
   );
   expect(screen.queryByText('Offline')).toBeNull();
-  view.reads.mockResolvedValueOnce({ items: [], nextCursor: null });
-  await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
+  view.reads.mockImplementation(async (path) =>
+    path.includes('/topics?') ? topicsPage : searchPage,
+  );
+  await fireEvent.press(screen.getByTestId('knowledge-retry'));
   await waitFor(() =>
-    expect(screen.getByText('Nothing here yet.')).toBeTruthy(),
+    expect(screen.getByTestId(`knowledge-result-${hit.id}`)).toBeTruthy(),
+  );
+  await fireEvent.press(screen.getByTestId('knowledge-status-draft'));
+  await waitFor(() =>
+    expect(
+      view.reads.mock.calls.some(
+        ([path]) =>
+          path.includes('/knowledge/search?') && path.includes('view=working'),
+      ),
+    ).toBe(true),
   );
 });
 
-it.each([
-  { locale: 'en' as const, metadata: 'K-1 · Draft · Object type, Other' },
-  { locale: 'zh-Hant' as const, metadata: 'K-1 · 草稿 · 器類, 其他' },
-])(
-  'should localize knowledge categories without changing authored content in $locale',
-  async ({ locale, metadata }) => {
-    await renderMobile(
-      <KnowledgeRoute />,
-      {
-        get: async () =>
-          knowledgePageSchema.parse({
-            items: [
-              {
-                id: entryId,
-                displayCode: 'K-1',
-                revision: 3,
-                titleZhHant: 'Collector-authored glaze study',
-                kinds: ['object_type', 'other'],
-                status: 'draft',
-                summaryZhHant: 'Original field notes',
-                citationCount: 1,
-              },
-            ],
-            nextCursor: null,
-          }),
-      },
-      savedLanguage(locale),
-    );
+it('should load cursor pages for search and topic browse without replacing visible results', async () => {
+  const view = await renderMobile(<KnowledgeRoute />, {
+    get: async (path) => {
+      if (path.includes('/topics/') && path.includes('cursor=children')) {
+        return { ...topicTree, descendants: [], nextCursor: null };
+      }
+      if (path.includes('/topics/')) {
+        return { ...topicTree, nextCursor: 'children' };
+      }
+      if (path.includes('/topics?') && path.includes('cursor=roots')) {
+        return { ...topicsPage, items: [], nextCursor: null };
+      }
+      if (path.includes('/topics?')) {
+        return { ...topicsPage, nextCursor: 'roots' };
+      }
 
-    await waitFor(() => expect(screen.getByText(metadata)).toBeTruthy());
-    expect(screen.getByText('Collector-authored glaze study')).toBeTruthy();
-    expect(screen.getByText('Original field notes')).toBeTruthy();
-    expect(screen.queryByText(/object_type/)).toBeNull();
-  },
-);
-
-it.each([
-  {
-    locale: 'en' as const,
-    scope: 'No scope information has been recorded for this entry.',
-    methods: 'No inspection methods have been recorded for this entry.',
-    name: 'Name',
-  },
-  {
-    locale: 'zh-Hant' as const,
-    scope: '這則知識尚未記錄適用範圍。',
-    methods: '這則知識尚未記錄檢查方法。',
-    name: '名稱',
-  },
-])(
-  'should explain empty saved knowledge sections without implying loading in $locale',
-  async ({ locale, scope, methods, name }) => {
-    jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
-    await renderMobile(
-      <KnowledgeDetailRoute />,
-      {
-        get: async () => ({
-          ...entry,
-          entry: { ...entry.entry, status: 'saved' },
-        }),
-      },
-      savedLanguage(locale),
-    );
-
-    await waitFor(() => expect(screen.getByText(scope)).toBeTruthy());
-    expect(screen.getByText(methods)).toBeTruthy();
-    expect(screen.getByLabelText(name)).toHaveDisplayValue('Glaze study');
-    expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.queryByRole('alert')).toBeNull();
-  },
-);
-
-it('should save edited knowledge against its current revision and navigate to a cited page', async () => {
-  jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
-  const view = await renderMobile(<KnowledgeDetailRoute />, {
-    get: async () => entry,
+      return path.includes('cursor=entries')
+        ? { ...searchPage, hits: [], nextCursor: null }
+        : { ...searchPage, nextCursor: 'entries' };
+    },
   });
+
   await waitFor(() =>
-    expect(screen.getByLabelText('Name')).toHaveDisplayValue('Glaze study'),
+    expect(screen.getByTestId('knowledge-more')).toBeTruthy(),
   );
-  await fireEvent.changeText(screen.getByLabelText('Name'), 'Revised glaze');
+  await fireEvent.press(screen.getByTestId('knowledge-more'));
+  await waitFor(() =>
+    expect(
+      view.reads.mock.calls.some(
+        ([path]) =>
+          path.includes('/knowledge/search?') &&
+          path.includes('cursor=entries'),
+      ),
+    ).toBe(true),
+  );
+  expect(screen.getByTestId(`knowledge-result-${hit.id}`)).toBeTruthy();
+  await fireEvent.press(screen.getByTestId(`knowledge-category-${topic.id}`));
+  await waitFor(() =>
+    expect(
+      view.reads.mock.calls.some(
+        ([path]) =>
+          path.includes('/topics/') && path.includes('cursor=children'),
+      ),
+    ).toBe(false),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole('button', { name: 'More' }).length,
+    ).toBeGreaterThan(0),
+  );
+  await fireEvent.press(screen.getAllByRole('button', { name: 'More' })[0]);
+  await waitFor(() =>
+    expect(
+      view.reads.mock.calls.some(
+        ([path]) =>
+          path.includes('/topics/') && path.includes('cursor=children'),
+      ),
+    ).toBe(true),
+  );
+});
+
+it('should expose every facet and keep earlier results after next-page failure', async () => {
+  const view = await renderMobile(<KnowledgeRoute />, {
+    get: async (path) => {
+      if (path.includes('/topics?')) {
+        return topicsPage;
+      }
+      if (path.includes('cursor=entries')) {
+        throw new Error('Next page unavailable');
+      }
+
+      return { ...searchPage, nextCursor: 'entries' };
+    },
+  });
+
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-more')).toBeTruthy(),
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Show filters' }));
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-filters')).toBeTruthy(),
+  );
+  expect(screen.getByTestId('knowledge-facet-provenance')).toBeTruthy();
+  expect(screen.getByTestId('knowledge-facet-provider')).toBeTruthy();
+  await fireEvent.press(
+    screen.getByRole('button', { name: 'Cleveland Museum of Art (1)' }),
+  );
+  await waitFor(() =>
+    expect(
+      view.reads.mock.calls.some(
+        ([path]) =>
+          path.includes('/knowledge/search?') &&
+          path.includes('providers=Cleveland+Museum+of+Art'),
+      ),
+    ).toBe(true),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-more')).toBeTruthy(),
+  );
+  await fireEvent.press(screen.getByTestId('knowledge-more'));
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-pagination-error')).toBeTruthy(),
+  );
+  expect(screen.getByTestId(`knowledge-result-${hit.id}`)).toBeTruthy();
+});
+
+it('should read translated claims and captured citations without saving on open', async () => {
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ entryId: hit.id, view: 'saved' });
+  const view = await renderMobile(
+    <KnowledgeDetailRoute />,
+    { get: async () => knowledgeEntry },
+    savedLanguage('en'),
+  );
+
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-detail')).toBeTruthy(),
+  );
+  expect(screen.getByText('The huanghuali surface is dark.')).toBeTruthy();
+  expect(view.patches).not.toHaveBeenCalled();
+  await fireEvent.press(
+    screen.getByTestId(`knowledge-citation-${claim.claimKey}-${citation.id}`),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByTestId(`knowledge-citation-panel-${citation.id}`),
+    ).toBeTruthy(),
+  );
+  expect(screen.getByText(citation.quote)).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+  await fireEvent.press(screen.getByTestId('knowledge-language-original'));
+  expect(screen.getByText(claim.originalText)).toBeTruthy();
+  expect(view.patches).not.toHaveBeenCalled();
+});
+
+it('should keep typed edits through a revision conflict and save only on explicit review action', async () => {
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ entryId: hit.id, view: 'saved' });
+  const view = await renderMobile(<KnowledgeDetailRoute />, {
+    get: async () => knowledgeEntry,
+  });
+
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-edit')).toBeTruthy(),
+  );
+  await fireEvent.press(screen.getByTestId('knowledge-edit'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Original title'),
+    'Revised chair',
+  );
   await fireEvent.changeText(
     screen.getByLabelText('Summary'),
-    'Collector summary',
+    'Revised summary',
   );
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'View source 00000000' }),
-  );
-  expect(view.router.push).toHaveBeenCalledWith(
-    `/sources/${sourceId}?versionId=${sourceId}&pageId=${pageId}`,
-  );
-  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(view.patches).toHaveBeenCalledTimes(1));
-  expect(view.patches.mock.calls[0]?.[2].body).toEqual(
-    expect.objectContaining({
-      expectedRevision: 3,
-      status: 'saved',
-      content: expect.objectContaining({
-        titleZhHant: 'Revised glaze',
-        summary: {
-          textZhHant: 'Collector summary',
-          citationIds: [citationId],
-          support: 'cited',
-        },
-      }),
+  view.patches.mockRejectedValueOnce(
+    new ApiError({
+      status: 409,
+      code: 'REVISION_CONFLICT',
+      message: 'Revision changed',
     }),
   );
-});
-
-it('should preserve edits after a rejected knowledge save and report a failed external link', async () => {
-  jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
-  const webEntry = {
-    ...entry,
-    referenceImages: [
-      {
-        id: pageId,
-        originalCaption: null,
-        locator: {
-          kind: 'web' as const,
-          sourceId,
-          sourceVersionId: sourceId,
-          url: 'https://example.com/plate',
-        },
-      },
-    ],
-    citations: [
-      {
-        ...citation,
-        locator: {
-          kind: 'web' as const,
-          sourceId,
-          sourceVersionId: sourceId,
-          url: 'https://example.com/source',
-          retrievedAt: '2026-10-13T00:00:00.000Z',
-          snapshotAssetId: null,
-          blockId: null,
-          excerptAsRetrieved: null,
-        },
-      },
-    ],
-  };
-  const view = await renderMobile(<KnowledgeDetailRoute />, {
-    get: async () => webEntry,
-  });
-  await waitFor(() => expect(screen.getByLabelText('Name')).toBeTruthy());
-  const open = jest
-    .spyOn(Linking, 'openURL')
-    .mockResolvedValueOnce(undefined)
-    .mockRejectedValueOnce(new Error('Plate unavailable'))
-    .mockRejectedValueOnce(new Error('Link unavailable'));
-  await fireEvent.press(screen.getByRole('button', { name: 'View source' }));
-  expect(open).toHaveBeenCalledWith('https://example.com/plate');
-  await fireEvent.press(screen.getByRole('button', { name: 'View source' }));
+  await fireEvent.press(screen.getByTestId('knowledge-save'));
   await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Plate unavailable'),
+    expect(screen.getByTestId('knowledge-save-conflict')).toBeTruthy(),
   );
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'View source 00000000' }),
+  expect(screen.getByLabelText('Original title')).toHaveDisplayValue(
+    'Revised chair',
   );
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Link unavailable'),
+  expect(screen.getByLabelText('Summary')).toHaveDisplayValue(
+    'Revised summary',
   );
-  expect(open).toHaveBeenCalledWith('https://example.com/source');
-  await fireEvent.changeText(screen.getByLabelText('Name'), 'Unsaved title');
-  view.patches.mockRejectedValueOnce(new Error('Revision changed'));
-  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Revision changed'),
-  );
-  expect(screen.getByLabelText('Name')).toHaveDisplayValue('Unsaved title');
-});
-
-it('should retry a failed detail load and display supported history, scope, methods and examples', async () => {
-  jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
-  const view = await renderMobile(<KnowledgeDetailRoute />, {
-    get: async () => {
-      throw new Error('Detail unavailable');
-    },
-  });
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent(/\S/),
-  );
-  expect(screen.queryByText('Detail unavailable')).toBeNull();
-  view.reads.mockResolvedValueOnce({
-    ...entry,
-    entry: {
-      ...entry.entry,
-      content: {
-        ...entry.entry.content,
-        summary: {
-          textZhHant: 'Needs attribution',
-          citationIds: [],
-          support: 'needs_source',
-        },
-        applicability: [
-          {
-            scope: 'specific',
-            objectTypeIds: [],
-            materialIds: [],
-            periodIds: [],
-            regionIds: [],
-            limits: {
-              textZhHant: 'Glazed wares',
-              citationIds: [],
-              support: 'needs_source',
-            },
-          },
-        ],
-      },
-    },
-    methodVersions: [
-      {
-        id: pageId,
-        definition: {
-          titleZhHant: 'Inspect glaze',
-          steps: [{ actionZhHant: 'Check surface' }],
-        },
-      },
-    ],
-    referenceImages: [
-      { id: pageId, originalCaption: { textAsPrinted: 'Plate 3' }, locator },
-    ],
-  });
-  await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
-  await waitFor(() => expect(screen.getByLabelText('Name')).toBeTruthy());
-  expect(screen.getAllByText('Source needs review').length).toBeGreaterThan(0);
-  expect(
-    screen.getByText('Earlier observation (Source needs review)'),
-  ).toBeTruthy();
-  expect(screen.getByText('specific: Glazed wares')).toBeTruthy();
-  expect(screen.getByText('Inspect glaze: Check surface')).toBeTruthy();
-  expect(
-    screen.queryByText(
-      'No scope information has been recorded for this entry.',
-    ),
-  ).toBeNull();
-  expect(
-    screen.queryByText(
-      'No inspection methods have been recorded for this entry.',
-    ),
-  ).toBeNull();
-  await fireEvent.press(screen.getByRole('button', { name: 'Plate 3' }));
-  expect(view.router.push).toHaveBeenCalledWith(
-    `/sources/${sourceId}?versionId=${sourceId}&pageId=${pageId}`,
-  );
-});
-
-it('should preserve unedited cited content when saving a knowledge draft', async () => {
-  jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
-  const citedHistory = {
-    ...entry,
-    entry: {
-      ...entry.entry,
-      content: {
-        ...entry.entry.content,
-        history: [
-          {
-            textZhHant: 'Documented sequence',
-            citationIds: [citationId],
-            support: 'cited',
-          },
-        ],
-      },
-    },
-  };
-  const view = await renderMobile(<KnowledgeDetailRoute />, {
-    get: async () => citedHistory,
-  });
-  await waitFor(() =>
-    expect(screen.getByText('Documented sequence')).toBeTruthy(),
-  );
-  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(view.patches).toHaveBeenCalledTimes(1));
   expect(view.patches.mock.calls[0]?.[2].body).toEqual(
-    expect.objectContaining({
-      content: expect.objectContaining({
-        titleZhHant: 'Glaze study',
-        summary: entry.entry.content.summary,
-      }),
-    }),
+    expect.objectContaining({ expectedRevision: 3, status: 'saved' }),
   );
+});
+
+it('should retry an ordinary save error with the same request identity and show success', async () => {
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ entryId: hit.id, view: 'working' });
+  const view = await renderMobile(<KnowledgeDetailRoute />, {
+    get: async () => knowledgeEntry,
+  });
+
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-save')).toBeTruthy(),
+  );
+  view.patches.mockRejectedValueOnce(new Error('Temporary failure'));
+  await fireEvent.press(screen.getByTestId('knowledge-save'));
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-save-error')).toBeTruthy(),
+  );
+  await fireEvent.press(screen.getByTestId('knowledge-save'));
+  await waitFor(() =>
+    expect(screen.getByTestId('knowledge-save-success')).toBeTruthy(),
+  );
+  expect(
+    view.patches.mock.calls.map(([, , options]) => options.idempotencyKey),
+  ).toEqual([
+    view.patches.mock.calls[0]?.[2].idempotencyKey,
+    view.patches.mock.calls[0]?.[2].idempotencyKey,
+  ]);
+  expect(
+    view.reads.mock.calls.some(([path]) =>
+      path.includes(`/${hit.id}?view=working`),
+    ),
+  ).toBe(true);
 });
