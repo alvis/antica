@@ -1,11 +1,11 @@
-import { encodeOwnerWire, ownerWireSchema } from './cli-coverage/wire.mjs';
+import { encodeOwnerWire, ownerWireSchema } from '#cli-coverage/wire';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import { version } from 'vitest/node';
 import { z } from 'zod';
 
-import type { CliCoverageOwnerWire } from './cli-coverage/wire.mjs';
+import type { CliCoverageOwnerWire } from '#cli-coverage/wire';
 import type { ResolvedConfig } from 'vite';
 import type { TestProject } from 'vitest/node';
 
