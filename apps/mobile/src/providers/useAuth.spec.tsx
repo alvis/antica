@@ -100,22 +100,26 @@ describe('hk:useAuth', () => {
       .mocked(authClient.getSession)
       .mockRejectedValueOnce(new Error('Offline'));
     const { wrapper, cache } = appRoot();
-    const view = await renderHook(useAuth, { wrapper });
-    await waitFor(() =>
-      expect({
-        authenticated: view.result.current.authenticated,
-        loading: view.result.current.loading,
-        phone: view.result.current.phone,
-      }).toEqual({
-        authenticated: false,
-        loading: false,
-        phone: null,
-      }),
-    );
-    await act(async () => view.result.current.refresh());
-    expect(view.result.current.authenticated).toBe(false);
-    // nobody was signed in, so nothing ended
-    expect(cache.getQueryData(['records'])).toEqual({ items: ['private'] });
+    try {
+      const view = await renderHook(useAuth, { wrapper });
+      await waitFor(() =>
+        expect({
+          authenticated: view.result.current.authenticated,
+          loading: view.result.current.loading,
+          phone: view.result.current.phone,
+        }).toEqual({
+          authenticated: false,
+          loading: false,
+          phone: null,
+        }),
+      );
+      await act(async () => view.result.current.refresh());
+      expect(view.result.current.authenticated).toBe(false);
+      // nobody was signed in, so nothing ended
+      expect(cache.getQueryData(['records'])).toEqual({ items: ['private'] });
+    } finally {
+      cache.clear();
+    }
   });
 });
 

@@ -28,11 +28,6 @@ appId: ${APP_ID}
       true: ${APP_LOCALE == 'zh-Hant'}
     commands:
       - assertVisible: 使用 WhatsApp 登入
-- runFlow:
-    when:
-      true: ${APP_LOCALE == 'zh-Hans'}
-    commands:
-      - assertVisible: 使用 WhatsApp 登录
 - tapOn:
     id: login-start
 - tapOn:

@@ -34,19 +34,20 @@ export const CheckContainer: FC<CheckContainerProps> = ({ checkId }) => {
       api.get(`/v1/checks/${checkId}`, checkDetailSchema, signal),
   });
 
+  const data = detail.data;
+
+  // the result buttons render only with loaded data and are disabled while busy
   const recordResult = async (
+    loaded: NonNullable<typeof data>,
     result: 'present' | 'absent' | 'undetermined',
   ): Promise<void> => {
-    if (!detail.data || busy) {
-      return;
-    }
     setBusy(true);
     setError('');
     try {
       const request = checkPatchSchema.parse({
         requestKey: randomUUID(),
-        expectedRevision: detail.data.check.revision,
-        expectedRecordRevision: detail.data.versions.recordRevision,
+        expectedRevision: loaded.check.revision,
+        expectedRecordRevision: loaded.versions.recordRevision,
         progress: 'recorded',
         result:
           result === 'undetermined'
@@ -60,7 +61,7 @@ export const CheckContainer: FC<CheckContainerProps> = ({ checkId }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['check', checkId] }),
         queryClient.invalidateQueries({
-          queryKey: ['record', detail.data.check.recordId],
+          queryKey: ['record', loaded.check.recordId],
         }),
       ]);
     } catch (cause) {
@@ -71,43 +72,41 @@ export const CheckContainer: FC<CheckContainerProps> = ({ checkId }) => {
   };
 
   return (
-    <Screen
-      title={t('checks')}
-      subtitle={detail.data?.method.definition.titleZhHant}>
+    <Screen title={t('checks')} subtitle={data?.method.definition.titleZhHant}>
       <QueryState
         loading={detail.isPending}
         error={detail.error}
         retry={() => void detail.refetch()}>
-        {detail.data && (
+        {data && (
           <>
             <View style={styles.card}>
               <Text style={styles.heading}>
-                {detail.data.method.definition.titleZhHant}
+                {data.method.definition.titleZhHant}
               </Text>
               <Text style={styles.body}>
-                {detail.data.check.result.kind === 'unrecorded'
+                {data.check.result.kind === 'unrecorded'
                   ? t('notChecked')
-                  : detail.data.check.result.kind === 'undetermined'
+                  : data.check.result.kind === 'undetermined'
                     ? t('unable')
                     : t(
-                        detail.data.check.result.kind === 'not_applicable'
+                        data.check.result.kind === 'not_applicable'
                           ? 'notApplicable'
-                          : detail.data.check.result.kind,
+                          : data.check.result.kind,
                       )}
               </Text>
-              {detail.data.method.definition.steps.map((step) => (
+              {data.method.definition.steps.map((step) => (
                 <Text key={step.order} style={styles.body}>
                   {step.order}. {step.actionZhHant} —{' '}
                   {step.evidenceToCaptureZhHant}
                 </Text>
               ))}
-              {detail.data.methodUpdateAvailable && (
+              {data.methodUpdateAvailable && (
                 <Text style={styles.secondary}>{t('methodUpdated')}</Text>
               )}
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('collectorObservations')}</Text>
-              {detail.data.observations.map((item) => (
+              {data.observations.map((item) => (
                 <Text key={item.id} style={styles.body}>
                   {item.text}
                 </Text>
@@ -120,18 +119,18 @@ export const CheckContainer: FC<CheckContainerProps> = ({ checkId }) => {
               />
               <ActionButton
                 label={t('present')}
-                onPress={() => void recordResult('present')}
+                onPress={() => void recordResult(data, 'present')}
                 disabled={busy}
               />
               <ActionButton
                 label={t('absent')}
-                onPress={() => void recordResult('absent')}
+                onPress={() => void recordResult(data, 'absent')}
                 disabled={busy}
                 secondary
               />
               <ActionButton
                 label={t('unable')}
-                onPress={() => void recordResult('undetermined')}
+                onPress={() => void recordResult(data, 'undetermined')}
                 disabled={busy || !reason.trim()}
                 secondary
               />
@@ -139,7 +138,7 @@ export const CheckContainer: FC<CheckContainerProps> = ({ checkId }) => {
                 label={t('addEvidence')}
                 onPress={() =>
                   router.push(
-                    `/capture?recordId=${detail.data.check.recordId}&checkId=${checkId}`,
+                    `/capture?recordId=${data.check.recordId}&checkId=${checkId}`,
                   )
                 }
                 secondary

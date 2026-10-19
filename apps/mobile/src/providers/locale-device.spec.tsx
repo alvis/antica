@@ -108,7 +108,7 @@ describe('cp:LocaleProvider device storage and languages', () => {
   it('should keep loading when the app returns with a new device language before the read ends', async () => {
     const returnToApp = foreground();
     const read = Promise.withResolvers<LocalPreferences | null>();
-    const systemLocales = device(['zh-TW']);
+    const systemLocales = device(['en-US']);
     const view = await renderLanguage(
       { read: async () => read.promise, write: async () => undefined },
       systemLocales,
@@ -119,11 +119,11 @@ describe('cp:LocaleProvider device storage and languages', () => {
 
     expect(view.result.current.status).toBe('loading');
     expect(view.result.current.preview('system').resolved.locale).toBe(
-      'zh-Hans',
+      'zh-Hant',
     );
     await act(async () => read.resolve(saved('system')));
     expect(view.result.current.status).toBe('ready');
-    expect(view.result.current.locale).toBe('zh-Hans');
+    expect(view.result.current.locale).toBe('zh-Hant');
   });
 
   it('should keep a save that finishes after the app returns with a new device language', async () => {
@@ -166,12 +166,12 @@ describe('cp:LocaleProvider device storage and languages', () => {
   it('should keep an explicit choice when the device language changes', async () => {
     const returnToApp = foreground();
     const systemLocales = device(['en-US']);
-    const view = await renderLanguage(storage(saved('zh-Hans')), systemLocales);
+    const view = await renderLanguage(storage(saved('zh-Hant')), systemLocales);
 
     systemLocales.readLanguageTags.mockReturnValue(['en-GB']);
     await returnToApp();
 
-    expect(view.result.current.locale).toBe('zh-Hans');
+    expect(view.result.current.locale).toBe('zh-Hant');
     expect(view.result.current.preview('system').resolved.locale).toBe('en');
   });
 

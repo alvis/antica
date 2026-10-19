@@ -228,7 +228,7 @@ export const CollectionContainer: FC = () => {
                   ))}
                   {[...categoryIds, ...materialIds, ...periodIds].map((id) => (
                     <Text key={id} style={styles.secondary}>
-                      {selectedLabels[id] ?? id}
+                      {selectedLabels[id]}
                     </Text>
                   ))}
                   <Text style={styles.label}>{t('location')}</Text>

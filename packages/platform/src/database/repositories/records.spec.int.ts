@@ -22,6 +22,75 @@ const now = '2026-10-13T00:00:00.000Z';
 const identity = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const;
 
 describe('fn:createRecordRepository', { timeout: 30_000 }, () => {
+  it('should reject a suppressed location insert instead of returning an absent conflict', async () => {
+    const database = await createIsolatedDatabase();
+    try {
+      await database.db
+        .$executeRaw`create function suppress_location_insert() returns trigger language plpgsql as $$ begin return null; end $$`;
+      await database.db
+        .$executeRaw`create trigger suppress_location_insert before insert on locations for each row execute function suppress_location_insert()`;
+
+      await expect(
+        database.db.$transaction(async (tx) =>
+          createLocationRepository(tx, database.ownerId).create({
+            id: randomUUID(),
+            label: 'Shelf',
+          }),
+        ),
+      ).rejects.toThrow('Conflicting location could not be resolved');
+      expect(await database.db.locations.count()).toBe(0);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it('should patch an owned location and treat a missing latest run as unanalyzed', async () => {
+    const database = await createIsolatedDatabase();
+    try {
+      await database.db.$transaction(async (tx) => {
+        const repository = createRecordRepository(tx, database.ownerId);
+        const id = randomUUID();
+        const location = { id: randomUUID(), label: 'New shelf' };
+        await createLocationRepository(tx, database.ownerId).create(location);
+        await repository.create(
+          recordDetail(id, await repository.allocateCode()),
+        );
+
+        expect(
+          await repository.patch(
+            id,
+            {
+              expectedRevision: 1,
+              fields: {
+                location: { locationId: location.id, detail: 'Upper' },
+              },
+            },
+            { recordRevision: 2, analysisInputVersion: 1, evidenceVersion: 1 },
+          ),
+        ).toMatchObject({
+          location: { locationId: location.id, detail: 'Upper' },
+        });
+        await tx.records.update({
+          where: { id },
+          data: { latestRunId: randomUUID() },
+        });
+
+        expect(await repository.get(id)).toMatchObject({
+          analysisFreshness: 'unanalyzed',
+        });
+        expect((await repository.query({})).items).toEqual([
+          expect.objectContaining({
+            id,
+            locationLabel: location.label,
+            analysisFreshness: 'unanalyzed',
+          }),
+        ]);
+      });
+    } finally {
+      await database.close();
+    }
+  });
+
   it('should propagate a database cancellation and roll back a component removal', async () => {
     const database = await createIsolatedDatabase();
     const id = randomUUID();

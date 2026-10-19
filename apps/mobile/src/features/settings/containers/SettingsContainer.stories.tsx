@@ -43,19 +43,6 @@ export const TraditionalChinese = {
   },
 } satisfies Story;
 
-/** a saved Simplified Chinese choice */
-export const SimplifiedChinese = {
-  render: () => (
-    <MobileStoryShell locale="zh-Hans" responses={{}}>
-      <SettingsContainer />
-    </MobileStoryShell>
-  ),
-  play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, '语言 · 简体中文');
-    await findStoryButton(canvasElement, '退出登录');
-  },
-} satisfies Story;
-
 /** a saved English choice; the Language row opens the selector */
 export const English = {
   render: () => (

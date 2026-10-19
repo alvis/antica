@@ -34,18 +34,6 @@ export const TraditionalChinese = {
   },
 } satisfies Story;
 
-/** the gear labelled in Simplified Chinese */
-export const SimplifiedChinese = {
-  render: () => (
-    <LocaleProvider preferences={savedPreferences('zh-Hans')}>
-      <SettingsAction />
-    </LocaleProvider>
-  ),
-  play: async ({ canvasElement }) => {
-    await findStoryButton(canvasElement, '设置');
-  },
-} satisfies Story;
-
 /** the gear labelled in English */
 export const English = {
   render: () => (

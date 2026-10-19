@@ -1,11 +1,9 @@
 import { en } from './locales/en';
-import { zhHans } from './locales/zh-Hans';
 import { zhHant } from './locales/zh-Hant';
 
 /** bundled i18next resources, one translation namespace per supported locale */
 export const resources = {
   'zh-Hant': { translation: zhHant },
-  'zh-Hans': { translation: zhHans },
   'en': { translation: en },
 } as const;
 

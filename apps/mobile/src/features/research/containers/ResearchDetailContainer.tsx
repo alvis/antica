@@ -48,26 +48,29 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
         : false,
   });
 
-  const save = async (): Promise<void> => {
-    const data = detail.data;
-    if (!data?.draft || busy) {
-      return;
-    }
+  const data = detail.data;
+  const draft = data?.draft;
+
+  // the save button renders only with a loaded draft and is disabled while busy
+  const save = async (
+    request: NonNullable<typeof data>['request'],
+    draft: NonNullable<NonNullable<typeof data>['draft']>,
+  ): Promise<void> => {
     setBusy(true);
     setError('');
     try {
       const input = noteInputSchema.parse({
         requestKey: randomUUID(),
         researchId,
-        expectedDraftRevision: data.draft.revision,
-        titleZhHant: title ?? data.draft.titleZhHant,
-        paragraphs: data.draft.paragraphs.map((item, index) => ({
+        expectedDraftRevision: draft.revision,
+        titleZhHant: title ?? draft.titleZhHant,
+        paragraphs: draft.paragraphs.map((item, index) => ({
           ...item,
           textZhHant: paragraphs[index] ?? item.textZhHant,
         })),
-        citations: data.draft.citations,
-        recordId: data.request.recordId,
-        entryId: data.request.entryId,
+        citations: draft.citations,
+        recordId: request.recordId,
+        entryId: request.entryId,
       });
       await api.post('/v1/notes', noteSchema, {
         body: input,
@@ -88,27 +91,23 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
   return (
     <Screen
       title={t('research')}
-      subtitle={
-        detail.data ? localizeStatus(detail.data.state.kind, t) : undefined
-      }>
+      subtitle={data ? localizeStatus(data.state.kind, t) : undefined}>
       <QueryState
         loading={detail.isPending}
         error={detail.error}
         retry={() => void detail.refetch()}>
-        {detail.data && (
+        {data && (
           <>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('question')}</Text>
-              <Text style={styles.body}>
-                {detail.data.request.instructionZhHant}
-              </Text>
+              <Text style={styles.body}>{data.request.instructionZhHant}</Text>
               <Text style={styles.secondary}>
-                {localizeStatus(detail.data.state.kind, t)} ·{' '}
-                {detail.data.request.scope === 'curated_only'
+                {localizeStatus(data.state.kind, t)} ·{' '}
+                {data.request.scope === 'curated_only'
                   ? t('curatedOnly')
                   : t('curatedWeb')}
               </Text>
-              {detail.data.warningsZhHant.map((warning, index) => (
+              {data.warningsZhHant.map((warning, index) => (
                 <Text key={index} style={styles.error}>
                   {warning}
                 </Text>
@@ -116,7 +115,7 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
             </View>
             <View style={styles.card}>
               <Text style={styles.heading}>{t('sources')}</Text>
-              {detail.data.sourceIds.map((id) => (
+              {data.sourceIds.map((id) => (
                 <ActionButton
                   key={id}
                   label={t('viewSourceWithId', { id: id.slice(0, 8) })}
@@ -124,19 +123,19 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
                   secondary
                 />
               ))}
-              {detail.data.sourceIds.length === 0 && (
+              {data.sourceIds.length === 0 && (
                 <Text style={styles.secondary}>{t('empty')}</Text>
               )}
             </View>
-            {detail.data.draft && (
+            {draft && (
               <View style={styles.card}>
                 <Text style={styles.heading}>{t('saveNote')}</Text>
                 <TextField
                   label={t('name')}
-                  value={title ?? detail.data.draft.titleZhHant}
+                  value={title ?? draft.titleZhHant}
                   onChangeText={setTitle}
                 />
-                {detail.data.draft.paragraphs.map((item, index) => (
+                {draft.paragraphs.map((item, index) => (
                   <View key={index}>
                     <TextField
                       label={t('descriptionNumber', { number: index + 1 })}
@@ -158,7 +157,7 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
                     </Text>
                   </View>
                 ))}
-                {detail.data.draft.citations.map((citation) => (
+                {draft.citations.map((citation) => (
                   <ActionButton
                     key={citation.id}
                     label={t('viewSourceWithId', {
@@ -176,12 +175,12 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
                 ))}
                 <ActionButton
                   label={t('saveNote')}
-                  onPress={() => void save()}
+                  onPress={() => void save(data.request, draft)}
                   disabled={busy}
                 />
               </View>
             )}
-            {detail.data.notes.map((note) => (
+            {data.notes.map((note) => (
               <View key={note.id} style={styles.card}>
                 <Text style={styles.heading}>{note.titleZhHant}</Text>
                 {note.paragraphs.map((paragraph, index) => (

@@ -85,7 +85,7 @@ async function renderLanguage(
 }
 
 describe('rc:LanguageSettingsRoute', () => {
-  it('should list the four choices in their own scripts with the saved one selected', async () => {
+  it('should list the three choices in their own scripts with the saved one selected', async () => {
     navigation(true);
     await renderLanguage(storage(null), ['en-GB']);
 
@@ -107,7 +107,6 @@ describe('rc:LanguageSettingsRoute', () => {
       }),
     ).toEqual([
       ['繁體中文, 預設', true],
-      ['简体中文', false],
       ['English', false],
       ['跟隨系統, English', false],
     ]);
@@ -163,7 +162,7 @@ describe('rc:LanguageSettingsRoute', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     expect(screen.getByTestId('language-cancel')).toHaveTextContent('Done');
 
-    await fireEvent.press(screen.getByRole('radio', { name: '简体中文' }));
+    await fireEvent.press(screen.getByRole('radio', { name: /繁體中文/ }));
     expect(screen.queryByText('Interface language updated')).toBeNull();
     expect(screen.getByTestId('language-cancel')).toHaveTextContent('Cancel');
   });
@@ -229,7 +228,7 @@ describe('rc:LanguageSettingsRoute', () => {
     await fireEvent.press(save);
 
     expect(screen.getByRole('button', { name: '儲存' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: '简体中文' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /繁體中文/ })).toBeDisabled();
     await act(async () => write.resolve());
     expect(preferences.write).toHaveBeenCalledTimes(1);
     expect(
@@ -259,14 +258,17 @@ describe('rc:LanguageSettingsRoute', () => {
 
   it('should keep a choice picked before an unreadable preference is read again', async () => {
     navigation(true);
-    const preferences = storage({ schemaVersion: 1, interfaceLanguage: 'en' });
+    const preferences = storage({
+      schemaVersion: 1,
+      interfaceLanguage: 'zh-Hant',
+    });
     preferences.read.mockRejectedValueOnce(new Error('Keychain locked.'));
     await renderLanguage(preferences);
 
-    await fireEvent.press(screen.getByRole('radio', { name: '简体中文' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'English' }));
     await fireEvent.press(screen.getByRole('button', { name: '重試' }));
 
-    expect(screen.getByRole('radio', { name: '简体中文' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'English' })).toBeChecked();
   });
 
   it('should select the saved choice once a slow first read finishes', async () => {
@@ -278,11 +280,11 @@ describe('rc:LanguageSettingsRoute', () => {
     });
 
     await act(async () =>
-      read.resolve({ schemaVersion: 1, interfaceLanguage: 'zh-Hans' }),
+      read.resolve({ schemaVersion: 1, interfaceLanguage: 'en' }),
     );
 
-    expect(screen.getByRole('radio', { name: '简体中文' })).toBeChecked();
-    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'English' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
   it('should hold Cancel and hardware Back while a save runs', async () => {

@@ -80,11 +80,6 @@ appId: ${APP_ID}
       true: ${APP_LOCALE == 'zh-Hant'}
     commands:
       - assertVisible: 建議變更
-- runFlow:
-    when:
-      true: ${APP_LOCALE == 'zh-Hans'}
-    commands:
-      - assertVisible: 建议变更
 - assertVisible:
     id: 'record-message-card-confirm-name-.*'
 - assertVisible:

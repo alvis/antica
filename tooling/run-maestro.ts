@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { processIO } from './maestro-process.ts';
 
 /** interface languages a journey run can select through the app's development link */
-export const journeyLocales = ['en', 'zh-Hant', 'zh-Hans'] as const;
+export const journeyLocales = ['en', 'zh-Hant'] as const;
 
 /** interface language the journeys run in */
 export type JourneyLocale = (typeof journeyLocales)[number];

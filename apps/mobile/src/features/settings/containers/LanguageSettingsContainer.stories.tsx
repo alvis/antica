@@ -53,24 +53,6 @@ export const TraditionalChinese = {
   },
 } satisfies Story;
 
-/** the saved Simplified Chinese choice is selected and previews itself */
-export const SimplifiedChinese = {
-  render: () => (
-    <MobileStoryShell locale="zh-Hans" responses={{}}>
-      <LanguageSettingsContainer />
-    </MobileStoryShell>
-  ),
-  play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, '语言 / Language');
-    await findStoryElement(
-      canvasElement,
-      '[role="radio"][aria-label="简体中文"][aria-checked="true"]',
-    );
-    await findStoryText(canvasElement, '设置 · 语言');
-    await findStoryText(canvasElement, '保存 / 取消');
-  },
-} satisfies Story;
-
 /** an English interface previews Traditional Chinese, keeping language names in their own scripts */
 export const English = {
   render: () => (

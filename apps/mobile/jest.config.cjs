@@ -15,7 +15,10 @@ module.exports = {
   clearMocks: true,
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
-    '!src/**/*.spec.*',
+    // spec files and fixtures are excluded by suffix so the forced native helper stays measured
+    '!src/**/*.spec.{ts,tsx}',
+    '!src/**/*.spec.dom.tsx',
+    '!src/**/*.spec.fixtures.{ts,tsx}',
     '!src/**/*.d.ts',
     '!src/mobile.stories.helpers.ts',
     '!src/mobile.stories.fixtures.tsx',

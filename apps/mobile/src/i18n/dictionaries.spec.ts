@@ -15,8 +15,8 @@ const source = resources['zh-Hant'].translation;
 const sourceKeys = Object.keys(source).sort();
 
 describe('fn:dictionaries', () => {
-  it('should offer Traditional Chinese, Simplified Chinese, and English', () => {
-    expect(locales).toEqual(['zh-Hant', 'zh-Hans', 'en']);
+  it('should offer Traditional Chinese and English', () => {
+    expect(locales).toEqual(['zh-Hant', 'en']);
     expect(locales.every(isLocale)).toBe(true);
     expect(isLocale('zh')).toBe(false);
   });
@@ -48,15 +48,5 @@ describe('fn:dictionaries', () => {
     );
 
     expect(mismatched).toEqual([]);
-  });
-
-  it('should write Simplified Chinese apart from Traditional Chinese', () => {
-    const simplified = resources['zh-Hans'].translation;
-
-    expect(simplified.messages).toBe('消息');
-    expect(simplified.whatsappLogin).toBe('使用 WhatsApp 登录');
-    expect(simplified.video).toBe('视频');
-    expect(simplified.import).toBe('导入文件');
-    expect(simplified.settings).toBe('设置');
   });
 });

@@ -70,7 +70,6 @@ export type LanguageSettingsState =
 /** every choice the language screen offers, in display order */
 export const interfaceLanguagePreferences = [
   'zh-Hant',
-  'zh-Hans',
   'en',
   'system',
 ] as const satisfies readonly InterfaceLanguagePreference[];
@@ -87,12 +86,8 @@ export const defaultLocalPreferences: LocalPreferences = {
 /** each locale's name in its own writing system, shown whatever the interface language */
 export const localeAutonyms = {
   'zh-Hant': '繁體中文',
-  'zh-Hans': '简体中文',
   'en': 'English',
 } as const satisfies Record<InterfaceLocale, string>;
-
-/** regions whose Chinese is written in Simplified characters */
-const simplifiedRegions = new Set(['CN', 'SG']);
 
 /**
  * tells whether a value names a choice the language screen offers
@@ -177,31 +172,16 @@ export function resolveInterfaceLocale(
   };
 }
 
-/** length of a BCP 47 script subtag such as Hant */
-const scriptSubtagLength = 4;
-
 /**
- * maps one device language tag to a bundled locale by script, then region
+ * maps Chinese and English device language tags to their bundled locales
  * @param tag BCP 47 language tag such as zh-Hant-HK, zh_CN or en-GB
  * @returns the bundled locale, or undefined when the language is unsupported
  */
 function localeFromLanguageTag(tag: string): InterfaceLocale | undefined {
-  const [language, ...rest] = tag.toLowerCase().split(/[-_]/);
-  // extension and private-use subtags (after u-, x- and other singletons) never name a script or region
-  const singleton = rest.findIndex((subtag) => subtag.length === 1);
-  const subtags = singleton === -1 ? rest : rest.slice(0, singleton);
+  const [language] = tag.toLowerCase().split(/[-_]/);
   if (language === 'en') {
     return 'en';
   }
-  if (language !== 'zh') {
-    return undefined;
-  }
-  const script = subtags.find((subtag) => subtag.length === scriptSubtagLength);
-  if (script === 'hant' || script === 'hans') {
-    return script === 'hant' ? 'zh-Hant' : 'zh-Hans';
-  }
-  const region = subtags.find((subtag) => subtag.length === 2)?.toUpperCase();
 
-  // TW, HK and MO write Traditional characters, as does a bare zh or any other region
-  return region && simplifiedRegions.has(region) ? 'zh-Hans' : 'zh-Hant';
+  return language === 'zh' ? 'zh-Hant' : undefined;
 }

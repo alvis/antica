@@ -33,6 +33,76 @@ const resources = inject('platformDatabases');
 const it = createDatabaseTest(resources.commands!);
 
 describe('database setup commands', { timeout: 30_000 }, () => {
+  it.for(['migrate', 'seed'] as const)(
+    'should execute the %s entry module with configured credentials',
+    async (command, { connection }) => {
+      vi.resetModules();
+      vi.stubGlobal('process', {
+        ...process,
+        argv: [
+          process.execPath,
+          fileURLToPath(new URL(`./${command}.ts`, import.meta.url)),
+        ],
+        env: {
+          ...process.env,
+          DATABASE_URL: connection.url,
+          ANTICA_COLLECTOR_PHONE: phoneNumber,
+          NODE_ENV: 'test',
+        },
+      });
+      if (command === 'migrate') {
+        // This file owns the database; require the entrypoint to rebuild its schema.
+        await connection.db.$executeRaw`drop schema public cascade`;
+        await connection.db.$executeRaw`create schema public`;
+      }
+
+      await vi.importActual(`./${command}.js`);
+
+      if (command === 'migrate') {
+        expect(await connection.db.user.count()).toBe(0);
+      } else {
+        expect(
+          await connection.db.user.findMany({
+            select: { id: true, phoneNumber: true },
+          }),
+        ).toEqual([{ id: collectorUserId, phoneNumber }]);
+        expect(
+          await connection.db.records.findMany({ select: { id: true } }),
+        ).toEqual([{ id: illustrativeRecordId }]);
+      }
+    },
+  );
+
+  it.for([
+    { command: 'migrate', databaseUrl: '', collectorPhone: phoneNumber },
+    { command: 'seed', databaseUrl: '', collectorPhone: phoneNumber },
+    { command: 'seed', databaseUrl: 'configured', collectorPhone: '' },
+  ])(
+    'should reject the $command entry module when required configuration is absent',
+    async ({ command, databaseUrl, collectorPhone }, { connection }) => {
+      vi.resetModules();
+      vi.stubGlobal('process', {
+        ...process,
+        argv: [
+          process.execPath,
+          fileURLToPath(new URL(`./${command}.ts`, import.meta.url)),
+        ],
+        env: {
+          ...process.env,
+          DATABASE_URL: databaseUrl ? connection.url : '',
+          ANTICA_COLLECTOR_PHONE: collectorPhone,
+        },
+      });
+
+      const before = await connection.db.records.count();
+
+      await expect(vi.importActual(`./${command}.js`)).rejects.toThrow(
+        /required/,
+      );
+      expect(await connection.db.records.count()).toBe(before);
+    },
+  );
+
   it.for([
     { directory: 'repository root', cwd: repositoryDirectory },
     { directory: 'platform package', cwd: new URL('../../', import.meta.url) },

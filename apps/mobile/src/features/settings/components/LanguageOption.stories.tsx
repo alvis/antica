@@ -62,12 +62,12 @@ export const SelectedDefault = {
 
 /** a choice locked while a save is running */
 export const Disabled = {
-  args: { label: '简体中文', disabled: true, onPress: fn() },
+  args: { label: 'English', disabled: true, onPress: fn() },
   play: async ({ args, canvasElement }) => {
     (
       await findStoryElement(
         canvasElement,
-        '[role="radio"][aria-label="简体中文"][aria-disabled="true"]',
+        '[role="radio"][aria-label="English"][aria-disabled="true"]',
       )
     ).click();
     await expect(args.onPress).not.toHaveBeenCalled();
