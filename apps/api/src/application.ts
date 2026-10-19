@@ -13,6 +13,7 @@ import { createJobRoutes } from './routes/job.js';
 import { createKnowledgeRoutes } from './routes/knowledge.js';
 import { createLocationRoutes } from './routes/location.js';
 import { createMediaRoutes } from './routes/media.js';
+import { createRecordMessageRoutes } from './routes/record-messages.js';
 import { createRecordRoutes } from './routes/record.js';
 import { createResearchRoutes } from './routes/research.js';
 import { createVoiceRoutes } from './routes/voice.js';
@@ -26,6 +27,7 @@ import type {
   KnowledgeService,
   LocationService,
   MediaService,
+  RecordMessageService,
   RecordService,
   ResearchService,
   SourceService,
@@ -49,6 +51,7 @@ export interface ApiAuth {
 export interface ApplicationParams {
   readonly auth: ApiAuth;
   readonly records: RecordService;
+  readonly recordMessages: RecordMessageService;
   readonly locations: LocationService;
   readonly media: MediaService;
   readonly evidence: EvidenceService;
@@ -105,6 +108,7 @@ export function createApplication(params: ApplicationParams): Hono<ApiEnv> {
   });
 
   app.route('/v1/records', createRecordRoutes(params.records));
+  app.route('/v1', createRecordMessageRoutes(params.recordMessages));
   app.route('/v1/locations', createLocationRoutes(params.locations));
   app.route('/v1/media', createMediaRoutes(params.media));
   app.route('/v1', createEvidenceRoutes(params.evidence));

@@ -1,13 +1,20 @@
-import { editDraftResultSchema } from '@antica/contracts';
+import {
+  editDraftResultSchema,
+  recordMessageReplyMaxLength,
+} from '@antica/contracts';
 
 import type {
   ClockPort,
   EditDraftRunRecord,
+  IdPort,
   ModelCatalogPort,
   OperationResult,
   RecordEditingPort,
   TransactionPort,
 } from '../ports/index.js';
+
+/** stands in for a model answer without words so that every started conversation gets a reply */
+const NEUTRAL_REPLY_ZH_HANT = '已處理你的訊息。';
 
 /**
  * creates a worker that saves an edit draft from its frozen record and source text
@@ -15,13 +22,15 @@ import type {
  * @param model proposes edits from the frozen input
  * @param catalog resolves the selected structured-output model
  * @param clock timestamps saved results and completed jobs
- * @returns handler for an owner and job ID that reports completion or a typed draft failure
+ * @param ids creates the identifier of the assistant reply
+ * @returns handler for an owner and job ID that reports completion or a typed draft failure; a draft started from a record message also gets its assistant reply in the same transaction as its result
  */
 export function createEditDraftHandler(
   transaction: TransactionPort,
   model: RecordEditingPort,
   catalog: ModelCatalogPort,
   clock: ClockPort,
+  ids: IdPort,
 ): (ownerId: string, jobId: string) => Promise<OperationResult<void>> {
   return async (ownerId, jobId) => {
     const prepared = await transaction.run<OperationResult<EditDraftRunRecord>>(
@@ -69,7 +78,11 @@ export function createEditDraftHandler(
         'Edit model output failed schema validation',
       );
     }
-    const output = parsed.data;
+    // the stored result and the reply stay within the cap the app renders
+    const output = {
+      ...parsed.data,
+      replyZhHant: capReply(parsed.data.replyZhHant),
+    };
     if (
       output.editDraftId !== run.detail.editDraftId ||
       output.recordId !== snapshot.recordId ||
@@ -82,11 +95,11 @@ export function createEditDraftHandler(
         'Edit output changed its frozen input identity',
       );
     }
-    const ids = new Set<string>();
+    const proposalIds = new Set<string>();
     const fields = new Set<string>();
     for (const change of output.proposedChanges) {
       if (
-        ids.has(change.id) ||
+        proposalIds.has(change.id) ||
         fields.has(change.field) ||
         !same(change.before, snapshot.fields[change.field])
       ) {
@@ -95,7 +108,7 @@ export function createEditDraftHandler(
           'Edit proposal changed or duplicated its frozen field',
         );
       }
-      ids.add(change.id);
+      proposalIds.add(change.id);
       fields.add(change.field);
     }
 
@@ -133,6 +146,19 @@ export function createEditDraftHandler(
       ) {
         return failure('REVISION_CONFLICT', 'Edit job changed during save');
       }
+      if (
+        await unit.recordMessages.findCollectorMessage(
+          current.detail.editDraftId,
+        )
+      ) {
+        await unit.recordMessages.insertAssistantReply({
+          id: ids.create(),
+          recordId: current.detail.snapshot.recordId,
+          editDraftId: current.detail.editDraftId,
+          body: output.replyZhHant.trim() || NEUTRAL_REPLY_ZH_HANT,
+          createdAt: now,
+        });
+      }
 
       return { success: true, data: undefined };
     });
@@ -159,4 +185,17 @@ function failure(
     success: false,
     error: { code, message, retryable: code === 'REVISION_CONFLICT' },
   };
+}
+
+/**
+ * cuts a reply to the length the app stores and shows
+ * @param reply text the model wrote
+ * @returns the reply, or its first recordMessageReplyMaxLength code units without a half character at the cut
+ */
+function capReply(reply: string): string {
+  const cut = reply.slice(0, recordMessageReplyMaxLength);
+
+  return reply.length > recordMessageReplyMaxLength && !cut.isWellFormed()
+    ? cut.slice(0, -1)
+    : cut;
 }

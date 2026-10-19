@@ -8,6 +8,7 @@ export const historyPath = `/v1/records/${collectionRecord.id}/history`;
 export const historyRunId = '00000000-0000-4000-8000-000000000910';
 export const historyProposalId = '00000000-0000-4000-8000-000000000911';
 export const historyDraftId = '00000000-0000-4000-8000-000000000912';
+export const historyMessageId = '00000000-0000-4000-8000-000000000914';
 export const historyMaterialId = '00000000-0000-4000-8000-000000000913';
 
 const analysisSource = {
@@ -93,3 +94,12 @@ export const datedUntil = historyEntry('00000000-0000-4000-8000-000000000908', {
   before: null,
   after: { label: 'Early Qing', toYear: 1700, status: 'unconfirmed' },
 });
+export const taggedByMessage = historyEntry(
+  '00000000-0000-4000-8000-000000000909',
+  {
+    field: 'tags',
+    source: { ...draftSource, recordMessageId: historyMessageId },
+    before: [],
+    after: ['bowl'],
+  },
+);

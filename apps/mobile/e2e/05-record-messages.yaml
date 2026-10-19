@@ -1,0 +1,113 @@
+# Proves SC-10 on the camera record from 04: a question gets a reply without a
+# card; a labelled 「」 request gets one card with name and period rows; the
+# collector confirms the name, rejects the period, and applies; the period row
+# stays locked as not applied, the record reflects only the confirmed field, its
+# change history lists the name as accepted and the period as skipped, and the
+# history links back to the requesting message, which opens fully in view. Replies come from the deterministic
+# development model through the local drain loop.
+appId: ${APP_ID}
+---
+- launchApp
+# A cold start on a loaded host can take well over a minute in dev builds.
+- extendedWaitUntil:
+    visible: '.*, ${RECORD_NAME}'
+    timeout: 120000
+- runFlow: support/dismiss-dev-logbox.yaml
+- tapOn: '.*, ${RECORD_NAME}'
+- extendedWaitUntil:
+    visible:
+      id: record-messages-entry
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: record-messages-entry
+    direction: DOWN
+- tapOn:
+    id: record-messages-entry
+- extendedWaitUntil:
+    visible:
+      id: record-message-input
+    timeout: 60000
+- runFlow: support/dismiss-dev-logbox.yaml
+
+# 1. A question ending in ？ gets a reply and no edit card.
+- tapOn:
+    id: record-message-input
+- inputText: 這件器物的年代可以怎麼判斷？
+- tapOn:
+    id: record-message-send
+- extendedWaitUntil:
+    visible: '開發示範：這是提問.*'
+    timeout: 90000
+- assertNotVisible:
+    id: 'record-message-card-.*'
+
+# 2. A request with both values in 「」 gets one card with two rows; nothing is applied yet.
+- tapOn:
+    id: record-message-input
+- inputText: 名稱改成「${NEW_NAME}」，年代改成「${NEW_PERIOD}」
+- tapOn:
+    id: record-message-send
+- extendedWaitUntil:
+    visible: '開發示範：已建議修改「名稱」、「年代」.*'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      id: 'record-message-card-apply-.*'
+    direction: DOWN
+- assertVisible: Suggested changes
+- assertVisible: Nothing changes until you tap “Apply decisions”.
+- assertVisible: 'Confirm: Name'
+- assertVisible: 'Reject: Period'
+- assertNotVisible:
+    id: 'record-message-card-applied-.*'
+
+# 3. Confirm the name, reject the period, then apply both decisions. The name
+#    is applied, the period stays locked as not applied, and no toggle remains.
+- tapOn: 'Confirm: Name'
+- tapOn: 'Reject: Period'
+- tapOn: Apply decisions \(2\)
+- extendedWaitUntil:
+    visible: All changes decided; some not applied
+    timeout: 60000
+- assertVisible:
+    id: 'record-message-card-applied-.*'
+    index: 0
+- assertNotVisible:
+    id: 'record-message-card-applied-.*'
+    index: 1
+- assertVisible:
+    id: 'record-message-card-skipped-.*'
+- assertNotVisible:
+    id: 'record-message-card-confirm-.*'
+- assertNotVisible:
+    id: 'record-message-card-reject-.*'
+- assertNotVisible:
+    id: 'record-message-card-apply-.*'
+
+# 4. The record shows the new name; the period was not applied.
+- back
+- extendedWaitUntil:
+    visible: ${NEW_NAME}
+    timeout: 60000
+- assertNotVisible: .*${NEW_PERIOD}.*
+
+# 5. The change history lists the accepted name and the skipped period, and
+#    links back to the requesting message.
+- scrollUntilVisible:
+    element:
+      id: record-open-history
+    direction: DOWN
+- tapOn:
+    id: record-open-history
+- extendedWaitUntil:
+    visible:
+      id: record-history
+    timeout: 60000
+- assertVisible: 'Name · Accepted.*'
+- assertVisible: 'Period · Skipped.*'
+- tapOn: 'Open the suggestion: Name.*'
+- extendedWaitUntil:
+    visible: Opened from change history
+    timeout: 60000
+- assertVisible: '名稱改成「${NEW_NAME}」.*'

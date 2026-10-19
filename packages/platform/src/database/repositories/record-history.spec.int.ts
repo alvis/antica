@@ -224,6 +224,7 @@ async function createReadyDraft(
       result: null,
       invocation: null,
       appliedProposalIds: [],
+      skippedProposalIds: [],
       createdAt: now,
       updatedAt: now,
     },
@@ -249,6 +250,7 @@ async function createReadyDraft(
       baseVersions: versions,
       sourceTranscriptionIds: [],
       sourceObservationIds: [observationId],
+      replyZhHant: '',
       suggestedDescriptionZhHant: 'Text',
       proposedChanges,
     },
@@ -441,6 +443,86 @@ describe('fn:queryRecordHistory', { timeout: 30_000 }, () => {
     ).toEqual({ items: [], nextCursor: null });
   });
 
+  it('should link an entry to the collector message that started its draft exactly once, and leave other drafts unlinked', async ({
+    connection,
+  }) => {
+    const transaction = createTransactionPort(connection.db);
+    const ownerId = randomUUID();
+    const messageProposal = randomUUID();
+    const plainProposal = randomUUID();
+    const seeded = await inUnit(transaction, ownerId, async (unit) => {
+      const recordId = await createRecord(unit);
+      const messageDraftId = await createReadyDraft(unit, recordId, [
+        {
+          id: messageProposal,
+          field: 'description',
+          before: 'Collector description',
+          proposed: 'From a message',
+          findingIds: [],
+        },
+      ]);
+      const plainDraftId = await createReadyDraft(unit, recordId, [
+        {
+          id: plainProposal,
+          field: 'collectorJudgment',
+          before: null,
+          proposed: 'From a plain draft',
+          findingIds: [],
+        },
+      ]);
+      const { message } = await unit.recordMessages.insertCollectorMessage({
+        id: randomUUID(),
+        recordId,
+        requestKey: messageDraftId,
+        body: 'Please tidy the description',
+        editDraftId: messageDraftId,
+        createdAt: now,
+      });
+      // the assistant row carries the same draft ID and must not duplicate the entry
+      await unit.recordMessages.insertAssistantReply({
+        id: randomUUID(),
+        recordId,
+        editDraftId: messageDraftId,
+        body: 'Done',
+        createdAt: now,
+      });
+
+      return { recordId, messageDraftId, plainDraftId, messageId: message.id };
+    });
+    await inUnit(transaction, ownerId, async (unit) => {
+      for (const [draftId, proposalId] of [
+        [seeded.messageDraftId, messageProposal],
+        [seeded.plainDraftId, plainProposal],
+      ] as const) {
+        await unit.editDrafts.markApplied(draftId, 2, [proposalId], now);
+        await unit.editDrafts.appendAdoption(
+          draftId,
+          proposalId,
+          'accepted',
+          randomUUID(),
+        );
+      }
+    });
+
+    const history = await inUnit(transaction, ownerId, async (unit) =>
+      unit.records.queryHistory(seeded.recordId, {}),
+    );
+
+    expect(history.items).toHaveLength(2);
+    expect(
+      history.items.map(({ source }) =>
+        source.kind === 'editDraft'
+          ? [source.editDraftId, source.recordMessageId]
+          : null,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        [seeded.messageDraftId, seeded.messageId],
+        [seeded.plainDraftId, null],
+      ]),
+    );
+  });
+
   it.for([
     ['malformed', 'not-json'],
     [
@@ -465,6 +547,61 @@ describe('fn:queryRecordHistory', { timeout: 30_000 }, () => {
       ).rejects.toThrow(InvalidCursorError);
     },
   );
+  it('should list a rejected edit-draft proposal as skipped at the unchanged record revision', async ({
+    connection,
+  }) => {
+    const transaction = createTransactionPort(connection.db);
+    const ownerId = randomUUID();
+    const skippedId = randomUUID();
+    const seeded = await inUnit(transaction, ownerId, async (unit) => {
+      const recordId = await createRecord(unit);
+      const editDraftId = await createReadyDraft(unit, recordId, [
+        {
+          id: skippedId,
+          field: 'name',
+          before: 'Vase',
+          proposed: 'Blue vase',
+          findingIds: [],
+        },
+      ]);
+      const eventId = randomUUID();
+      await unit.editDrafts.markApplied(editDraftId, 2, [], now, [skippedId]);
+      await unit.editDrafts.appendAdoption(
+        editDraftId,
+        skippedId,
+        'skipped',
+        eventId,
+      );
+
+      return { recordId, editDraftId, eventId };
+    });
+
+    const page = await inUnit(transaction, ownerId, async (unit) =>
+      unit.records.queryHistory(seeded.recordId, {}),
+    );
+    const [row] = await connection.db.editDraftAdoptionEvents.findMany({
+      select: { recordRevision: true },
+      where: { id: seeded.eventId },
+    });
+
+    expect(page.items).toEqual([
+      {
+        id: seeded.eventId,
+        occurredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
+        field: 'name',
+        before: 'Vase',
+        after: 'Blue vase',
+        status: 'skipped',
+        source: {
+          kind: 'editDraft',
+          editDraftId: seeded.editDraftId,
+          proposalId: skippedId,
+          recordMessageId: null,
+        },
+      },
+    ]);
+    expect(row).toEqual({ recordRevision: 1 });
+  });
 });
 
 describe(
@@ -532,6 +669,9 @@ describe(
         attempt(randomUUID(), appliedId, 'accepted'),
       ).rejects.toThrow('Edit draft proposal is not available for history');
       await attempt(ownerId, pendingId, 'skipped');
+      await expect(attempt(ownerId, pendingId, 'skipped')).rejects.toThrow(
+        'Edit draft proposal is not available for history',
+      );
       await attempt(ownerId, appliedId, 'accepted');
       await expect(attempt(ownerId, appliedId, 'accepted')).rejects.toThrow();
 

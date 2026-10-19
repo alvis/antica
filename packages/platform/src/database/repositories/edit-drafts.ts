@@ -5,6 +5,8 @@ import { editDraftDetailSchema } from '@antica/contracts';
 import { Prisma } from '../generated/client.js';
 import { jsonValue, nullableJson } from '../json.js';
 
+import { inProposalOrder, listSkippedProposalIds } from './edit-draft-skips.js';
+
 import type {
   EditDraftRepository,
   EditDraftRunRecord,
@@ -33,6 +35,7 @@ export function createEditDraftRepository(
     if (!row) {
       return null;
     }
+    const skipped = await listSkippedProposalIds(tx, ownerId, [row.id]);
 
     return {
       detail: editDraftDetailSchema.parse({
@@ -44,6 +47,10 @@ export function createEditDraftRepository(
         result: row.result,
         invocation: row.invocation,
         appliedProposalIds: row.appliedProposalIds,
+        skippedProposalIds: inProposalOrder(
+          row.result as EditDraftRunRecord['detail']['result'],
+          skipped.get(row.id) ?? [],
+        ),
         createdAt: iso(row.createdAt),
         updatedAt: iso(row.updatedAt),
       }),
@@ -64,6 +71,7 @@ export function createEditDraftRepository(
         detail.result !== null ||
         detail.invocation !== null ||
         detail.appliedProposalIds.length !== 0 ||
+        detail.skippedProposalIds.length !== 0 ||
         detail.snapshot.recordId !== request.recordId ||
         detail.snapshot.versions.recordRevision !==
           request.expectedRecordRevision ||
@@ -175,12 +183,17 @@ export function createEditDraftRepository(
      * @param expectedRevision
      * @param selectedProposalIds
      * @param updatedAt
+     * @param skippedProposalIds
      */
-    async markApplied(id, expectedRevision, selectedProposalIds, updatedAt) {
-      if (
-        selectedProposalIds.length === 0 ||
-        new Set(selectedProposalIds).size !== selectedProposalIds.length
-      ) {
+    async markApplied(
+      id,
+      expectedRevision,
+      selectedProposalIds,
+      updatedAt,
+      skippedProposalIds = [],
+    ) {
+      const decided = [...selectedProposalIds, ...skippedProposalIds];
+      if (decided.length === 0 || new Set(decided).size !== decided.length) {
         return null;
       }
       const [run] = await tx.editDraftRuns
@@ -203,12 +216,16 @@ export function createEditDraftRepository(
         );
       const result = run?.result as EditDraftRunRecord['detail']['result'];
       const applied = (run?.applied ?? []) as readonly string[];
+      const skipped =
+        (await listSkippedProposalIds(tx, ownerId, [id])).get(id) ?? [];
       const proposalIds = new Set(
         result?.proposedChanges.map((proposal) => proposal.id),
       );
       if (
         !result ||
-        selectedProposalIds.some((proposalId) => !proposalIds.has(proposalId))
+        decided.some((proposalId) => !proposalIds.has(proposalId)) ||
+        decided.some((proposalId) => skipped.includes(proposalId)) ||
+        skippedProposalIds.some((proposalId) => applied.includes(proposalId))
       ) {
         return null;
       }
@@ -218,8 +235,11 @@ export function createEditDraftRepository(
           combined.push(proposalId);
         }
       }
+      // skipped proposals resolve the draft as much as applied ones do
+      const resolved =
+        combined.length + skipped.length + skippedProposalIds.length;
       const status =
-        combined.length === proposalIds.size ? 'applied' : 'partially_applied';
+        resolved === proposalIds.size ? 'applied' : 'partially_applied';
       const [changed] = await tx.editDraftRuns.updateManyAndReturn({
         data: {
           appliedProposalIds: jsonValue(combined),
@@ -244,10 +264,10 @@ export function createEditDraftRepository(
       return (await get(id))!.detail;
     },
     /**
-     * stores one adopted proposal with its values at the record's current revision
+     * stores one adopted or skipped proposal with its values at the record's current revision
      * @param id edit draft identifier
      * @param proposalId proposal within the draft result
-     * @param status collector decision, which must match the draft's applied set
+     * @param status collector decision, which must match the draft's applied set; a proposal is recorded once
      * @param eventId history entry identifier
      */
     async appendAdoption(id, proposalId, status, eventId) {
@@ -259,7 +279,8 @@ export function createEditDraftRepository(
         !draft ||
         !proposal ||
         draft.appliedProposalIds.includes(proposalId) !==
-          (status === 'accepted')
+          (status === 'accepted') ||
+        draft.skippedProposalIds.includes(proposalId)
       ) {
         throw new Error('Edit draft proposal is not available for history');
       }

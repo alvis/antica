@@ -83,6 +83,7 @@ describe('fn:respond', () => {
     ['NOT_FOUND', 404],
     ['RATE_LIMITED', 429],
     ['REVISION_CONFLICT', 409],
+    ['REQUEST_IN_PROGRESS', 409],
     ['UPLOAD_INCOMPLETE', 409],
     ['INDEX_NOT_READY', 409],
     ['VALIDATION_FAILED', 422],

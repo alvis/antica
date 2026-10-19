@@ -124,10 +124,16 @@ export const editDraftResultSchema = z.strictObject({
   baseVersions: recordVersionsSchema,
   sourceTranscriptionIds: z.array(entityIdSchema),
   sourceObservationIds: z.array(entityIdSchema),
+  /** the assistant's text answer to the instruction; results stored before replies existed read as empty */
+  replyZhHant: z.string().default(''),
   suggestedDescriptionZhHant: z.string(),
   proposedChanges: z.array(proposedChangeSchema),
 });
 export type EditDraftResult = z.infer<typeof editDraftResultSchema>;
+/** requires the reply from a model so the provider schema cannot omit it; stored results keep the empty default */
+export const editDraftGenerationSchema = editDraftResultSchema.safeExtend({
+  replyZhHant: z.string(),
+});
 
 export interface AnalysisReferenceSet {
   readonly evidenceIds: ReadonlySet<string>;

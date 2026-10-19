@@ -152,6 +152,7 @@ export class ApiTransport {
         status: response.status,
         code: error.code,
         message: error.message,
+        retryable: error.retryable,
       });
     }
 
@@ -162,9 +163,13 @@ export class ApiTransport {
 /**
  * reads a public API error while preserving a safe fallback for malformed bodies
  * @param value decoded response body
- * @returns public code and message
+ * @returns public code, message, and whether the server marked the failure retryable
  */
-function readPublicError(value: unknown): { code: string; message: string } {
+function readPublicError(value: unknown): {
+  code: string;
+  message: string;
+  retryable: boolean;
+} {
   if (typeof value === 'object' && value !== null) {
     const candidate = value as Record<string, unknown>;
     const nested =
@@ -172,12 +177,17 @@ function readPublicError(value: unknown): { code: string; message: string } {
         ? (candidate.error as Record<string, unknown>)
         : candidate;
     if (typeof nested.code === 'string' && typeof nested.message === 'string') {
-      return { code: nested.code, message: nested.message };
+      return {
+        code: nested.code,
+        message: nested.message,
+        retryable: nested.retryable === true,
+      };
     }
   }
 
   return {
     code: 'REQUEST_FAILED',
     message: 'The request could not be completed.',
+    retryable: false,
   };
 }

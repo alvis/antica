@@ -40,6 +40,7 @@ import type {
 } from '@antica/domain';
 
 import type { InvalidCursorError } from './cursor.js';
+import type { RecordMessageRepository } from './messages.js';
 import type { OperationResult } from './result.js';
 import type { RetrievalSnapshot } from './retrieval.js';
 import type {
@@ -71,6 +72,7 @@ export interface UnitOfWork {
   readonly transcriptions: TranscriptionRepository;
   readonly editDrafts: EditDraftRepository;
   readonly comparisons: ComparisonRepository;
+  readonly recordMessages: RecordMessageRepository;
 }
 /** authenticated owner-scoped transaction boundary */
 export interface TransactionPort {

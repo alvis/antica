@@ -33,6 +33,7 @@ const rowSchema = z.object({
   kind: z.enum(['analysis', 'editDraft']),
   source_id: z.string(),
   proposal_id: z.string(),
+  record_message_id: z.string().nullable(),
 });
 type HistoryRow = z.infer<typeof rowSchema>;
 
@@ -90,8 +91,7 @@ function toEntry(row: HistoryRow): RecordHistoryEntry {
             kind: 'editDraft',
             editDraftId: row.source_id,
             proposalId: row.proposal_id,
-            // record messages are not linked to edit drafts on this schema yet
-            recordMessageId: null,
+            recordMessageId: row.record_message_id,
           },
   });
 }
@@ -122,11 +122,12 @@ export async function queryRecordHistory(
       to_char(history.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as occurred_at,
       to_char(history.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as position, history.field, history.before,
       history.after, history.status, history.kind, history.source_id,
-      history.proposal_id
+      history.proposal_id, history.record_message_id
     from (
       select event.id, event.created_at as occurred_at, proposal.field,
         proposal.before, proposal.proposed as after, event.status,
-        'analysis' as kind, event.run_id as source_id, event.proposal_id
+        'analysis' as kind, event.run_id as source_id, event.proposal_id,
+        null::uuid as record_message_id
       from adoption_events event
       inner join analysis_runs run
         on run.id = event.run_id
@@ -138,7 +139,16 @@ export async function queryRecordHistory(
       union all
       select event.id, event.created_at as occurred_at, event.field,
         event.before, event.after, event.status, 'editDraft' as kind,
-        event.edit_draft_id as source_id, event.proposal_id
+        event.edit_draft_id as source_id, event.proposal_id,
+        (
+          select message.id
+          from record_messages message
+          where message.owner_id = ${ownerId}
+            and message.edit_draft_id = event.edit_draft_id
+            and message.author = 'collector'
+          order by message.created_at, message.id
+          limit 1
+        ) as record_message_id
       from edit_draft_adoption_events event
       where event.owner_id = ${ownerId} and event.record_id = ${recordId}
     ) history

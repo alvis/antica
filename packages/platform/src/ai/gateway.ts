@@ -14,12 +14,17 @@ import {
 
 import {
   analysisOutputSchema,
-  editDraftResultSchema,
+  editDraftGenerationSchema,
   researchDraftSchema,
   transcriptionResultSchema,
 } from '@antica/contracts';
 
 import { resolveModel } from './capability.js';
+import {
+  editingInstruction,
+  editingPromptVersion,
+  editingSchemaVersion,
+} from './editing.js';
 import { validateGeneratedAnalysis } from './output.js';
 
 import type { LanguageModel, ModelMessage } from 'ai';
@@ -241,9 +246,9 @@ export function createAiSdkModels(params: AiSdkModelsParams): ModelAdapters {
         const generated = await generateStructured(params, {
           profile: selected.data,
           selection,
-          schema: editDraftResultSchema,
-          promptVersion: 'editing-v1',
-          schemaVersion: 'editing-v1',
+          schema: editDraftGenerationSchema,
+          promptVersion: editingPromptVersion,
+          schemaVersion: editingSchemaVersion,
           messages: [
             {
               role: 'user',
@@ -251,8 +256,7 @@ export function createAiSdkModels(params: AiSdkModelsParams): ModelAdapters {
                 request,
                 sourceText,
                 context,
-                instruction:
-                  'Set editDraftId to request.requestKey. Preserve recordId, source IDs and baseVersions exactly. Draft only statements supported by the supplied collector text. Proposed changes may use schema-allowlisted fields, must preserve each exact current before value, have unique IDs, and use findingIds: [] because this editing context has no analysis findings. Preserve source observation and transcription IDs. Changes require separate collector adoption.',
+                instruction: editingInstruction,
               }),
             },
           ],

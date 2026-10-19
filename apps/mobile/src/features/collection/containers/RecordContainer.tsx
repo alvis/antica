@@ -27,6 +27,9 @@ import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
 
+import { recordQuery } from '../api/record-query';
+import { RecordMessagesEntryContainer } from '../messages/containers/RecordMessagesEntryContainer';
+
 import type { FC } from 'react';
 
 import type { ScrollView } from 'react-native';
@@ -56,11 +59,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const record = useQuery({
-    queryKey: ['record', recordId],
-    queryFn: async ({ signal }) =>
-      api.get(`/v1/records/${recordId}`, recordDetailSchema, signal),
-  });
+  const record = useQuery(recordQuery(api, recordId));
   const observations = useQuery({
     queryKey: ['observations', recordId],
     queryFn: async ({ signal }) =>
@@ -267,6 +266,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                 onPress={() => router.push(`/collection/${recordId}/history`)}
               />
             </View>
+            <RecordMessagesEntryContainer recordId={recordId} />
             <View style={styles.card}>
               <Text style={styles.heading}>
                 {t('photo')} / {t('video')}

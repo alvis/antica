@@ -16,4 +16,15 @@ describe('public error validation', () => {
       publicErrorSchema.safeParse({ ...error, code: 'INTERNAL' }).success,
     ).toBe(false);
   });
+
+  it('should accept the retryable in-progress failure of a request that is still running', () => {
+    expect(
+      publicErrorSchema.parse({
+        code: 'REQUEST_IN_PROGRESS',
+        message: 'Another request with this key is in progress',
+        retryable: true,
+        requestId: 'request-2',
+      }),
+    ).toMatchObject({ code: 'REQUEST_IN_PROGRESS', retryable: true });
+  });
 });

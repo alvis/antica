@@ -137,11 +137,13 @@ function readyRun(
       },
       sourceTranscriptionIds: [],
       sourceObservationIds: [observationId],
+      replyZhHant: '已整理描述',
       suggestedDescriptionZhHant: '青瓷瓶',
       proposedChanges: changes,
     },
     invocation: null,
     appliedProposalIds: [],
+    skippedProposalIds: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -178,25 +180,58 @@ function fixture(
       analysisInputVersion: 2,
     };
   });
-  const markApplied = vi.fn(async () =>
-    'markResult' in options
-      ? (options.markResult ?? null)
-      : {
-          ...current.run!.detail,
-          revision: 3,
-          status: 'applied' as const,
-          appliedProposalIds: [proposalId],
-        },
+  // mirrors the repository: applied proposals live on the draft, skipped ones in its history
+  const markApplied = vi.fn(
+    async (
+      ...[, , selected, , skipped = []]: [
+        id: string,
+        expectedRevision: number,
+        selected: readonly string[],
+        updatedAt: string,
+        skipped?: readonly string[],
+      ]
+    ): Promise<EditDraftDetail | null> => {
+      if ('markResult' in options) {
+        return options.markResult ?? null;
+      }
+      const { detail } = current.run!;
+      const applied = [...detail.appliedProposalIds, ...selected];
+      const resolved =
+        applied.length + detail.skippedProposalIds.length + skipped.length;
+      const next: EditDraftDetail = {
+        ...detail,
+        revision: detail.revision + 1,
+        status:
+          resolved === detail.result!.proposedChanges.length
+            ? 'applied'
+            : 'partially_applied',
+        appliedProposalIds: applied,
+      };
+      current.run = { ...current.run!, detail: next };
+
+      return next;
+    },
   );
   const appendAdoption = vi.fn(
     async (
-      ..._args: [
+      ...[, adoptedId, status]: [
         id: string,
         proposalId: string,
         status: 'accepted' | 'skipped',
         eventId: string,
       ]
-    ) => undefined,
+    ) => {
+      if (status === 'skipped') {
+        const { detail } = current.run!;
+        current.run = {
+          ...current.run!,
+          detail: {
+            ...detail,
+            skippedProposalIds: [...detail.skippedProposalIds, adoptedId],
+          },
+        };
+      }
+    },
   );
   const repositories = {
     commands: {
@@ -389,6 +424,68 @@ describe('fn:createEditDraftService', () => {
         transcriptionIds: [transcriptionId, transcriptionId],
       }),
     ).toMatchObject({ success: false, error: { code: 'VALIDATION_FAILED' } });
+  });
+
+  it('should keep requiring a confirmed transcription for voice edits even when one is ready', async () => {
+    const transcriptionId = '00000000-0000-4000-8000-000000000008';
+    const ready: TranscriptionRunRecord = {
+      detail: {
+        transcriptionId,
+        jobId: '00000000-0000-4000-8000-000000000009',
+        revision: 2,
+        status: 'ready',
+        snapshot: {
+          recordId,
+          recordRevision: 1,
+          audioAssetId: '00000000-0000-4000-8000-000000000010',
+          audioSha256: 'a'.repeat(64),
+          createdAt: now,
+        },
+        result: {
+          transcriptionId,
+          recordId,
+          audioAssetId: '00000000-0000-4000-8000-000000000010',
+          originalText: 'raw',
+          readingTextZhHant: 'reading',
+          detectedLanguages: [],
+          uncertainTerms: [],
+          segments: [],
+        },
+        invocation: null,
+        confirmedObservationId: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      request: {
+        requestKey: transcriptionId,
+        recordId,
+        audioAssetId: '00000000-0000-4000-8000-000000000010',
+        expectedRecordRevision: 1,
+        vocabularyHints: [],
+      },
+      modelSelection: {
+        role: 'transcription',
+        modelId: 'development',
+        profileVersion: '1',
+      },
+    };
+    const ports = fixture({ transcription: ready });
+
+    const result = await ports.service.submit(ownerId, {
+      ...request,
+      transcriptionIds: [transcriptionId],
+      observationIds: [],
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'EVIDENCE_INVALID',
+        message: 'Confirmed transcription does not belong to record',
+        retryable: false,
+      },
+    });
+    expect(ports.current.run).toBeNull();
   });
 
   it('should apply only the selected proposal with record and draft compare-and-swap', async () => {
@@ -690,4 +787,277 @@ describe('fn:createEditDraftService adoption guardrails', () => {
       ports.appendAdoption.mock.invocationCallOrder[0]!,
     );
   });
+});
+
+describe('fn:createEditDraftService skipped proposals', () => {
+  const descriptionId = '00000000-0000-4000-8000-000000000012';
+  const twoFieldRun = (
+    detail: Partial<EditDraftDetail> = {},
+  ): EditDraftRunRecord => {
+    const run = readyRun([
+      {
+        id: proposalId,
+        field: 'name',
+        before: 'Vase',
+        proposed: 'Celadon vase',
+        findingIds: [],
+      },
+      {
+        id: descriptionId,
+        field: 'description',
+        before: '',
+        proposed: '青瓷瓶',
+        findingIds: [],
+      },
+    ]);
+
+    return { ...run, detail: { ...run.detail, ...detail } };
+  };
+
+  it('should record a reject-only adoption as skipped without writing the record', async () => {
+    const ports = fixture({ run: readyRun() });
+
+    const result = await ports.service.apply(ownerId, draftId, {
+      ...apply,
+      selectedProposalIds: [],
+      skippedProposalIds: [proposalId],
+    });
+
+    expect(result).toEqual({
+      success: true,
+      data: {
+        draft: expect.objectContaining({
+          status: 'applied',
+          revision: 3,
+          appliedProposalIds: [],
+          skippedProposalIds: [proposalId],
+        }),
+        record: record(),
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+    expect(ports.markApplied).toHaveBeenCalledExactlyOnceWith(
+      draftId,
+      2,
+      [],
+      now,
+      [proposalId],
+    );
+    expect(ports.appendAdoption.mock.calls).toEqual([
+      [draftId, proposalId, 'skipped', expect.any(String)],
+    ]);
+    expect(ports.receipts.size).toBe(1);
+  });
+
+  it('should adopt a confirmed proposal and skip a rejected one in one adoption', async () => {
+    const ports = fixture({ run: twoFieldRun() });
+
+    const result = await ports.service.apply(ownerId, draftId, {
+      ...apply,
+      skippedProposalIds: [descriptionId],
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        draft: {
+          status: 'applied',
+          appliedProposalIds: [proposalId],
+          skippedProposalIds: [descriptionId],
+        },
+        record: { name: 'Celadon vase', recordRevision: 2 },
+      },
+    });
+    expect(ports.patch).toHaveBeenCalledWith(
+      recordId,
+      {
+        expectedRevision: 1,
+        fields: { name: 'Celadon vase' },
+        editDraftId: draftId,
+        acceptedProposalIds: [proposalId],
+      },
+      { recordRevision: 2, analysisInputVersion: 2, evidenceVersion: 1 },
+    );
+    expect(ports.appendAdoption.mock.calls).toEqual([
+      [draftId, proposalId, 'accepted', expect.any(String)],
+      [draftId, descriptionId, 'skipped', expect.any(String)],
+    ]);
+  });
+
+  it('should replay a skipping adoption from its receipt and refuse the key for a different skipped list', async () => {
+    const ports = fixture({ run: twoFieldRun() });
+    const mixed = { ...apply, skippedProposalIds: [descriptionId] };
+
+    const first = await ports.service.apply(ownerId, draftId, mixed);
+    const replay = await ports.service.apply(ownerId, draftId, mixed);
+    const reused = await ports.service.apply(ownerId, draftId, {
+      ...mixed,
+      skippedProposalIds: [],
+    });
+
+    expect(first).toMatchObject({ success: true });
+    expect(replay).toEqual(first);
+    expect(reused).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Request key was reused for a different adoption',
+        retryable: false,
+      },
+    });
+    expect(ports.markApplied).toHaveBeenCalledTimes(1);
+    expect(ports.appendAdoption).toHaveBeenCalledTimes(2);
+  });
+
+  it('should treat an omitted and an empty skipped list as the same adoption', async () => {
+    const ports = fixture({ run: readyRun() });
+
+    const first = await ports.service.apply(ownerId, draftId, apply);
+    const replay = await ports.service.apply(ownerId, draftId, {
+      ...apply,
+      skippedProposalIds: [],
+    });
+
+    expect(first).toMatchObject({ success: true });
+    expect(replay).toEqual(first);
+    expect(ports.markApplied).toHaveBeenCalledTimes(1);
+  });
+
+  it('should fail without a receipt when the draft disappears before it is read back', async () => {
+    const ports = fixture({ run: readyRun() });
+    ports.appendAdoption.mockImplementation(async () => {
+      ports.current.run = null;
+    });
+
+    expect(
+      await ports.service.apply(ownerId, draftId, {
+        ...apply,
+        selectedProposalIds: [],
+        skippedProposalIds: [proposalId],
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'REVISION_CONFLICT',
+        message: 'Edit draft changed during adoption',
+        retryable: true,
+      },
+    });
+    expect(ports.receipts.size).toBe(0);
+  });
+
+  it('should skip a proposal whose field changed since the draft (A7)', async () => {
+    const ports = fixture({
+      run: twoFieldRun(),
+      record: { ...record(), recordRevision: 3, description: 'Collector edit' },
+    });
+
+    expect(
+      await ports.service.apply(ownerId, draftId, {
+        ...apply,
+        expectedRecordRevision: 3,
+        selectedProposalIds: [],
+        skippedProposalIds: [descriptionId],
+      }),
+    ).toMatchObject({
+      success: true,
+      data: {
+        draft: { status: 'partially_applied' },
+        record: { recordRevision: 3, description: 'Collector edit' },
+      },
+    });
+    expect(ports.patch).not.toHaveBeenCalled();
+  });
+
+  it.for([
+    ['apply', { selectedProposalIds: [descriptionId] }],
+    ['skip', { selectedProposalIds: [], skippedProposalIds: [descriptionId] }],
+  ] as const)(
+    'should refuse to %s a proposal that was already skipped',
+    async ([, decision]) => {
+      const ports = fixture({
+        run: twoFieldRun({
+          status: 'partially_applied',
+          skippedProposalIds: [descriptionId],
+        }),
+      });
+
+      expect(
+        await ports.service.apply(ownerId, draftId, {
+          ...apply,
+          selectedProposalIds: [...decision.selectedProposalIds],
+          skippedProposalIds:
+            'skippedProposalIds' in decision
+              ? [...decision.skippedProposalIds]
+              : undefined,
+        }),
+      ).toEqual({
+        success: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Selected proposal is unavailable',
+          retryable: false,
+        },
+      });
+      expect(ports.markApplied).not.toHaveBeenCalled();
+      expect(ports.appendAdoption).not.toHaveBeenCalled();
+    },
+  );
+
+  it('should refuse to skip an applied or unknown proposal', async () => {
+    const partiallyApplied = twoFieldRun({
+      status: 'partially_applied',
+      appliedProposalIds: [proposalId],
+    });
+
+    for (const skippedId of [
+      proposalId,
+      '00000000-0000-4000-8000-000000000099',
+    ]) {
+      expect(
+        await fixture({ run: partiallyApplied }).service.apply(
+          ownerId,
+          draftId,
+          {
+            ...apply,
+            selectedProposalIds: [],
+            skippedProposalIds: [skippedId],
+          },
+        ),
+      ).toMatchObject({
+        success: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Selected proposal is unavailable',
+        },
+      });
+    }
+  });
+
+  it.for([
+    ['overlapping', [proposalId], [proposalId]],
+    ['duplicate skipped', [], [descriptionId, descriptionId]],
+  ] as const)(
+    'should reject %s decisions before writing',
+    async ([, selectedProposalIds, skippedProposalIds]) => {
+      const ports = fixture({ run: twoFieldRun() });
+
+      expect(
+        await ports.service.apply(ownerId, draftId, {
+          ...apply,
+          selectedProposalIds: [...selectedProposalIds],
+          skippedProposalIds: [...skippedProposalIds],
+        }),
+      ).toEqual({
+        success: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Select or skip each proposal once',
+          retryable: false,
+        },
+      });
+      expect(ports.patch).not.toHaveBeenCalled();
+      expect(ports.markApplied).not.toHaveBeenCalled();
+    },
+  );
 });

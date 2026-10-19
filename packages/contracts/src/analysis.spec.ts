@@ -4,6 +4,8 @@ import {
   actionResolutionRequestSchema,
   applyAnalysisChangesSchema,
   analysisRunDetailSchema,
+  editDraftGenerationSchema,
+  editDraftResultSchema,
   validateAnalysisOutput,
   validateAnalysisReferences,
 } from './analysis.js';
@@ -257,5 +259,60 @@ describe('analysis action resolution validation', () => {
         support,
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('edit draft result validation', () => {
+  const result = {
+    editDraftId: id,
+    recordId: id,
+    baseVersions: {
+      recordRevision: 1,
+      analysisInputVersion: 1,
+      evidenceVersion: 1,
+    },
+    sourceTranscriptionIds: [],
+    sourceObservationIds: [],
+    suggestedDescriptionZhHant: '手感粗糙',
+    proposedChanges: [],
+  };
+
+  it('should keep the assistant reply of a new result', () => {
+    expect(
+      editDraftResultSchema.parse({ ...result, replyZhHant: '已整理描述' })
+        .replyZhHant,
+    ).toBe('已整理描述');
+  });
+
+  it('should read a result stored before replies existed as an empty reply', () => {
+    expect(editDraftResultSchema.parse(result).replyZhHant).toBe('');
+  });
+
+  it('should keep parsing a reply longer than the stored cap so the handler can truncate it', () => {
+    const long = '答'.repeat(5000);
+
+    expect(
+      editDraftResultSchema.parse({ ...result, replyZhHant: long }).replyZhHant,
+    ).toBe(long);
+  });
+
+  it('should reject a reply that is not text', () => {
+    expect(
+      editDraftResultSchema.safeParse({ ...result, replyZhHant: 1 }).success,
+    ).toBe(false);
+  });
+  it('should require a model-generated draft to include its reply', () => {
+    expect(editDraftGenerationSchema.safeParse(result).success).toBe(false);
+    expect(
+      editDraftGenerationSchema.parse({ ...result, replyZhHant: '好的' })
+        .replyZhHant,
+    ).toBe('好的');
+    expect(
+      editDraftGenerationSchema.safeParse({
+        ...result,
+        replyZhHant: '好的',
+        extra: true,
+      }).success,
+    ).toBe(false);
   });
 });

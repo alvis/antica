@@ -187,6 +187,7 @@ function createJobHandlers(
       models.recordEditing,
       models.catalog,
       clock,
+      ids,
     ),
   };
 }

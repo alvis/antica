@@ -5,10 +5,12 @@
   "limitations": [
     "Fixtures are software regression examples, not antique authenticity ground truth.",
     "Development model outputs and pixel descriptors do not measure cloud model quality.",
-    "Traditional Chinese, unsupported assertions, uncertainty handling, source disagreements, and next-action usefulness require human review."
+    "Traditional Chinese, unsupported assertions, uncertainty handling, source disagreements, and next-action usefulness require human review.",
+    "Editing fixtures check reply and proposal structure; they do not establish whether an answer is correct."
   ],
   "snapshots": ["synthetic-evidence-v1", "synthetic-no-evidence-v1"],
   "retrievalCorpus": "retrieval.json",
   "imageFixtures": ["red.png", "blue.png", "dark-red.png"],
-  "imageProvenance": "Project-authored 8 by 8 solid RGB PNGs; ranking queries use separate asset IDs from matching candidate pixels."
+  "imageProvenance": "Project-authored 8 by 8 solid RGB PNGs; ranking queries use separate asset IDs from matching candidate pixels.",
+  "editingDatasets": ["editing-v1"]
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { recordMessageReplyMaxLength } from '@antica/contracts';
+
 import { createEditDraftHandler } from './edit-handler.js';
 
 import type {
@@ -24,6 +26,8 @@ const observationId = '00000000-0000-4000-8000-000000000003';
 const draftId = '00000000-0000-4000-8000-000000000004';
 const jobId = '00000000-0000-4000-8000-000000000005';
 const proposalId = '00000000-0000-4000-8000-000000000006';
+const replyId = '00000000-0000-4000-8000-000000000007';
+const collectorMessageId = '00000000-0000-4000-8000-000000000008';
 const now = '2026-10-13T12:00:00.000Z';
 const versions = {
   recordRevision: 1,
@@ -51,6 +55,7 @@ const result: EditDraftResult = {
   baseVersions: versions,
   sourceTranscriptionIds: [],
   sourceObservationIds: [observationId],
+  replyZhHant: '  我整理了名稱，請確認。  ',
   suggestedDescriptionZhHant: '青瓷瓶',
   proposedChanges: [
     {
@@ -107,6 +112,7 @@ function pendingRun(): EditDraftRunRecord {
       result: null,
       invocation: null,
       appliedProposalIds: [],
+      skippedProposalIds: [],
       createdAt: now,
       updatedAt: now,
     },
@@ -148,13 +154,15 @@ function fixture(
     readonly saveResult?: boolean;
     readonly updateJob?: boolean;
     readonly afterModel?: 'run_missing' | 'job_missing' | 'already_saved';
+    /** whether a collector message started the draft */
+    readonly linked?: boolean;
   } = {},
 ) {
   const current = {
     run: 'run' in options ? (options.run ?? null) : pendingRun(),
     job: 'job' in options ? (options.job ?? null) : job(),
   };
-  const saveResult = vi.fn(async () => {
+  const saveResult = vi.fn(async (_id: string, saved: EditDraftResult) => {
     if (options.saveResult === false) {
       return false;
     }
@@ -165,7 +173,7 @@ function fixture(
           ...current.run.detail,
           status: 'ready',
           revision: 2,
-          result: options.output ?? result,
+          result: saved,
         },
       };
     }
@@ -173,9 +181,35 @@ function fixture(
     return true;
   });
   const updateJob = vi.fn(async () => options.updateJob !== false);
+  const insertAssistantReply = vi.fn(async () => ({
+    created: true,
+    message: {
+      id: replyId,
+      recordId,
+      author: 'assistant' as const,
+      body: 'stored',
+      editDraftId: draftId,
+      createdAt: now,
+    },
+  }));
   const repositories = {
     jobs: { get: vi.fn(async () => current.job), update: updateJob },
     editDrafts: { get: vi.fn(async () => current.run), saveResult },
+    recordMessages: {
+      findCollectorMessage: vi.fn(async () =>
+        options.linked
+          ? {
+              id: collectorMessageId,
+              recordId,
+              author: 'collector' as const,
+              body: 'Tidy the description',
+              editDraftId: draftId,
+              createdAt: now,
+            }
+          : null,
+      ),
+      insertAssistantReply,
+    },
   };
   const unit = new Proxy({} as UnitOfWork, {
     get(_target, key) {
@@ -241,11 +275,22 @@ function fixture(
         };
   });
   const model: RecordEditingPort = { draft };
-  const handler = createEditDraftHandler(transaction, model, catalog, {
-    now: () => now,
-  });
+  const handler = createEditDraftHandler(
+    transaction,
+    model,
+    catalog,
+    { now: () => now },
+    { create: () => replyId },
+  );
 
-  return { handler, current, draft, saveResult, updateJob };
+  return {
+    handler,
+    current,
+    draft,
+    saveResult,
+    updateJob,
+    insertAssistantReply,
+  };
 }
 
 describe('fn:createEditDraftHandler', () => {
@@ -376,6 +421,7 @@ describe('fn:createEditDraftHandler', () => {
       data: undefined,
     });
     expect(concurrent.saveResult).not.toHaveBeenCalled();
+    expect(concurrent.insertAssistantReply).not.toHaveBeenCalled();
   });
 
   it('should report draft or job compare-and-swap conflicts', async () => {
@@ -385,8 +431,95 @@ describe('fn:createEditDraftHandler', () => {
       error: { code: 'REVISION_CONFLICT' },
     });
     expect(changedDraft.updateJob).not.toHaveBeenCalled();
-    expect(
-      await fixture({ updateJob: false }).handler(ownerId, jobId),
-    ).toMatchObject({ success: false, error: { code: 'REVISION_CONFLICT' } });
+    expect(changedDraft.insertAssistantReply).not.toHaveBeenCalled();
+    const changedJob = fixture({ updateJob: false, linked: true });
+    expect(await changedJob.handler(ownerId, jobId)).toMatchObject({
+      success: false,
+      error: { code: 'REVISION_CONFLICT' },
+    });
+    expect(changedJob.insertAssistantReply).not.toHaveBeenCalled();
+  });
+
+  it('should answer a draft started from a record message with the trimmed model reply', async () => {
+    const ports = fixture({ linked: true });
+
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.insertAssistantReply).toHaveBeenCalledExactlyOnceWith({
+      id: replyId,
+      recordId,
+      editDraftId: draftId,
+      body: '我整理了名稱，請確認。',
+      createdAt: now,
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.insertAssistantReply).toHaveBeenCalledTimes(1);
+  });
+
+  it.for([
+    ['a blank reply', { ...result, replyZhHant: '  \n ' }],
+    ['a missing reply', (({ replyZhHant: _reply, ...rest }) => rest)(result)],
+  ] as const)(
+    'should answer neutrally when the model returns %s',
+    async ([, output]) => {
+      const ports = fixture({
+        linked: true,
+        output: output as unknown as EditDraftResult,
+      });
+
+      await ports.handler(ownerId, jobId);
+
+      expect(ports.insertAssistantReply).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ body: '已處理你的訊息。' }),
+      );
+    },
+  );
+
+  it('should cut an over-long reply to the cap in the stored result and the message', async () => {
+    const long = '答'.repeat(recordMessageReplyMaxLength + 50);
+    const ports = fixture({
+      linked: true,
+      output: { ...result, replyZhHant: long },
+    });
+
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+
+    const capped = '答'.repeat(recordMessageReplyMaxLength);
+    expect(ports.current.run?.detail.result?.replyZhHant).toBe(capped);
+    expect(ports.insertAssistantReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ body: capped }),
+    );
+  });
+
+  it('should not leave half a character at the cut', async () => {
+    const long = `答${'\u{1F3FA}'.repeat(recordMessageReplyMaxLength)}`;
+    const ports = fixture({
+      linked: true,
+      output: { ...result, replyZhHant: long },
+    });
+
+    await ports.handler(ownerId, jobId);
+
+    const stored = ports.current.run?.detail.result?.replyZhHant ?? '';
+    expect(stored).toHaveLength(recordMessageReplyMaxLength - 1);
+    expect(stored.isWellFormed()).toBe(true);
+  });
+
+  it('should not answer a draft that no record message started', async () => {
+    const ports = fixture({ linked: false });
+
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.insertAssistantReply).not.toHaveBeenCalled();
   });
 });

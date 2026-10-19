@@ -11,39 +11,48 @@ export interface EvaluationArguments {
   readonly registry: string | undefined;
   readonly reviews: string | undefined;
   readonly limit: number;
+  readonly runs: number;
   readonly help: boolean;
 }
 
 const maximumCutoff = 100;
+const maximumRuns = 10;
 
 /**
  * parses the shared developer-facing evaluation command options
  * @param args explicit process arguments
  * @param defaultOutput default persisted report path
+ * @param defaultSnapshot default fixture ID for the command's dataset
  * @returns validated command inputs
- * @throws {RangeError} when cutoff or model arguments are invalid
+ * @throws {RangeError} when cutoff, run count or model arguments are invalid
  */
 export function parseEvaluationArguments(
   args: readonly string[],
   defaultOutput: string,
+  defaultSnapshot = 'synthetic-evidence-v1',
 ): EvaluationArguments {
   const { values, positionals } = parseArgs({
     args: [...args].filter((value, index) => index !== 0 || value !== '--'),
     allowPositionals: true,
     options: {
-      snapshot: { type: 'string', default: 'synthetic-evidence-v1' },
+      snapshot: { type: 'string', default: defaultSnapshot },
       models: { type: 'string', multiple: true },
       output: { type: 'string', default: defaultOutput },
       corpus: { type: 'string' },
       registry: { type: 'string' },
       reviews: { type: 'string' },
       limit: { type: 'string', default: '2' },
+      runs: { type: 'string', default: '1' },
       help: { type: 'boolean', default: false },
     },
   });
   const limit = Number(values.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > maximumCutoff) {
     throw new RangeError('Limit must be an integer from 1 through 100');
+  }
+  const runs = Number(values.runs);
+  if (!Number.isInteger(runs) || runs < 1 || runs > maximumRuns) {
+    throw new RangeError('Runs must be an integer from 1 through 10');
   }
   const models = values.models
     ? [...values.models, ...positionals]
@@ -67,6 +76,7 @@ export function parseEvaluationArguments(
     registry: values.registry,
     reviews: values.reviews,
     limit,
+    runs,
     help: values.help,
   };
 }

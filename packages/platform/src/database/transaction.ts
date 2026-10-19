@@ -4,6 +4,7 @@ import { createEditDraftRepository } from './repositories/edit-drafts.js';
 import { createEvidenceRepository } from './repositories/evidence.js';
 import { createKnowledgeRepository } from './repositories/knowledge.js';
 import { createMediaRepository } from './repositories/media.js';
+import { createRecordMessageRepository } from './repositories/record-messages.js';
 import {
   createRecordRepository,
   createLocationRepository,
@@ -70,6 +71,7 @@ export function createTransactionPort(db: Database): TransactionPort {
             transcriptions: createTranscriptionRepository(tx, ownerId),
             editDrafts: createEditDraftRepository(tx, ownerId),
             comparisons: createComparisonRepository(tx, ownerId),
+            recordMessages: createRecordMessageRepository(tx, ownerId),
             jobs: createJobRepository(tx, ownerId),
             commands: createCommandRepository(tx, ownerId),
             outbox: createOutboxRepository(tx, ownerId),

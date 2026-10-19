@@ -122,6 +122,7 @@ export {
   analysisResultProjectionSchema,
   analysisRunDetailSchema,
   applyAnalysisChangesSchema,
+  editDraftGenerationSchema,
   editDraftResultSchema,
   findingSchema,
   inspectionTaskSchema,
@@ -280,3 +281,27 @@ export {
   jobStatusEnvelopeSchema,
 } from './job.js';
 export type { JobEnvelope, JobEvent, JobKind, JobState } from './job.js';
+export {
+  recordMessageAuthorSchema,
+  recordMessageBodyMaxLength,
+  recordMessageDraftSchema,
+  recordMessageDraftStatusSchema,
+  recordMessageEntrySchema,
+  recordMessageListQuerySchema,
+  recordMessagePageSchema,
+  recordMessagePostedSchema,
+  recordMessagePostSchema,
+  recordMessageReplyMaxLength,
+  recordMessageSchema,
+} from './record-message.js';
+export type {
+  RecordMessage,
+  RecordMessageAuthor,
+  RecordMessageDraft,
+  RecordMessageDraftStatus,
+  RecordMessageEntry,
+  RecordMessageListQuery,
+  RecordMessagePage,
+  RecordMessagePost,
+  RecordMessagePosted,
+} from './record-message.js';

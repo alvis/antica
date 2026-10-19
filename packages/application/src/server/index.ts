@@ -1,5 +1,7 @@
 export { createRecordService } from '../record/service.js';
 export type { RecordService } from '../record/service.js';
+export { createRecordMessageService } from '../record/messages.js';
+export type { RecordMessageService } from '../record/messages.js';
 export { createLocationService } from '../record/location.js';
 export type { LocationService } from '../record/location.js';
 export { createMediaService } from '../evidence/media.js';

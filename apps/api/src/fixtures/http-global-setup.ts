@@ -23,6 +23,7 @@ const suites = new Set([
   'routes/location',
   'routes/record',
   'routes/record-history',
+  'routes/record-messages',
   'routes/evidence',
   'routes/voice',
   'routes/knowledge-http',

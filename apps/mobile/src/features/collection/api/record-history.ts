@@ -60,14 +60,20 @@ export function recordHistoryQuery(
 
 /**
  * finds the screen that shows the suggestion behind a history entry
+ * @param recordId record the history belongs to
  * @param source the analysis run or edit draft that proposed the change
- * @returns route of that suggestion, or null when this app version cannot open it
+ * @returns route of that suggestion, or null when it has no screen
  */
-export function historySourceRoute(source: RecordHistorySource): string | null {
+export function historySourceRoute(
+  recordId: string,
+  source: RecordHistorySource,
+): string | null {
   if (source.kind === 'analysis') {
     return `/analysis/${encodeURIComponent(source.runId)}?proposalId=${encodeURIComponent(source.proposalId)}`;
   }
 
-  // edit drafts gain a link once the record messages screen exists to show them
-  return null;
+  // a draft requested by voice alone has no message to show
+  return source.recordMessageId
+    ? `/collection/${encodeURIComponent(recordId)}/messages?messageId=${encodeURIComponent(source.recordMessageId)}`
+    : null;
 }
