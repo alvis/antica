@@ -27,6 +27,8 @@ import { useStartAnalysis } from '../../analysis/hooks/useStartAnalysis';
 import { RecordUploadsContainer } from '../../capture/containers/RecordUploadsContainer';
 import { useUnfinishedUploads } from '../../capture/hooks/useUnfinishedUploads';
 
+import { RelatedKnowledgeContainer } from '../../knowledge/containers/RelatedKnowledgeContainer';
+
 import { recordQuery } from '../api/record-query';
 import { RecordAnalysisStatus } from '../components/RecordAnalysisStatus';
 import { RecordEditNotice } from '../components/RecordEditNotice';
@@ -244,6 +246,10 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
             <RecordFieldSummary
               record={record.data}
               labels={fieldLabels.labels}
+            />
+            <RelatedKnowledgeContainer
+              recordId={recordId}
+              recordRevision={record.data.recordRevision}
             />
             <RecordUploadsContainer recordId={recordId} />
             <View style={styles.card}>

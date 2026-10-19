@@ -15,6 +15,7 @@ import {
   findStoryElement,
   findStoryText,
 } from '../../../../mobile.stories.helpers';
+import { expect } from 'storybook/test';
 
 import { RecordMessagesContainer } from './RecordMessagesContainer';
 
@@ -379,7 +380,29 @@ export const FailedReply = {
       `[data-testid="record-message-send-again-${failedQuestion.id}"]`,
     );
     again.click();
-    await findStoryText(canvasElement, `POST ${messagesPath}`);
+    await findStoryText(
+      canvasElement,
+      'Sources must be reattached before sending again.',
+    );
+    await findStoryElement(
+      canvasElement,
+      '[data-testid="record-messages-related"]',
+    );
+    const input = await findStoryElement(
+      canvasElement,
+      '[data-testid="record-message-input"]',
+    );
+    await expect((input as HTMLTextAreaElement).value).toBe(
+      failedQuestion.body,
+    );
+    await expect(
+      canvasElement.querySelector(
+        '[data-testid^="record-message-evidence-attachment-"]',
+      ),
+    ).toBeNull();
+    await expect(canvasElement.textContent).not.toContain(
+      `POST ${messagesPath}`,
+    );
   },
 } satisfies Story;
 

@@ -56,7 +56,10 @@ async function openThread(messageId?: string): ReturnType<typeof renderMobile> {
 }
 
 it('should bring the whole message opened from the change history to the top of the thread once', async () => {
-  const scrollToIndex = jest.spyOn(FlatList.prototype, 'scrollToIndex');
+  // Model a measured list here; failure and retry behavior is exercised below.
+  const scrollToIndex = jest
+    .spyOn(FlatList.prototype, 'scrollToIndex')
+    .mockImplementation(() => undefined);
   await openThread(question.id);
 
   expect(await screen.findByText('Opened from change history')).toBeTruthy();

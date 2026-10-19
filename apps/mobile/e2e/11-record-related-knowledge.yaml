@@ -1,0 +1,121 @@
+# Run request-code, read the development OTP, then signed-in with the same variables.
+# Seed saved entries with support/knowledge-seed.ts, then run
+# support/related-knowledge-seed.ts to obtain the record/card selectors.
+# The final assertion deliberately requires a genuinely cited assistant answer.
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      true: ${STAGE == 'request-code'}
+    commands:
+      - launchApp:
+          clearState: true
+      - openLink: ${DEV_CLIENT_URL}
+      - extendedWaitUntil:
+          visible:
+            id: login-start
+          timeout: 120000
+      - openLink: antica://?devLocale=${APP_LOCALE}
+      - tapOn:
+          id: login-start
+      - tapOn:
+          id: login-phone
+      - inputText: ${PHONE_NUMBER}
+      - tapOn:
+          id: login-send-code
+      - extendedWaitUntil:
+          visible:
+            id: login-code
+          timeout: 30000
+- runFlow:
+    when:
+      true: ${STAGE == 'signed-in'}
+    commands:
+      - tapOn:
+          id: login-code-input
+      - inputText: ${OTP_CODE}
+      - tapOn:
+          id: login-verify
+      - extendedWaitUntil:
+          visible:
+            id: collection-add-item
+          timeout: 60000
+      - runFlow: support/dismiss-dev-logbox.yaml
+      - tapOn: '.*${RECORD_CODE}.*'
+      - scrollUntilVisible:
+          element:
+            id: record-related-open-${ENTRY_ID}
+          direction: DOWN
+          timeout: 60000
+      - runFlow:
+          when:
+            true: ${APP_LOCALE == 'en'}
+          commands:
+            - assertVisible: Related knowledge
+      - runFlow:
+          when:
+            true: ${APP_LOCALE == 'zh-Hant'}
+          commands:
+            - assertVisible: 相關知識
+      - tapOn:
+          id: record-related-open-${ENTRY_ID}
+      - extendedWaitUntil:
+          visible:
+            id: knowledge-detail
+          timeout: 60000
+      - assertNotVisible:
+          id: knowledge-editor-title
+      - back
+      - scrollUntilVisible:
+          element:
+            id: record-messages-entry
+          direction: UP
+          timeout: 60000
+      - tapOn:
+          id: record-messages-entry
+      - extendedWaitUntil:
+          visible:
+            id: record-messages-related
+          timeout: 60000
+      - assertNotVisible:
+          id: record-message-evidence-attachment-.*
+      # The tray scrolls independently from the message history above it.
+      - repeat:
+          times: 4
+          commands:
+            - swipe:
+                from:
+                  id: record-messages-related
+                direction: UP
+      - assertVisible:
+          id: record-related-attach-${ENTRY_ID}
+      - tapOn:
+          id: record-related-attach-${ENTRY_ID}
+      - assertVisible:
+          id: record-message-evidence-attachment-${CLAIM_KEY}
+      - tapOn:
+          id: record-message-evidence-remove-${CLAIM_KEY}
+      - assertNotVisible:
+          id: record-message-evidence-attachment-${CLAIM_KEY}
+      - tapOn:
+          id: record-related-attach-${ENTRY_ID}
+      - tapOn:
+          id: record-message-input
+      - inputText: Describe this item using the attached source?
+      - tapOn:
+          id: record-message-send
+      - hideKeyboard
+      - extendedWaitUntil:
+          notVisible:
+            id: record-message-evidence-attachment-${CLAIM_KEY}
+          timeout: 30000
+      - extendedWaitUntil:
+          visible:
+            id: record-message-knowledge-citation-.*
+          timeout: 90000
+      - assertNotVisible:
+          id: record-message-card-.*
+      - tapOn:
+          id: record-message-knowledge-citation-.*
+      - assertVisible:
+          id: knowledge-citation-panel-.*

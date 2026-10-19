@@ -21,8 +21,14 @@ import type {
   LocalPreferencesPort,
 } from './i18n/preferences';
 
+type FixtureRead = (
+  ...parameters: Parameters<ApiTransport['get']>
+) => ReturnType<ApiTransport['get']>;
+
 export interface MobileResponses {
   get?: (path: string) => Promise<unknown>;
+  /** isolated contextual discovery reply; defaults to no saved matches */
+  relatedKnowledge?: (path: string) => Promise<unknown>;
   post?: (path: string) => Promise<unknown>;
   patch?: (path: string) => Promise<unknown>;
 }
@@ -40,6 +46,8 @@ export interface MobileHarness {
   commands: jest.SpiedFunction<ApiTransport['post']>;
   patches: jest.SpiedFunction<ApiTransport['patch']>;
   reads: jest.SpiedFunction<ApiTransport['get']>;
+  /** contextual reads kept separate from record and conversation request counters */
+  relatedReads: jest.SpiedFunction<ApiTransport['get']>;
   router: ReturnType<typeof useRouter>;
   client: QueryClient;
 }
@@ -120,9 +128,7 @@ export async function renderMobile(
       onUnauthorized: () => undefined,
     },
   });
-  const reads = jest
-    .spyOn(api, 'get')
-    .mockImplementation(responses.get ?? (async () => []));
+  const { reads, relatedReads } = installReadFixtures(api, responses);
   const commands = jest
     .spyOn(api, 'post')
     .mockImplementation(responses.post ?? (async () => collectionRecord));
@@ -155,7 +161,10 @@ export async function renderMobile(
     expire: () => undefined,
   });
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { gcTime: Infinity },
+    },
   });
   await render(
     <QueryClientProvider client={client}>
@@ -165,5 +174,37 @@ export async function renderMobile(
     </QueryClientProvider>,
   );
 
-  return { api, commands, patches, reads, router, client };
+  return { api, commands, patches, reads, relatedReads, router, client };
+}
+
+/**
+ * Separates contextual discovery from existing record and thread fixtures.
+ * @param api isolated transport used by the rendered journey
+ * @param responses endpoint replies supplied by the test
+ * @returns independently observable read boundaries
+ */
+function installReadFixtures(
+  api: ApiTransport,
+  responses: MobileResponses,
+): Pick<MobileHarness, 'reads' | 'relatedReads'> {
+  const sha256Length = 64;
+  const reads = jest.fn<FixtureRead>(responses.get ?? (async () => []));
+  const relatedReads = jest.fn<FixtureRead>(
+    responses.relatedKnowledge ??
+      (async () => ({
+        cards: [],
+        recordRevision: collectionRecord.recordRevision,
+        contextHash: 'a'.repeat(sha256Length),
+        reason: 'no_match',
+      })),
+  );
+  jest
+    .spyOn(api, 'get')
+    .mockImplementation(async (path, ...parameters) =>
+      path.includes('/related-knowledge?')
+        ? relatedReads(path, ...parameters)
+        : reads(path, ...parameters),
+    );
+
+  return { reads, relatedReads };
 }

@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { ApiError } from '@antica/client';
 import {
   knowledgeEntryDetailV2Schema,
+  knowledgeReadV2Schema,
   knowledgeUpdateV2Schema,
 } from '@antica/contracts';
 
@@ -49,12 +50,14 @@ const revisionConflictStatus = 409;
 /**
  * reads explicitly selected revisions and saves only after collector action
  * @param entryId owner-scoped entry identity
- * @param view saved or current working revision
+ * @param view saved, working or explicitly pinned historical revision
+ * @param revision immutable revision required by historical reads
  * @returns reading query, retained form, and explicit save controls
  */
 export function useKnowledgeEntry(
   entryId: string,
-  view: 'saved' | 'working',
+  view: 'saved' | 'working' | 'revision',
+  revision?: number,
 ): KnowledgeEntryState {
   const { api, userId } = useAuth();
   const { locale } = useLocale();
@@ -64,16 +67,37 @@ export function useKnowledgeEntry(
   const queryOptions = (
     selectedView: typeof view,
   ): FetchQueryOptions<KnowledgeEntryDetailV2, Error> => ({
-    queryKey: ['knowledge-detail', userId, entryId, selectedView, locale],
-    queryFn: async ({ signal }: QueryFunctionContext) =>
-      api.get(
-        `/v1/knowledge/${entryId}?view=${selectedView}&locale=${locale}`,
+    queryKey: [
+      'knowledge-detail',
+      userId,
+      entryId,
+      selectedView,
+      locale,
+      revision,
+    ],
+    queryFn: async ({ signal }: QueryFunctionContext) => {
+      const read = knowledgeReadV2Schema.parse({
+        view: selectedView,
+        locale,
+        revision: selectedView === 'revision' ? revision : undefined,
+      });
+      const parameters = new URLSearchParams({ view: selectedView, locale });
+      if (read.revision !== undefined) {
+        parameters.set('revision', String(read.revision));
+      }
+
+      return api.get(
+        `/v1/knowledge/${entryId}?${parameters}`,
         knowledgeEntryDetailV2Schema,
         signal,
-      ),
+      );
+    },
   });
   const detail = useQuery(queryOptions(readView));
   const reload = async (): Promise<void> => {
+    if (view === 'revision') {
+      return;
+    }
     try {
       await client.fetchQuery({ ...queryOptions('working'), staleTime: 0 });
       setReadView('working');
@@ -83,7 +107,7 @@ export function useKnowledgeEntry(
     }
   };
   const save = useKnowledgeSave({
-    entry: detail.data,
+    entry: view === 'revision' ? undefined : detail.data,
     editor,
     setEditor,
     entryId,

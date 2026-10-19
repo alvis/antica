@@ -34,12 +34,9 @@ export type KnowledgeDetailContainerProps = { entryId: string };
 export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
   entryId,
 }) => {
-  const { view } = useLocalSearchParams<{ view?: string }>();
+  const { view, revision } = useKnowledgeRoute();
   const { locale, t } = useLocale();
-  const state = useKnowledgeEntry(
-    entryId,
-    view === 'working' ? 'working' : 'saved',
-  );
+  const state = useKnowledgeEntry(entryId, view, revision);
   const { detail } = state;
   const [original, setOriginal] = useState(false);
   const [citation, setCitation] = useState<
@@ -75,7 +72,9 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
                     setCitation(selected);
                   }}
                 />
-                <KnowledgeEditor {...state} entry={entry} />
+                {view !== 'revision' && (
+                  <KnowledgeEditor {...state} entry={entry} />
+                )}
               </>
             }
           />
@@ -135,3 +134,27 @@ const KnowledgeGallery: FC<{
     />
   );
 };
+
+/**
+ * Interprets explicit historical navigation without falling back to a current revision.
+ * @returns selected read view and optional pinned revision
+ */
+function useKnowledgeRoute(): {
+  view: 'saved' | 'working' | 'revision';
+  revision: number | undefined;
+} {
+  const { view, revision } = useLocalSearchParams<{
+    view?: string;
+    revision?: string;
+  }>();
+
+  return {
+    view:
+      view === 'revision'
+        ? 'revision'
+        : view === 'working'
+          ? 'working'
+          : 'saved',
+    revision: view === 'revision' ? Number(revision) : undefined,
+  };
+}
