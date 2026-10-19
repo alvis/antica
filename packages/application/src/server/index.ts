@@ -40,6 +40,14 @@ export type {
   SourceReadSigningPort,
 } from '../knowledge/ingestion.js';
 export { createKnowledgeService } from '../knowledge/service.js';
+export {
+  createKnowledgeImportService,
+  createKnowledgeImportHandler,
+} from '../knowledge/import.js';
+export type {
+  KnowledgeImportService,
+  KnowledgeImportParams,
+} from '../knowledge/import.js';
 export type { KnowledgeService } from '../knowledge/service.js';
 export { installCorpusRelease } from '../knowledge/corpus-install.js';
 export { createImageSearchService } from '../knowledge/retrieval.js';

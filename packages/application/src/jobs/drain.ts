@@ -8,10 +8,15 @@ import type {
   TransactionPort,
 } from '../ports/index.js';
 
+/** reports whether a durable handler completed or paused its run */
+export interface JobHandlerOutcome {
+  readonly settled: boolean;
+}
+
 export type JobHandler = (
   ownerId: string,
   jobId: string,
-) => Promise<OperationResult<void>>;
+) => Promise<OperationResult<void | JobHandlerOutcome>>;
 export type JobHandlers = Partial<Readonly<Record<JobKind, JobHandler>>>;
 
 export interface OutboxDrainParams {
@@ -45,66 +50,78 @@ export function createOutboxDrain(
     let deferred = 0;
     const failures: Array<{ jobId: string; code: string }> = [];
     for (const message of messages) {
-      const claimed = await claim(params, message);
-      if (!claimed.success) {
-        deferred += 1;
-        failures.push({ jobId: message.event.jobId, code: claimed.error.code });
-        continue;
-      }
-      if (claimed.data.kind === 'settled') {
-        settled += 1;
-        continue;
-      }
-      if (claimed.data.kind === 'leased') {
-        deferred += 1;
-        continue;
-      }
-      const handler = params.handlers[claimed.data.jobKind];
-      let result: OperationResult<void>;
-      try {
-        result = handler
-          ? await handler(message.event.ownerId, message.event.jobId)
-          : {
-              success: false,
-              error: {
-                code: 'JOB_FAILED',
-                message: `No handler for ${claimed.data.jobKind}`,
-                retryable: false,
-              },
-            };
-      } catch {
-        result = {
-          success: false,
-          error: {
-            code: 'JOB_FAILED',
-            message: 'Job handler failed unexpectedly',
-            retryable: true,
-          },
-        };
-      }
-      const completed = await settle(
-        params,
-        message,
-        claimed.data.stepRevision,
-        result,
-      );
-      if (!completed.success) {
-        deferred += 1;
-        failures.push({
-          jobId: message.event.jobId,
-          code: completed.error.code,
-        });
-      } else if (completed.data) {
+      const outcome = await dispatchMessage(params, message);
+      if (outcome.settled) {
         settled += 1;
       } else {
         deferred += 1;
       }
-      if (!result.success) {
-        failures.push({ jobId: message.event.jobId, code: result.error.code });
-      }
+      failures.push(
+        ...outcome.failures.map((code) => ({
+          jobId: message.event.jobId,
+          code,
+        })),
+      );
     }
 
     return { inspected: messages.length, settled, deferred, failures };
+  };
+}
+
+interface DispatchOutcome {
+  readonly settled: boolean;
+  readonly failures: readonly string[];
+}
+
+/**
+ * dispatches one durable message while preserving per-job error reporting
+ * @param params durable job capabilities
+ * @param message one persisted delivery
+ * @returns terminal status and failure codes for this job
+ */
+async function dispatchMessage(
+  params: OutboxDrainParams,
+  message: OutboxMessage,
+): Promise<DispatchOutcome> {
+  if (
+    message.name === 'antica/knowledgeImport.requested' &&
+    params.handlers.knowledgeImport
+  ) {
+    // the portable import handler owns its measured lease, checkpoint and next event
+    const result = await invokeHandler(
+      params.handlers.knowledgeImport,
+      message,
+    );
+
+    return {
+      settled: result.success && result.data?.settled !== false,
+      failures: result.success ? [] : [result.error.code],
+    };
+  }
+  const claimed = await claim(params, message);
+  if (!claimed.success) {
+    return { settled: false, failures: [claimed.error.code] };
+  }
+  if (claimed.data.kind !== 'claimed') {
+    return { settled: claimed.data.kind === 'settled', failures: [] };
+  }
+  const result = await invokeHandler(
+    params.handlers[claimed.data.jobKind],
+    message,
+  );
+  const completed = await settle(
+    params,
+    message,
+    claimed.data.stepRevision,
+    result,
+  );
+
+  return {
+    settled: completed.success && completed.data,
+    failures: [
+      ...(!completed.success ? [completed.error.code] : []),
+      ...(!result.success ? [result.error.code] : []),
+    ],
   };
 }
 
@@ -181,7 +198,7 @@ async function settle(
   params: OutboxDrainParams,
   message: OutboxMessage,
   stepRevision: number,
-  result: OperationResult<void>,
+  result: Awaited<ReturnType<JobHandler>>,
 ): Promise<OperationResult<boolean>> {
   return params.transaction.run<OperationResult<boolean>>(
     message.event.ownerId,
@@ -270,4 +287,37 @@ function failure(
     success: false,
     error: { code, message, retryable: code === 'REVISION_CONFLICT' },
   };
+}
+
+/**
+ * contains one handler failure so unrelated queued jobs can still run
+ * @param handler configured job-specific workload
+ * @param message durable outbox delivery
+ * @returns handler outcome or a retryable failure
+ */
+async function invokeHandler(
+  handler: JobHandler | undefined,
+  message: OutboxMessage,
+): ReturnType<JobHandler> {
+  try {
+    return handler
+      ? await handler(message.event.ownerId, message.event.jobId)
+      : {
+          success: false,
+          error: {
+            code: 'JOB_FAILED',
+            message: 'No handler configured',
+            retryable: false,
+          },
+        };
+  } catch {
+    return {
+      success: false,
+      error: {
+        code: 'JOB_FAILED',
+        message: 'Job handler failed unexpectedly',
+        retryable: true,
+      },
+    };
+  }
 }

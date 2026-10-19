@@ -18,6 +18,7 @@ import {
   renderCanonicalImage,
 } from '@antica/platform/search';
 
+import { createKnowledgeImportRuntime } from './knowledge-import.js';
 import { createSourceParser, createTextWriter } from './source-providers.js';
 import { drainLlamaWebhooks } from './webhook.js';
 
@@ -175,6 +176,8 @@ function createJobHandlers(
       ids,
     }),
     sourceIngestion: sourceHandler,
+    knowledgeImport: async (_ownerId, jobId) =>
+      createKnowledgeImportRuntime(persistence).handle(jobId),
     transcription: createTranscriptionHandler(
       transaction,
       models.transcription,

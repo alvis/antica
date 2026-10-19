@@ -19,6 +19,7 @@ import { createKnowledgeDiscovery } from '@antica/platform/database';
 
 import { createApplication } from './application.js';
 import { createApplicationDrain } from './jobs.js';
+import { createKnowledgeImportRuntime } from './knowledge-import.js';
 import { createPersistence } from './persistence.js';
 import { createImageProviders, createTextProvider } from './retrieval.js';
 import { createLlamaWebhookReceiver } from './webhook.js';
@@ -192,7 +193,10 @@ function createRecordServices(
  */
 function createKnowledgeServices(
   dependencies: JobComposition,
-): Pick<ApplicationParams, 'sources' | 'knowledge' | 'research' | 'images'> {
+): Pick<
+  ApplicationParams,
+  'sources' | 'knowledge' | 'knowledgeImports' | 'research' | 'images'
+> {
   const { persistence, images } = dependencies;
   const { transaction, clock, ids } = persistence;
 
@@ -207,6 +211,7 @@ function createKnowledgeServices(
       createKnowledgeService(transaction, clock, ids),
       createKnowledgeDiscovery(persistence.database.db),
     ),
+    knowledgeImports: createKnowledgeImportRuntime(persistence).service,
     research: createResearchService(transaction, clock, ids),
     images: createImageSearchService({
       transaction,
