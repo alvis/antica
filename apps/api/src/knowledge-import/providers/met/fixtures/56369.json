@@ -1,0 +1,84 @@
+{
+  "requestUrl": "https://collectionapi.metmuseum.org/public/collection/v1/objects/56369",
+  "retrievedAt": "2026-10-19T09:48:06.542799Z",
+  "status": 200,
+  "etag": null,
+  "body": {
+    "objectID": 56369,
+    "isHighlight": false,
+    "accessionNumber": "1973.34",
+    "accessionYear": "1973",
+    "isPublicDomain": true,
+    "primaryImage": "https://images.metmuseum.org/CRDImages/as/original/1973_34.JPG",
+    "primaryImageSmall": "https://images.metmuseum.org/CRDImages/as/web-large/1973_34.JPG",
+    "additionalImages": [
+      "https://images.metmuseum.org/CRDImages/as/original/1973_34_O.JPG"
+    ],
+    "constituents": null,
+    "department": "Asian Art",
+    "objectName": "Folding chair",
+    "title": "Folding Chair",
+    "culture": "China",
+    "period": "Ming dynasty (1368–1644)",
+    "dynasty": "",
+    "reign": "",
+    "portfolio": "",
+    "artistRole": "",
+    "artistPrefix": "",
+    "artistDisplayName": "",
+    "artistDisplayBio": "",
+    "artistSuffix": "",
+    "artistAlphaSort": "",
+    "artistNationality": "",
+    "artistBeginDate": "",
+    "artistEndDate": "",
+    "artistGender": "",
+    "artistWikidata_URL": "",
+    "artistULAN_URL": "",
+    "objectDate": "16th century",
+    "objectBeginDate": 1500,
+    "objectEndDate": 1599,
+    "medium": "Wood",
+    "dimensions": "H. 39 1/2 in. (100.3 cm); W. 17 3/4 in. (45.1 cm); D. 29 in. (73.7 cm)",
+    "measurements": [
+      {
+        "elementName": "Overall",
+        "elementDescription": null,
+        "elementMeasurements": {
+          "Depth": 73.7,
+          "Height": 100.3,
+          "Width": 45.1
+        }
+      },
+      {
+        "elementName": "Overall",
+        "elementDescription": "seat",
+        "elementMeasurements": {
+          "Height": 55.88011
+        }
+      }
+    ],
+    "creditLine": "Gift of Mr. and Mrs. James Biddle, 1973",
+    "geographyType": "",
+    "city": "",
+    "state": "",
+    "county": "",
+    "country": "",
+    "region": "",
+    "subregion": "",
+    "locale": "",
+    "locus": "",
+    "excavation": "",
+    "river": "",
+    "classification": "Furniture",
+    "rightsAndReproduction": "",
+    "linkResource": "",
+    "metadataDate": "2025-10-20T04:51:47.577Z",
+    "repository": "Metropolitan Museum of Art, New York, NY",
+    "objectURL": "https://www.metmuseum.org/art/collection/search/56369",
+    "tags": null,
+    "objectWikidata_URL": "",
+    "isTimelineWork": false,
+    "GalleryNumber": ""
+  }
+}

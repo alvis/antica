@@ -6,6 +6,8 @@ import { createKnowledgeImportRepository } from '@antica/platform';
 
 import { createClevelandAdapter } from './knowledge-import/providers/cleveland/adapter.js';
 
+import { createMetAdapter } from './knowledge-import/providers/met/adapter.js';
+
 import type { ClevelandAdapterOptions } from './knowledge-import/providers/cleveland/adapter.js';
 import type { ClevelandTopicLabel } from './knowledge-import/providers/cleveland/mapping.js';
 
@@ -14,7 +16,7 @@ import type { Persistence } from './persistence.js';
 /**
  * shares the durable import protocol between HTTP commands and the jobs drain
  * @param persistence shared database and clock
- * @param options Cleveland transport and monthly recheck configuration
+ * @param options shared metadata transport and Cleveland monthly recheck configuration
  * @returns owner commands and the portable ID-only batch handler
  */
 export function createKnowledgeImportRuntime(
@@ -27,6 +29,7 @@ export function createKnowledgeImportRuntime(
   const now = persistence.clock.now.bind(persistence.clock);
   const reviewedAdapters = new Map([
     ['cleveland', createClevelandAdapter(options)],
+    ['met', createMetAdapter(options)],
   ]);
   const params = {
     store: createKnowledgeImportRepository({
@@ -45,7 +48,7 @@ export function createKnowledgeImportRuntime(
         ...params.store,
         claim: async (id: string) => {
           const lease = await params.store.claim(id);
-          if (lease?.run.provider === 'cleveland') {
+          if (lease && reviewedAdapters.has(lease.run.provider)) {
             // charge the owner-scoped taxonomy lookup against the existing batch reservation
             const topics = await persistence.database.db.$queryRaw<
               ClevelandTopicLabel[]
@@ -62,8 +65,10 @@ export function createKnowledgeImportRuntime(
               join topics t on t.id = l.topic_id and t.owner_id = c.owner_id
               where t.retired_at is null order by l.topic_id, l.text`;
             registry.set(
-              'cleveland',
-              createClevelandAdapter({ ...options, topics }),
+              lease.run.provider,
+              lease.run.provider === 'met'
+                ? createMetAdapter({ ...options, topics })
+                : createClevelandAdapter({ ...options, topics }),
             );
           }
 

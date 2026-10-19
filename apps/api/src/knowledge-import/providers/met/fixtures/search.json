@@ -1,0 +1,10 @@
+{
+  "requestUrl": "https://collectionapi.metmuseum.org/public/collection/v1.1/search?geoLocation=China&departmentId=6&hasImages=false&offset=0&limit=5",
+  "retrievedAt": "2026-10-19T09:48:09.165473Z",
+  "status": 200,
+  "etag": null,
+  "body": {
+    "total": 1730,
+    "objectIDs": [36061, 36068, 36086, 36119, 36169]
+  }
+}
