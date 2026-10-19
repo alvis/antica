@@ -70,3 +70,8 @@ export { createEditDraftHandler } from '../voice/edit-handler.js';
 
 export type { KnowledgeDiscovery } from '../knowledge/discovery.js';
 export { withKnowledgeDiscovery } from '../knowledge/discovery.js';
+export {
+  buildKnowledgeEvidenceSnapshot,
+  freezeKnowledgeEvidence,
+  validateKnowledgeAnswerSegments,
+} from '../knowledge/evidence.js';

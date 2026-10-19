@@ -5,6 +5,7 @@ import { knowledgeDetailSchema } from '@antica/contracts';
 import { Prisma } from '../generated/client.js';
 import { jsonValue } from '../json.js';
 
+import { createKnowledgeDiscovery } from './knowledge/search.js';
 import { createKnowledgeV2Repository } from './knowledge/v2.js';
 import { readCitation, readReferenceImage } from './sources.js';
 
@@ -208,6 +209,11 @@ export function createKnowledgeRepository(
   ownerId: string,
 ): KnowledgeRepository &
   Omit<ReturnType<typeof createKnowledgeV2Repository>, 'getV2'> & {
+    related(
+      recordId: string,
+      query: import('@antica/contracts').RelatedKnowledgeQuery,
+    ): Promise<import('@antica/contracts').RelatedKnowledgePage | null>;
+    getCorpusGeneration(): Promise<string>;
     getV2(
       id: string,
       read?: KnowledgeReadV2,
@@ -372,6 +378,18 @@ export function createKnowledgeRepository(
 
   return {
     ...createKnowledgeV2Repository(tx, ownerId),
+    related: async (recordId, query) =>
+      createKnowledgeDiscovery(tx).related(ownerId, recordId, query),
+    getCorpusGeneration: async () => {
+      const result = await createKnowledgeDiscovery(tx).search(ownerId, {
+        view: 'saved',
+        locale: 'zh-Hant',
+        limit: 1,
+      });
+      // Cursorless server queries succeed or throw; typed failures require a cursor.
+      return (result as Extract<typeof result, { success: true }>).data
+        .corpusGeneration;
+    },
     /**
      * reads legacy and v2 envelopes without changing the requested revision
      * @param id knowledge identity scoped to the owner

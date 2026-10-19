@@ -306,13 +306,19 @@ export function createDevelopmentModels(): ModelAdapters {
         if (!selected.success) {
           return { ...selected, audit: { invocation: null, rawOutput: null } };
         }
+        const draft = draftDevelopmentEdit(request, sourceText, context.fields);
         const value = editDraftResultSchema.parse({
           editDraftId: request.requestKey,
           recordId: request.recordId,
           baseVersions: context.versions,
           sourceTranscriptionIds: request.transcriptionIds,
           sourceObservationIds: request.observationIds,
-          ...draftDevelopmentEdit(request, sourceText, context.fields),
+          ...draft,
+          ...(context.knowledgeContext
+            ? {
+                answerSegments: [{ text: draft.replyZhHant, evidenceRefs: [] }],
+              }
+            : {}),
         });
 
         return {

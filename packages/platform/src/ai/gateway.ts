@@ -498,7 +498,13 @@ export async function generateStructured<T>(
     const hasInvalidOutput =
       NoObjectGeneratedError.isInstance(cause) ||
       NoOutputGeneratedError.isInstance(cause);
-    const audit = NoObjectGeneratedError.isInstance(cause)
+    // A grounded editing attempt still happened when the provider emitted no object.
+    // Retain its configured identity and elapsed time without inventing output or usage.
+    const retainAttempt =
+      NoObjectGeneratedError.isInstance(cause) ||
+      (params.selection.role === 'recordEditing' &&
+        NoOutputGeneratedError.isInstance(cause));
+    const audit = retainAttempt
       ? {
           invocation: {
             ...invocationMetadata(
@@ -508,13 +514,17 @@ export async function generateStructured<T>(
               params.schemaVersion,
               startedAt,
             ),
-            usage: {
-              inputTokens: cause.usage?.inputTokens ?? null,
-              outputTokens: cause.usage?.outputTokens ?? null,
-            },
+            usage: NoObjectGeneratedError.isInstance(cause)
+              ? {
+                  inputTokens: cause.usage?.inputTokens ?? null,
+                  outputTokens: cause.usage?.outputTokens ?? null,
+                }
+              : { inputTokens: null, outputTokens: null },
             citationCheck: { valid: false, rejectedReferenceIds: [] },
           },
-          rawOutput: cause.text,
+          rawOutput: NoObjectGeneratedError.isInstance(cause)
+            ? cause.text
+            : null,
         }
       : { invocation: null, rawOutput: null };
 

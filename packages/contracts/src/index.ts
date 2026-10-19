@@ -328,3 +328,16 @@ export type {
   RelatedKnowledgePage,
   RelatedKnowledgeDiscovery,
 } from './knowledge-related.js';
+
+export {
+  knowledgeEvidenceSnapshotV1Schema,
+  answerSegmentSchema,
+  knowledgeAttachmentSchema,
+  knowledgeEvidenceTextBytes,
+  knowledgeNoSupportedAnswer,
+} from './knowledge-evidence.js';
+export type {
+  KnowledgeEvidenceSnapshotV1,
+  AnswerSegment,
+  KnowledgeAttachment,
+} from './knowledge-evidence.js';

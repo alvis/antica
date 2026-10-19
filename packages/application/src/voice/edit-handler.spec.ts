@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { recordMessageReplyMaxLength } from '@antica/contracts';
+import {
+  knowledgeNoSupportedAnswer,
+  recordMessageReplyMaxLength,
+} from '@antica/contracts';
 
 import { createEditDraftHandler } from './edit-handler.js';
 
 import type {
   EditDraftResult,
+  KnowledgeEvidenceSnapshotV1,
   JobEnvelope,
   ModelInvocation,
   RecordFields,
@@ -149,8 +153,13 @@ function fixture(
     readonly run?: EditDraftRunRecord | null;
     readonly job?: JobEnvelope | null;
     readonly output?: EditDraftResult;
+    readonly outputs?: readonly EditDraftResult[];
     readonly capabilityFailure?: boolean;
     readonly modelFailure?: boolean;
+    readonly modelErrors?: ReadonlyArray<
+      'MODEL_OUTPUT_INVALID' | 'PROVIDER_UNAVAILABLE' | null
+    >;
+    readonly missingAudit?: boolean;
     readonly saveResult?: boolean;
     readonly updateJob?: boolean;
     readonly afterModel?: 'run_missing' | 'job_missing' | 'already_saved';
@@ -245,7 +254,11 @@ function fixture(
           },
     ),
   };
+  const modelCalls = { count: 0 };
   const draft = vi.fn(async () => {
+    const output =
+      options.outputs?.[modelCalls.count] ?? options.output ?? result;
+    modelCalls.count += 1;
     if (options.afterModel === 'run_missing') {
       current.run = null;
     }
@@ -256,6 +269,18 @@ function fixture(
       current.run = {
         ...current.run,
         detail: { ...current.run.detail, result },
+      };
+    }
+
+    const code = options.modelErrors?.[modelCalls.count - 1];
+    if (code) {
+      return {
+        success: false as const,
+        error: { code, message: 'Provider rejected output', retryable: false },
+        audit: {
+          invocation: options.missingAudit ? null : invocation,
+          rawOutput: null,
+        },
       };
     }
 
@@ -271,7 +296,7 @@ function fixture(
         }
       : {
           success: true as const,
-          data: { value: options.output ?? result, invocation },
+          data: { value: output, invocation },
         };
   });
   const model: RecordEditingPort = { draft };
@@ -521,5 +546,320 @@ describe('fn:createEditDraftHandler', () => {
       data: undefined,
     });
     expect(ports.insertAssistantReply).not.toHaveBeenCalled();
+  });
+});
+
+const evidenceRef = {
+  entryId: '00000000-0000-4000-8000-000000000020',
+  revision: 1,
+  claimKey: 'material',
+  citationIds: ['00000000-0000-4000-8000-000000000021'],
+};
+const knowledgeContext: KnowledgeEvidenceSnapshotV1 = {
+  schemaVersion: 1,
+  snapshotId: '00000000-0000-4000-8000-000000000030',
+  snapshotHash: 'a'.repeat(64),
+  recordId,
+  recordRevision: 1,
+  corpusGeneration: 'generation-1',
+  entries: [
+    {
+      entryId: evidenceRef.entryId,
+      revision: 1,
+      contentHash: 'b'.repeat(64),
+      title: 'Museum vase',
+      claims: [
+        {
+          claimId: '00000000-0000-4000-8000-000000000022',
+          claimKey: evidenceRef.claimKey,
+          statement: 'This museum vase is porcelain.',
+          originalText: 'This museum vase is porcelain.',
+          language: 'en',
+          scope: { object: ['This vase'] },
+          qualifiers: { attribution: 'tentative' },
+          uncertainty: 'Not applicable to every vase.',
+          sourceVersionIds: ['00000000-0000-4000-8000-000000000023'],
+          citations: [
+            {
+              citationId: evidenceRef.citationIds[0]!,
+              sourceId: '00000000-0000-4000-8000-000000000024',
+              sourceVersionId: '00000000-0000-4000-8000-000000000023',
+              locatorId: '00000000-0000-4000-8000-000000000025',
+              relation: 'supports',
+              sourceTitle: 'Catalog',
+              excerpt: 'This museum vase is porcelain.',
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+function groundedRun(): EditDraftRunRecord {
+  const run = pendingRun();
+
+  return {
+    ...run,
+    detail: {
+      ...run.detail,
+      snapshot: { ...run.detail.snapshot, knowledgeContext },
+    },
+  };
+}
+
+const supportedResult: EditDraftResult = {
+  ...result,
+  replyZhHant: 'Unverified separate prose must not be published.',
+  proposedChanges: [],
+  answerSegments: [
+    {
+      text: '這件館藏記載為瓷器，不能推論所有瓶。',
+      evidenceRefs: [evidenceRef],
+    },
+  ],
+};
+const unsupportedReferenceResult: EditDraftResult = {
+  ...supportedResult,
+  proposedChanges: result.proposedChanges,
+  answerSegments: [
+    {
+      text: 'Unsupported claim.',
+      evidenceRefs: [{ ...evidenceRef, revision: 99 }],
+    },
+  ],
+};
+
+describe('fn:createEditDraftHandler grounded replies', () => {
+  it('should persist answer-only segments and frozen context without a record edit', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      output: supportedResult,
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledExactlyOnceWith(
+      ports.current.run?.request,
+      ['青瓷瓶'],
+      { fields, versions, knowledgeContext },
+      ports.current.run?.modelSelection,
+    );
+    expect(ports.current.run?.detail.result).toMatchObject({
+      editDraftId: draftId,
+      proposedChanges: [],
+      answerSegments: supportedResult.answerSegments,
+      replyZhHant: supportedResult.answerSegments?.[0]?.text,
+    });
+    expect(ports.insertAssistantReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: supportedResult.answerSegments?.[0]?.text,
+      }),
+    );
+  });
+
+  it('should repair an invalid reference exactly once using the same frozen evidence', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      outputs: [unsupportedReferenceResult, supportedResult],
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(2);
+    expect(ports.saveResult).toHaveBeenCalledWith(
+      draftId,
+      expect.any(Object),
+      invocation,
+      1,
+      now,
+    );
+    expect(ports.draft).toHaveBeenLastCalledWith(
+      ports.current.run?.request,
+      ['青瓷瓶'],
+      expect.objectContaining({
+        knowledgeContext,
+        evidenceRepair: expect.any(String),
+      }),
+      ports.current.run?.modelSelection,
+    );
+    expect(ports.current.run?.detail.result).toMatchObject({
+      answerSegments: supportedResult.answerSegments,
+      proposedChanges: [],
+    });
+    expect(ports.insertAssistantReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        body: supportedResult.answerSegments?.[0]?.text,
+      }),
+    );
+  });
+
+  it('should replace repeatedly invalid evidence with the explicit unsupported answer and no proposals', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      output: unsupportedReferenceResult,
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(2);
+    expect(ports.saveResult).toHaveBeenCalledWith(
+      draftId,
+      expect.any(Object),
+      {
+        ...invocation,
+        citationCheck: { valid: false, rejectedReferenceIds: [] },
+      },
+      1,
+      now,
+    );
+    expect(ports.current.run?.detail.result).toMatchObject({
+      replyZhHant: knowledgeNoSupportedAnswer,
+      answerSegments: [{ text: knowledgeNoSupportedAnswer, evidenceRefs: [] }],
+      proposedChanges: [],
+    });
+    expect(ports.insertAssistantReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ body: knowledgeNoSupportedAnswer }),
+    );
+  });
+
+  it('should preserve valid edit proposals beside a verified supported answer without applying them', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      output: { ...supportedResult, proposedChanges: result.proposedChanges },
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.current.run?.detail).toMatchObject({
+      result: {
+        answerSegments: supportedResult.answerSegments,
+        proposedChanges: result.proposedChanges,
+      },
+      appliedProposalIds: [],
+    });
+  });
+});
+
+describe('fn:createEditDraftHandler evidence failures', () => {
+  it('should repair malformed model output before storing a verified answer', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      output: supportedResult,
+      modelErrors: ['MODEL_OUTPUT_INVALID', null],
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(2);
+    expect(ports.current.run?.detail.result).toMatchObject({
+      answerSegments: supportedResult.answerSegments,
+    });
+  });
+
+  it('should fall back after a failed repair while retaining the original invocation', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      output: unsupportedReferenceResult,
+      modelErrors: [null, 'PROVIDER_UNAVAILABLE'],
+      missingAudit: true,
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(2);
+    expect(ports.current.run?.detail.result).toMatchObject({
+      replyZhHant: knowledgeNoSupportedAnswer,
+      proposedChanges: [],
+    });
+    expect(ports.saveResult).toHaveBeenCalledWith(
+      draftId,
+      expect.any(Object),
+      {
+        ...invocation,
+        citationCheck: { valid: false, rejectedReferenceIds: [] },
+      },
+      1,
+      now,
+    );
+  });
+
+  it('should fall back after two schema rejections and retain the available audit', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      modelErrors: ['MODEL_OUTPUT_INVALID', 'MODEL_OUTPUT_INVALID'],
+    });
+    expect(await ports.handler(ownerId, jobId)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(2);
+    expect(ports.current.run?.detail.result).toMatchObject({
+      replyZhHant: knowledgeNoSupportedAnswer,
+      answerSegments: [{ text: knowledgeNoSupportedAnswer, evidenceRefs: [] }],
+      proposedChanges: [],
+    });
+  });
+
+  it('should require nonempty segments for grounded legacy output and stop after one repair', async () => {
+    for (const output of [result, { ...result, answerSegments: [] }]) {
+      const ports = fixture({ run: groundedRun(), linked: true, output });
+      expect(await ports.handler(ownerId, jobId)).toEqual({
+        success: true,
+        data: undefined,
+      });
+      expect(ports.draft).toHaveBeenCalledTimes(2);
+      expect(ports.current.run?.detail.result).toMatchObject({
+        answerSegments: [
+          { text: knowledgeNoSupportedAnswer, evidenceRefs: [] },
+        ],
+        proposedChanges: [],
+      });
+    }
+  });
+
+  it('should return an initial provider failure without attempting evidence repair', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      modelFailure: true,
+    });
+    expect(await ports.handler(ownerId, jobId)).toMatchObject({
+      success: false,
+      error: { code: 'PROVIDER_UNAVAILABLE' },
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(1);
+    expect(ports.saveResult).not.toHaveBeenCalled();
+  });
+
+  it('should reject unauditable malformed responses without writing a result or reply', async () => {
+    const ports = fixture({
+      run: groundedRun(),
+      linked: true,
+      modelErrors: ['MODEL_OUTPUT_INVALID', 'MODEL_OUTPUT_INVALID'],
+      missingAudit: true,
+    });
+    expect(await ports.handler(ownerId, jobId)).toMatchObject({
+      success: false,
+      error: { code: 'VALIDATION_FAILED' },
+    });
+    expect(ports.draft).toHaveBeenCalledTimes(2);
+    expect(ports.current.run?.detail.result).toBeNull();
+    expect(ports.saveResult).not.toHaveBeenCalled();
+    expect(ports.insertAssistantReply).not.toHaveBeenCalled();
+    expect(ports.updateJob).not.toHaveBeenCalled();
   });
 });

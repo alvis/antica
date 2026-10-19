@@ -79,6 +79,9 @@ export function createRecordMessageService(
           body: input.body,
           transcriptionIds: input.transcriptionIds,
           expectedRecordRevision: input.expectedRecordRevision,
+          ...(input.knowledgeAttachments?.length
+            ? { knowledgeAttachments: input.knowledgeAttachments }
+            : {}),
         });
         const prior = await unit.commands.get(
           ownerId,
@@ -117,6 +120,7 @@ export function createRecordMessageService(
             ids,
             allowInstructionOnly: true,
             allowReadyTranscriptions: true,
+            knowledgeAttachments: input.knowledgeAttachments ?? [],
           },
         );
         if (!accepted.success) {
@@ -157,6 +161,10 @@ export function createRecordMessageService(
         }
         const posted: RecordMessagePosted = {
           ...accepted.data,
+          knowledgeSnapshot: {
+            snapshotId: draft.detail.snapshot.knowledgeContext!.snapshotId,
+            snapshotHash: draft.detail.snapshot.knowledgeContext!.snapshotHash,
+          },
           message: { ...message, author: 'collector' },
         };
         await unit.commands.insert({

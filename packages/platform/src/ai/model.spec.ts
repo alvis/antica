@@ -546,8 +546,8 @@ describe('fn:createDevelopmentModels', () => {
               proposedChanges: [],
             },
             invocation: {
-              promptVersion: 'editing-v2',
-              schemaVersion: 'editing-v2',
+              promptVersion: 'editing-v3',
+              schemaVersion: 'editing-v3',
             },
           },
         });
@@ -937,6 +937,57 @@ describe('fn:createDevelopmentModels', () => {
     expect(result).toMatchObject({
       success: false,
       error: { code: 'PROVIDER_UNAVAILABLE' },
+    });
+  });
+});
+
+describe('fn:createDevelopmentModels grounded editing', () => {
+  it('should acknowledge questions without saved knowledge or invented references or edits', async () => {
+    const request = {
+      requestKey: '00000000-0000-4000-8000-000000000030',
+      recordId: emptyPack.input.recordId,
+      expectedRecordRevision: 3,
+      transcriptionIds: [],
+      observationIds: [],
+      instructionZhHant: '這件器物有什麼來源支持？',
+    };
+    const context = {
+      fields: emptyPack.recordFields,
+      versions: {
+        recordRevision: 3,
+        analysisInputVersion: 2,
+        evidenceVersion: 1,
+      },
+      knowledgeContext: {
+        schemaVersion: 1 as const,
+        snapshotId: '00000000-0000-4000-8000-000000000040',
+        snapshotHash: 'a'.repeat(64),
+        recordId: request.recordId,
+        recordRevision: 3,
+        corpusGeneration: 'generation-1',
+        entries: [],
+      },
+    };
+    const result = await createDevelopmentModels().recordEditing.draft(
+      request,
+      [],
+      context,
+      { ...selection, role: 'recordEditing' },
+    );
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        value: {
+          editDraftId: request.requestKey,
+          proposedChanges: [],
+          answerSegments: [
+            {
+              text: expect.stringContaining('開發示範：這是提問'),
+              evidenceRefs: [],
+            },
+          ],
+        },
+      },
     });
   });
 });

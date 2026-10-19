@@ -1,11 +1,18 @@
 import { isDeepStrictEqual } from 'node:util';
 
+import { validateKnowledgeAnswerSegments } from '@antica/application/server';
+
 import {
   editDraftGenerationSchema,
+  knowledgeNoSupportedAnswer,
   recordMessageReplyMaxLength,
 } from '@antica/contracts';
 
-import type { ProposedChange } from '@antica/contracts';
+import type {
+  ProposedChange,
+  EditDraftResult,
+  KnowledgeEvidenceSnapshotV1,
+} from '@antica/contracts';
 
 import type { EditingCase, EditingRecord } from './editing-dataset.js';
 
@@ -23,8 +30,28 @@ export interface EditingChecks {
   readonly noEnglishGloss: boolean | null;
   /** null when the case does not ask for a non-allowlisted field */
   readonly refusalStated: boolean | null;
+  /** null for legacy cases; reference identity is not entailment */
+  readonly evidenceRefsValid: boolean | null;
+  readonly expectedEvidencePresent: boolean | null;
+  readonly unsupportedAnswer: boolean | null;
   readonly schemaIssues: readonly string[];
 }
+
+/** binds one evaluation case to the admitted evidence used by its model call */
+export interface EditingCheckContext extends EditingCase {
+  readonly knowledgeContext?: KnowledgeEvidenceSnapshotV1;
+}
+
+type KnowledgeChecks = Pick<
+  EditingChecks,
+  'evidenceRefsValid' | 'expectedEvidencePresent' | 'unsupportedAnswer'
+>;
+
+const emptyKnowledgeChecks: KnowledgeChecks = {
+  evidenceRefsValid: null,
+  expectedEvidencePresent: null,
+  unsupportedAnswer: null,
+};
 
 const pronoun = '(?:幫|為|替|給)(?:你|您)';
 const claimVerb =
@@ -88,13 +115,13 @@ const quotationPairs: ReadonlyArray<readonly [string, string]> = [
  * applies the editing contract and case expectations to potentially invalid output
  * @param output provider output or retained invalid output
  * @param record frozen record the proposals must preserve
- * @param item collector message with expected and permitted proposal fields
+ * @param item collector message, proposal expectations and admitted frozen knowledge
  * @returns mechanical verdicts for the reply and proposals
  */
 export function checkEditingOutput(
   output: unknown,
   record: EditingRecord,
-  item: EditingCase,
+  item: EditingCheckContext,
 ): EditingChecks {
   const parsed = editDraftGenerationSchema.safeParse(output);
   if (!parsed.success) {
@@ -110,6 +137,7 @@ export function checkEditingOutput(
       replyMentionsProposals: null,
       noEnglishGloss: null,
       refusalStated: null,
+      ...emptyKnowledgeChecks,
       schemaIssues: parsed.error.issues.map(
         (issue) => `${issue.path.join('.')}: ${issue.message}`,
       ),
@@ -126,6 +154,7 @@ export function checkEditingOutput(
 
   return {
     schemaValid: true,
+    ...checkKnowledgeEvidence(draft, item),
     identityPreserved:
       draft.editDraftId === item.requestKey &&
       draft.recordId === record.recordId &&
@@ -152,6 +181,44 @@ export function checkEditingOutput(
 }
 
 /**
+ * scores reference identity and explicit abstention without judging entailment
+ * @param draft validated model output
+ * @param item case expectations and admitted snapshot
+ * @returns mechanical knowledge checks, null for legacy cases
+ */
+function checkKnowledgeEvidence(
+  draft: EditDraftResult,
+  item: EditingCheckContext,
+): KnowledgeChecks {
+  const segments = draft.answerSegments ?? [];
+  const knowledgeContext = item.knowledgeContext;
+
+  return {
+    evidenceRefsValid:
+      knowledgeContext === undefined
+        ? null
+        : segments.length > 0 &&
+          validateKnowledgeAnswerSegments(segments, knowledgeContext),
+    expectedEvidencePresent:
+      item.knowledge === undefined
+        ? null
+        : item.knowledge.expectedRefs.every((ref) =>
+            segments.some((segment) =>
+              segment.evidenceRefs.some((actual) =>
+                isDeepStrictEqual(actual, ref),
+              ),
+            ),
+          ),
+    unsupportedAnswer:
+      knowledgeContext?.entries.length !== 0
+        ? null
+        : isDeepStrictEqual(segments, [
+            { text: knowledgeNoSupportedAnswer, evidenceRefs: [] },
+          ]) && draft.replyZhHant === knowledgeNoSupportedAnswer,
+  };
+}
+
+/**
  * checks that a reply claims nothing, adds no English gloss, and refuses restricted fields
  * @param reply assistant reply shown to the collector
  * @param values record and proposed values the reply may repeat verbatim
@@ -164,7 +231,8 @@ function checkReplyWording(
   item: EditingCase,
 ): Pick<EditingChecks, 'noAppliedClaim' | 'noEnglishGloss' | 'refusalStated'> {
   return {
-    noAppliedClaim: !claimsApplied(reply, values),
+    noAppliedClaim:
+      reply === knowledgeNoSupportedAnswer || !claimsApplied(reply, values),
     noEnglishGloss: !latinRun.test(
       values.reduce((text, value) => text.replaceAll(value, ''), reply),
     ),

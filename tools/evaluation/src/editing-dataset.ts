@@ -4,6 +4,8 @@ import { z } from 'zod';
 
 import {
   entityIdSchema,
+  knowledgeAttachmentSchema,
+  knowledgeEntryDetailV2Schema,
   recordFieldsSchema,
   recordVersionsSchema,
 } from '@antica/contracts';
@@ -31,6 +33,8 @@ export const editingFieldSchema = z.enum([
   'collectorJudgment',
 ]);
 
+const maximumKnowledgeAttachments = 6;
+
 const kindsWithoutRequiredProposals: readonly EditingCaseKind[] = [
   'ask',
   'injection',
@@ -42,6 +46,7 @@ export const editingDatasetSchema = z
   .strictObject({
     version: z.string().min(1),
     provenance: z.string().min(1),
+    knowledgeEntries: z.array(knowledgeEntryDetailV2Schema).optional(),
     records: z
       .array(
         z.strictObject({
@@ -63,6 +68,16 @@ export const editingDatasetSchema = z
           expectedFields: z.array(editingFieldSchema),
           permittedFields: z.array(editingFieldSchema),
           notes: z.string(),
+          knowledge: z
+            .strictObject({
+              entryIds: z.array(entityIdSchema),
+              attachments: z
+                .array(knowledgeAttachmentSchema)
+                .max(maximumKnowledgeAttachments),
+              expectedRefs: z.array(knowledgeAttachmentSchema),
+              expectedError: z.literal('EVIDENCE_INVALID').optional(),
+            })
+            .optional(),
         }),
       )
       .min(1),

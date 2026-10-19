@@ -7,12 +7,25 @@ import {
   RecordMessageReplayConflictError,
 } from '@antica/application/ports';
 
+import { knowledgeEvidenceSnapshotV1Schema } from '@antica/contracts';
+
 import { createDatabase } from '../connection.js';
 
 import { Prisma } from '../generated/client.js';
 import { createDatabaseTest } from '../spec/fixtures/runner.js';
 
+import { createEditDraftRepository } from './edit-drafts.js';
+import { createKnowledgeRepository } from './knowledge.js';
 import { createRecordMessageRepository } from './record-messages.js';
+
+import type {
+  EditDraftRunRecord,
+  ModelInvocation,
+} from '@antica/application/ports';
+import type {
+  EditDraftResult,
+  KnowledgeContentEnvelopeV2,
+} from '@antica/contracts';
 
 import type { RunnerDatabase } from '../spec/fixtures/runner.js';
 
@@ -383,6 +396,8 @@ describe('fn:createRecordMessageRepository', { timeout: 30_000 }, () => {
           recordId,
           author: 'assistant',
           body: 'I suggest two changes.',
+          knowledgeEvidence: [],
+          answerSegments: [],
           editDraftId,
           createdAt: at(2),
         },
@@ -1154,3 +1169,462 @@ describe('fn:createRecordMessageRepository', { timeout: 30_000 }, () => {
     });
   });
 });
+
+describe(
+  'fn:createRecordMessageRepository frozen knowledge',
+  { timeout: 30_000 },
+  () => {
+    it('should persist frozen evidence and segments without changing record rows, even after a newer knowledge revision', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId } = await seed(connection);
+      const knowledge = createKnowledgeRepository(connection.db, ownerId);
+      const content = await seedKnowledgeEvidence(connection, ownerId);
+      const entryId = randomUUID();
+      await knowledge.createV2({
+        entryId,
+        displayCode: `KN-${entryId}`,
+        content,
+        status: 'saved',
+        savedBy: 'collector',
+        reviewedBy: null,
+        reviewedAt: null,
+      });
+      const citation = content.citations[0]!;
+      const claim = content.claims[0]!;
+      const frozen = knowledgeEvidenceSnapshotV1Schema.parse({
+        schemaVersion: 1,
+        snapshotId: randomUUID(),
+        snapshotHash: 'b'.repeat(64),
+        recordId,
+        recordRevision: 1,
+        corpusGeneration: 'saved-revision-1',
+        entries: [
+          {
+            entryId,
+            revision: 1,
+            contentHash: 'a'.repeat(64),
+            title: 'Museum vase',
+            claims: [
+              {
+                claimId: randomUUID(),
+                claimKey: claim.claimKey,
+                statement: claim.originalText,
+                originalText: claim.originalText,
+                language: claim.originalLanguage,
+                scope: claim.scope,
+                qualifiers: claim.qualifiers,
+                uncertainty: claim.uncertainty,
+                sourceVersionIds: [citation.source.versionId],
+                citations: [
+                  {
+                    citationId: citation.id,
+                    sourceId: citation.source.id,
+                    sourceVersionId: citation.source.versionId,
+                    locatorId: citation.locator.id,
+                    relation: 'supports',
+                    sourceTitle: citation.source.title,
+                    excerpt: claim.originalText,
+                    sourcePageUrl: 'https://museum.example/object',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      const recordBefore = await connection.db.records.findUniqueOrThrow({
+        where: { id: recordId },
+      });
+      const countsBefore = await recordWriteCounts(connection, recordId);
+      const editDraftId = randomUUID();
+      const jobId = randomUUID();
+      await connection.db.jobs.create({
+        data: {
+          id: jobId,
+          ownerId,
+          kind: 'recordEditing',
+          resourceId: editDraftId,
+          state: 'queued',
+          stage: 'draft',
+        },
+      });
+      const versions = {
+        recordRevision: 1,
+        analysisInputVersion: 1,
+        evidenceVersion: 1,
+      };
+      const run: EditDraftRunRecord = {
+        detail: {
+          editDraftId,
+          jobId,
+          revision: 1,
+          status: 'pending',
+          snapshot: {
+            recordId,
+            versions,
+            fields: {
+              name: null,
+              unitKind: 'single',
+              components: [],
+              pieceCount: null,
+              categoryIds: [],
+              materialIds: [],
+              period: null,
+              dimensions: {},
+              location: { locationId: null, detail: '' },
+              acquisition: { receiptAssetIds: [] },
+              tags: [],
+              description: '',
+              collectorJudgment: null,
+            },
+            transcriptionVersions: [],
+            observationIds: [],
+            sourceText: [],
+            createdAt: at(0),
+            knowledgeContext: frozen,
+          },
+          result: null,
+          invocation: null,
+          appliedProposalIds: [],
+          skippedProposalIds: [],
+          createdAt: at(0),
+          updatedAt: at(0),
+        },
+        request: {
+          requestKey: editDraftId,
+          recordId,
+          expectedRecordRevision: 1,
+          transcriptionIds: [],
+          observationIds: [],
+          instructionZhHant: '整理記錄',
+        },
+        modelSelection: {
+          role: 'recordEditing',
+          modelId: 'development:evidence-v1',
+          profileVersion: '1',
+        },
+      };
+      const drafts = createEditDraftRepository(connection.db, ownerId);
+      await drafts.create(run);
+      expect(
+        (await drafts.get(editDraftId))?.detail.snapshot.knowledgeContext,
+      ).toEqual(frozen);
+      expect(
+        await connection.db.editDraftRuns.findUniqueOrThrow({
+          where: { id: editDraftId },
+        }),
+      ).toMatchObject({ knowledgeContext: frozen });
+      expect(
+        await createEditDraftRepository(connection.db, randomUUID()).get(
+          editDraftId,
+        ),
+      ).toBeNull();
+      const answerSegments = [
+        {
+          text: 'The catalog describes this museum object.',
+          evidenceRefs: [
+            {
+              entryId,
+              revision: 1,
+              claimKey: claim.claimKey,
+              citationIds: [citation.id],
+            },
+          ],
+        },
+      ];
+      const result: EditDraftResult = {
+        editDraftId,
+        recordId,
+        baseVersions: versions,
+        sourceTranscriptionIds: [],
+        sourceObservationIds: [],
+        replyZhHant: answerSegments[0]!.text,
+        suggestedDescriptionZhHant: '',
+        proposedChanges: [],
+        answerSegments,
+      };
+      const invocation: ModelInvocation = {
+        requestedModelId: 'development:evidence-v1',
+        effectiveModelId: 'development:evidence-v1',
+        provider: 'development',
+        providerModelVersion: '1',
+        adapterKind: 'development',
+        capabilities: {
+          textInput: true,
+          imageInput: false,
+          audioInput: false,
+          structuredOutput: true,
+          toolCalling: false,
+        },
+        role: 'recordEditing',
+        profileVersion: '1',
+        promptVersion: 'editing-v3',
+        schemaVersion: '1',
+        effectiveOptions: {},
+        latencyMs: 0,
+        usage: { inputTokens: null, outputTokens: null },
+        finishReason: 'stop',
+        citationCheck: { valid: true, rejectedReferenceIds: [] },
+      };
+      expect(
+        await drafts.saveResult(editDraftId, result, invocation, 1, at(1)),
+      ).toBe(true);
+      const reply = await withRepository(
+        connection,
+        ownerId,
+        async (repository) =>
+          repository.insertAssistantReply({
+            id: randomUUID(),
+            recordId,
+            editDraftId,
+            body: result.replyZhHant,
+            createdAt: at(2),
+          }),
+      );
+      expect(reply.message).toMatchObject({
+        knowledgeEvidence: frozen,
+        answerSegments,
+      });
+      expect(
+        await connection.db.recordMessages.findUniqueOrThrow({
+          where: { id: reply.message.id },
+        }),
+      ).toMatchObject({ knowledgeEvidence: frozen });
+      await knowledge.addRevisionV2({
+        entryId,
+        expectedRevision: 1,
+        content: {
+          ...content,
+          titles: [{ language: 'en', text: 'Revised museum attribution' }],
+          claims: content.claims.map((item) => ({
+            ...item,
+            uncertainty: 'Attribution now disputed',
+          })),
+        },
+        status: 'saved',
+        savedBy: 'collector',
+        reviewedBy: null,
+        reviewedAt: null,
+      });
+      const listed = await withRepository(
+        connection,
+        ownerId,
+        async (repository) => repository.listByRecord({ recordId, limit: 50 }),
+      );
+      expect(listed.items).toEqual([
+        {
+          message: expect.objectContaining({
+            author: 'assistant',
+            editDraftId,
+            knowledgeEvidence: frozen,
+            answerSegments,
+          }),
+          draft: expect.objectContaining({ proposedChanges: [] }),
+        },
+      ]);
+      expect(
+        (await drafts.get(editDraftId))?.detail.snapshot.knowledgeContext,
+      ).toEqual(frozen);
+      expect(
+        await withRepository(connection, randomUUID(), async (repository) =>
+          repository.listByRecord({ recordId, limit: 50 }),
+        ),
+      ).toEqual({ items: [], nextCursor: null });
+      expect(await recordWriteCounts(connection, recordId)).toEqual(
+        countsBefore,
+      );
+      expect(
+        await connection.db.records.findUniqueOrThrow({
+          where: { id: recordId },
+        }),
+      ).toEqual(recordBefore);
+    });
+
+    it('should return empty evidence and segments for legacy assistant rows', async ({
+      connection,
+    }) => {
+      const { ownerId, recordId, editDraftId } = await seed(connection);
+      await connection.db.recordMessages.create({
+        data: {
+          id: randomUUID(),
+          ownerId,
+          recordId,
+          editDraftId,
+          author: 'assistant',
+          body: 'Legacy answer',
+          createdAt: at(2),
+        },
+      });
+      const listed = await withRepository(
+        connection,
+        ownerId,
+        async (repository) => repository.listByRecord({ recordId, limit: 50 }),
+      );
+      expect(listed.items).toEqual([
+        {
+          message: expect.objectContaining({
+            knowledgeEvidence: [],
+            answerSegments: [],
+          }),
+          draft: expect.any(Object),
+        },
+      ]);
+    });
+  },
+);
+
+/**
+ * counts record mutation surfaces while excluding the expected message/draft writes
+ * @param connection real suite database
+ * @param connection.db Prisma client for the running suite
+ * @param recordId record whose adoption boundary is under test
+ */
+async function recordWriteCounts(
+  { db }: RunnerDatabase,
+  recordId: string,
+): Promise<number[]> {
+  return Promise.all([
+    db.records.count({ where: { id: recordId } }),
+    db.recordCategories.count({ where: { recordId } }),
+    db.recordMaterials.count({ where: { recordId } }),
+    db.recordMeasurements.count({ where: { recordId } }),
+    db.recordTags.count({ where: { recordId } }),
+    db.recordAcquisitions.count({ where: { recordId } }),
+    db.editDraftAdoptionEvents.count({ where: { recordId } }),
+  ]);
+}
+
+/**
+ * creates located immutable source authority for saved and rejected-attachment scenarios
+ * @param connection real suite database
+ * @param connection.db Prisma client for the running suite
+ * @param ownerId source owner
+ */
+async function seedKnowledgeEvidence(
+  { db }: RunnerDatabase,
+  ownerId: string,
+): Promise<KnowledgeContentEnvelopeV2> {
+  const sourceId = randomUUID();
+  const versionId = randomUUID();
+  const citationId = randomUUID();
+  const text = 'This museum object is porcelain, with tentative attribution.';
+  const source = {
+    id: sourceId,
+    versionId,
+    title: 'Museum catalog',
+    canonicalUrl: 'https://museum.example/object',
+    languages: ['en'],
+    contributors: [],
+  };
+  await db.sources.create({
+    data: {
+      id: sourceId,
+      ownerId,
+      kind: 'web',
+      title: source.title,
+      authorStatus: 'unknown',
+      access: 'link_only',
+    },
+  });
+  await db.sourceVersions.create({
+    data: {
+      id: versionId,
+      sourceId,
+      ownerId,
+      sourceHash: 'a'.repeat(64),
+      metadataSnapshot: {
+        title: source.title,
+        canonicalUrl: source.canonicalUrl,
+        languages: source.languages,
+        contributors: [],
+      },
+      capturedAt: at(0),
+      status: 'registered',
+      textIndexStatus: 'registered',
+      imageIndexStatus: 'registered',
+    },
+  });
+  await db.sourceLocators.create({
+    data: {
+      id: citationId,
+      sourceId,
+      sourceVersionId: versionId,
+      kind: 'web',
+      url: source.canonicalUrl,
+      retrievedAt: at(0),
+      excerptAsRetrieved: text,
+    },
+  });
+  await db.citations.create({
+    data: {
+      id: citationId,
+      locatorId: citationId,
+      relation: 'supports',
+      availability: 'link_only',
+      verification: 'located',
+    },
+  });
+  const review = { state: 'reviewed' as const, actor: ownerId, at: at(0) };
+
+  return {
+    contentSchemaVersion: 2,
+    entryType: 'object_example',
+    origin: 'collector',
+    titles: [{ language: 'en', text: 'Museum vase' }],
+    aliases: [],
+    sections: {
+      summary: {
+        claimKey: 'material',
+        text,
+        citationIds: [citationId],
+        supportState: 'cited',
+      },
+      history: [],
+      features: [],
+      applicability: [],
+      limits: [],
+    },
+    claims: [
+      {
+        claimKey: 'material',
+        section: 'summary',
+        ordinal: 0,
+        originalText: text,
+        originalLanguage: 'en',
+        statementType: 'observation',
+        scope: { object: ['Museum vase'] },
+        qualifiers: {},
+        uncertainty: 'Tentative attribution',
+        supportState: 'cited',
+        citationIds: [citationId],
+        review,
+        variants: [],
+      },
+    ],
+    citations: [
+      {
+        id: citationId,
+        relation: 'supports',
+        availability: 'link_only',
+        verification: 'located',
+        quote: text,
+        locator: {
+          kind: 'web',
+          id: citationId,
+          sourceId,
+          sourceVersionId: versionId,
+          url: source.canonicalUrl,
+          retrievedAt: at(0),
+          excerpt: text,
+        },
+        source,
+      },
+    ],
+    topics: [],
+    images: [],
+    methodIds: [],
+    relatedEntryIds: [],
+    editorialReview: review,
+  };
+}

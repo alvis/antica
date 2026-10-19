@@ -16,7 +16,13 @@ import type { EditDraftResult } from '@antica/contracts';
 import type { EditingChecks } from './editing-checks.js';
 import type { EditingDataset } from './editing-dataset.js';
 
-const dataset = await readEditingDataset('editing-v1');
+const fullDataset = await readEditingDataset('editing-v1');
+const dataset = {
+  version: fullDataset.version,
+  provenance: fullDataset.provenance,
+  records: fullDataset.records,
+  cases: fullDataset.cases.filter((item) => item.knowledge === undefined),
+};
 const [bowl] = dataset.records;
 const editName = dataset.cases.find((item) => item.id === 'edit-name')!;
 const askMark = dataset.cases.find((item) => item.id === 'ask-mark')!;
@@ -90,7 +96,7 @@ async function evaluateWith(
 }
 
 describe('editing evaluation', () => {
-  it('should pass every case for the development adapter while leaving A8 pending', async () => {
+  it('should pass every legacy case for the development adapter while leaving A8 pending', async () => {
     const models = createDevelopmentModels();
 
     const report = await evaluateEditing({
