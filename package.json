@@ -22,7 +22,8 @@
     "e2e:android": "node tooling/run-maestro.ts",
     "test:tooling": "node --test tooling/check-mobile-coverage.spec.ts tooling/check-mobile-coverage.cli.spec.ts tooling/run-maestro.spec.ts",
     "corpus:install": "pnpm --filter @antica/corpus run install:release",
-    "corpus:validate": "pnpm --filter @antica/corpus run validate"
+    "corpus:validate": "pnpm --filter @antica/corpus run validate",
+    "knowledge:backfill": "pnpm --filter @antica/platform exec tsx --eval 'import { runKnowledgeSearchBackfill } from \"./src/database/repositories/knowledge/search-backfill.ts\"; import { tokenizerVersion } from \"./src/search/text/tokenizer.ts\"; runKnowledgeSearchBackfill(process.argv.slice(1), process.env.DATABASE_URL ?? \"\").then(revisions => console.log(JSON.stringify({ revisions, tokenizerVersion })));' --"
   },
   "devDependencies": {
     "@presetter/preset-esm": "9.1.0",

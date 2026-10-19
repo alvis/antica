@@ -5,6 +5,7 @@ import { jsonValue } from '../../json.js';
 import { canonicalHash } from './canonical.js';
 import { projectKnowledge } from './projections.js';
 import { validateReferences } from './references.js';
+import { writeKnowledgeSearch } from './search-projection.js';
 
 import type { KnowledgeContentEnvelopeV2 } from '@antica/contracts';
 
@@ -109,4 +110,5 @@ export async function appendRevision(
     await tx.knowledgeRevisionTopic.createMany({ data: projection.topics });
   }
   await writeAssociations(context, { ...write, content });
+  await writeKnowledgeSearch(context, { entryId, revision }, content);
 }
