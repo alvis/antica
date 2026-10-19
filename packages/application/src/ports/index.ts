@@ -84,3 +84,9 @@ export type {
   TranscriptionRepository,
   TranscriptionRunRecord,
 } from './workflows.js';
+export type {
+  CorpusInstallRequest,
+  CorpusInstallDisposition,
+  CorpusInstallPlan,
+  CorpusInstallRepository,
+} from '../knowledge/corpus-install.js';

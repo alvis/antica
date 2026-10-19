@@ -41,6 +41,7 @@ export type {
 } from '../knowledge/ingestion.js';
 export { createKnowledgeService } from '../knowledge/service.js';
 export type { KnowledgeService } from '../knowledge/service.js';
+export { installCorpusRelease } from '../knowledge/corpus-install.js';
 export { createImageSearchService } from '../knowledge/retrieval.js';
 export type { ImageSearchService } from '../knowledge/retrieval.js';
 export {

@@ -1,13 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { corpusFileSchema } from '@antica/contracts';
 
 import { describe, expect, inject } from 'vitest';
 
 import { createLocalMediaStore } from '../storage/local.js';
 
 import { jsonValue, nullableJson } from './json.js';
+import { createCorpusInstallRepository } from './repositories/corpus-install.js';
 
 import { createRetrievalReaders } from './retrieval.js';
 
@@ -31,6 +35,58 @@ if (!databaseUrl) {
 }
 
 describe('fn:createRetrievalReaders', { timeout: 30_000 }, () => {
+  it('should read legacy text entries after installing the shipped corpus as owner drafts', async ({
+    connection,
+  }) => {
+    const directory = fileURLToPath(
+      new URL('../../../../corpus/antica/v1/', import.meta.url),
+    );
+    const files = await Promise.all(
+      (await readdir(directory, { recursive: true }))
+        .filter((path) => path.endsWith('.json'))
+        .map(async (path) =>
+          corpusFileSchema.parse(
+            JSON.parse(await readFile(join(directory, path), 'utf8')),
+          ),
+        ),
+    );
+    const release = files.find((file) => file.kind === 'release');
+    if (release?.kind !== 'release') {
+      throw new Error('Shipped corpus release is required for this regression');
+    }
+    const request = {
+      ownerId: randomUUID(),
+      requestKey: randomUUID(),
+      release,
+      sources: files.filter((file) => file.kind === 'source'),
+      entries: files.filter((file) => file.kind === 'entry'),
+      topics: files
+        .filter((file) => file.kind === 'taxonomy')
+        .flatMap((file) => file.topics),
+    };
+    const installer = createCorpusInstallRepository(connection.db);
+    const plan = await installer.inspect(request);
+    for (let index = plan.checkpoint; index < plan.batchCount; index += 1) {
+      await installer.applyBatch(index);
+    }
+    const installed = await installer.inspect(request);
+    expect(installed.completed).toBe(true);
+    expect(installed.items.length).toBeGreaterThan(0);
+    expect(installed.items).toHaveLength(request.entries.length);
+    const readers = createRetrievalReaders({
+      db: connection.db,
+      transaction: createTransactionPort(connection.db),
+      storage: createLocalMediaStore({
+        root: tmpdir(),
+        publicBaseUrl: 'http://localhost:8080',
+        signingSecret: 'retrieval-test-signing-secret-32-characters',
+      }),
+      ownerId: request.ownerId,
+    });
+
+    await expect(readers.readTextEntries()).resolves.toEqual([]);
+  });
+
   it('should return no entries or query pixels for an owner with no persisted collection or sources', async ({
     connection,
   }) => {

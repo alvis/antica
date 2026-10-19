@@ -21,6 +21,7 @@
     "typecheck:tooling": "tsc6 --project tsconfig.json --noEmit",
     "e2e:android": "node tooling/run-maestro.ts",
     "test:tooling": "node --test tooling/check-mobile-coverage.spec.ts tooling/check-mobile-coverage.cli.spec.ts tooling/run-maestro.spec.ts",
+    "corpus:install": "pnpm --filter @antica/corpus run install:release",
     "corpus:validate": "pnpm --filter @antica/corpus run validate"
   },
   "devDependencies": {
