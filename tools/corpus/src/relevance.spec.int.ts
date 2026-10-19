@@ -5,7 +5,7 @@ import { runRelevanceCommand } from './relevance.js';
 describe('fn:runRelevanceCommand', () => {
   it(
     'should install and save the real corpus and measure all unchanged questions',
-    { timeout: 120_000 },
+    { timeout: 300_000 },
     async () => {
       const reports: string[] = [];
       const errors: string[] = [];

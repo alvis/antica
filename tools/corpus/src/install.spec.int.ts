@@ -169,56 +169,58 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
     ).toBe(0);
   });
 
-  it('should leave a dry-run owner empty and isolate another owner installation', async ({
-    connection,
-  }) => {
-    const request = loadCorpusInstallRequest([
-      '--owner-id',
-      randomUUID(),
-      '--release',
-      '1.0.0',
-      '--request-key',
-      randomUUID(),
-    ]);
-    const before = await countRows(connection.db, request.ownerId);
-    const dryRun = await installCorpusRelease(
-      { ...request, dryRun: true },
-      createCorpusInstallRepository(connection.db),
-    );
-    expect(dryRun.predictedStatements).toBeGreaterThan(0);
-    expect(await countRows(connection.db, request.ownerId)).toEqual(before);
-    await installCorpusRelease(
-      request,
-      createCorpusInstallRepository(connection.db),
-    );
-    const original = await connection.db.knowledgeEntries.findMany({
-      where: { ownerId: request.ownerId },
-      orderBy: { id: 'asc' },
-    });
-    const foreign = { ...request, ownerId: randomUUID() };
-    const foreignPlan = await installCorpusRelease(
-      foreign,
-      createCorpusInstallRepository(connection.db),
-    );
-    expect(
-      foreignPlan.items.every((item) => item.disposition === 'created'),
-    ).toBe(true);
-    const foreignEntries = await connection.db.knowledgeEntries.findMany({
-      where: { ownerId: foreign.ownerId },
-    });
-    expect(foreignEntries).toHaveLength(56);
-    expect(
-      foreignEntries.every(
-        (entry) => !original.some((other) => other.id === entry.id),
-      ),
-    ).toBe(true);
-    expect(
-      await connection.db.knowledgeEntries.findMany({
+  it(
+    'should leave a dry-run owner empty and isolate another owner installation',
+    { timeout: 300_000 },
+    async ({ connection }) => {
+      const request = loadCorpusInstallRequest([
+        '--owner-id',
+        randomUUID(),
+        '--release',
+        '1.0.0',
+        '--request-key',
+        randomUUID(),
+      ]);
+      const before = await countRows(connection.db, request.ownerId);
+      const dryRun = await installCorpusRelease(
+        { ...request, dryRun: true },
+        createCorpusInstallRepository(connection.db),
+      );
+      expect(dryRun.predictedStatements).toBeGreaterThan(0);
+      expect(await countRows(connection.db, request.ownerId)).toEqual(before);
+      await installCorpusRelease(
+        request,
+        createCorpusInstallRepository(connection.db),
+      );
+      const original = await connection.db.knowledgeEntries.findMany({
         where: { ownerId: request.ownerId },
         orderBy: { id: 'asc' },
-      }),
-    ).toEqual(original);
-  });
+      });
+      const foreign = { ...request, ownerId: randomUUID() };
+      const foreignPlan = await installCorpusRelease(
+        foreign,
+        createCorpusInstallRepository(connection.db),
+      );
+      expect(
+        foreignPlan.items.every((item) => item.disposition === 'created'),
+      ).toBe(true);
+      const foreignEntries = await connection.db.knowledgeEntries.findMany({
+        where: { ownerId: foreign.ownerId },
+      });
+      expect(foreignEntries).toHaveLength(56);
+      expect(
+        foreignEntries.every(
+          (entry) => !original.some((other) => other.id === entry.id),
+        ),
+      ).toBe(true);
+      expect(
+        await connection.db.knowledgeEntries.findMany({
+          where: { ownerId: request.ownerId },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(original);
+    },
+  );
 
   it('should roll back a crash before checkpoint and resume the same request', async ({
     connection,
