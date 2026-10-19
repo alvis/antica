@@ -11,6 +11,7 @@ import {
   encodeSearchCursor,
 } from './search-cursor.js';
 import { readKnowledgeDetail } from './search-detail.js';
+import { readRelatedKnowledge } from './search-related.js';
 import { knowledgeSearchSql } from './search-sql.js';
 import {
   browseKnowledgeTopics,
@@ -24,6 +25,7 @@ import type {
 import type {
   KnowledgeSearchQuery,
   KnowledgeSearchPage,
+  RelatedKnowledgeDiscovery,
 } from '@antica/contracts';
 
 import type { Transaction } from '../../transaction.js';
@@ -95,13 +97,15 @@ export function createKnowledgeSearchRepository(
 export function createKnowledgeDiscovery(
   tx: Transaction,
   mode: KnowledgeSearchMode = knowledgeSearchMode(),
-): KnowledgeDiscovery {
+): KnowledgeDiscovery & RelatedKnowledgeDiscovery {
   return {
     search: async (ownerId, input) =>
       searchKnowledge({ tx, ownerId, mode }, input),
     topics: async (ownerId, input) => browseKnowledgeTopics(tx, ownerId, input),
     tree: async (ownerId, id, input) =>
       readKnowledgeTopicTree({ tx, ownerId }, id, input),
+    related: async (ownerId, id, input) =>
+      readRelatedKnowledge({ tx, ownerId }, id, input),
     detail: async (ownerId, id, input) =>
       readKnowledgeDetail({ tx, ownerId }, id, input),
   };

@@ -13,6 +13,8 @@ import {
 
 import { invalid, jsonBody, respond } from '../http.js';
 
+import { registerRelatedKnowledgeRoute } from './knowledge-related.js';
+
 import { registerKnowledgeSearchRoutes } from './knowledge-search.js';
 
 import type { Context } from 'hono';
@@ -23,6 +25,8 @@ import type {
 } from '@antica/application/server';
 
 import type { ApiEnv } from '../http.js';
+
+import type { RelatedKnowledgeService } from './knowledge-related.js';
 
 const maximumPageSize = 100;
 const acceptedStatus = 202;
@@ -48,12 +52,13 @@ const knowledgeReadSchema = z.strictObject({
  */
 export function createKnowledgeRoutes(
   sources: SourceService,
-  knowledge: KnowledgeService,
+  knowledge: RelatedKnowledgeService,
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   registerSourceRoutes(router, sources);
   registerKnowledgeListRoute(router, knowledge);
   registerKnowledgeSearchRoutes(router, knowledge);
+  registerRelatedKnowledgeRoute(router, knowledge);
   registerKnowledgeDetailRoutes(router, knowledge);
 
   return router;

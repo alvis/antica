@@ -5,6 +5,8 @@ import {
 } from '../../../search/text/tokenizer.js';
 import { Prisma } from '../../generated/client.js';
 
+import { exactTitleAliasSql } from './search-exact.js';
+import { reviewedExcerptSql } from './search-excerpt.js';
 import { topicRowsSql } from './search-topics.js';
 
 import type { KnowledgeSearchQuery } from '@antica/contracts';
@@ -48,7 +50,7 @@ export function knowledgeSearchSql(
      ARRAY(SELECT DISTINCT coalesce(c->'locator'->>'provider',c->'source'->'structuredSnapshot'->>'provider','unknown') FROM jsonb_array_elements(r.content->'citations') c) providers,
      least(3,(SELECT count(*)::int FROM jsonb_array_elements(r.content->'claims') c WHERE c->>'supportState'='cited' AND c->'review'->>'state'='reviewed')) support,
      word_matches.tokens matched_tokens,bigram_matches.tokens matched_bigrams,
-     CASE WHEN ${q}='' THEN 7 WHEN ${tokens.length > 0} AND ${`t:${q}`}=ANY(string_to_array(d.normalized_title_aliases_marks,E'\n')) OR ${tokens.length > 0} AND ${`a:${q}`}=ANY(string_to_array(d.normalized_title_aliases_marks,E'\n')) THEN 0
+     CASE WHEN ${q}='' THEN 7 WHEN ${tokens.length > 0} AND ${exactTitleAliasSql(Prisma.sql`${q}`, Prisma.sql`d.normalized_title_aliases_marks`)} THEN 0
        WHEN ${tokens.length > 0} AND (strpos(d.normalized_title_aliases_marks,${q})>0 OR ${phraseScore}>0) THEN 1
        WHEN NOT ${short} AND cardinality(word_matches.tokens)>0 AND cardinality(word_matches.tokens)=(SELECT count(*) FROM query_tokens) THEN 2
        WHEN NOT ${short} AND cardinality(word_matches.tokens)>0 THEN 3
@@ -100,12 +102,7 @@ function searchResultSql(input: KnowledgeSearchQuery): Prisma.Sql {
    'matchedTokens',to_jsonb(CASE WHEN p.lane=4 THEN p.matched_bigrams WHEN p.lane IN(0,1,5,6) AND cardinality(p.matched_tokens)=0 THEN ARRAY[${normalizeSearchText(input.q ?? '')}] ELSE p.matched_tokens END),
    'excerpt',excerpt.value) ORDER BY lane,score DESC,support DESC,coalesce(content_id,entry_id::text),entry_id)
    FROM page p LEFT JOIN LATERAL(SELECT item title FROM jsonb_array_elements(p.content->'titles') item ORDER BY (item->>'language'=${input.locale}) DESC,(item->>'language'=p.language) DESC,item->>'language' LIMIT 1) localized ON true
-   LEFT JOIN LATERAL(SELECT jsonb_build_object('claimKey',c->>'claimKey','text',coalesce(variant->>'text',c->>'originalText'),'language',coalesce(variant->>'language',c->>'originalLanguage'),'citations',citations.items) value
-     FROM jsonb_array_elements(p.content->'claims') c
-     LEFT JOIN LATERAL(SELECT v variant FROM jsonb_array_elements(c->'variants') v WHERE v->>'language'=${input.locale} AND v->'review'->>'state'='reviewed' AND v->>'sourceTextHash'=encode(sha256(convert_to(c->>'originalText','UTF8')),'hex') ORDER BY v->>'kind' LIMIT 1) v ON true
-     CROSS JOIN LATERAL(SELECT jsonb_agg(citation ORDER BY citation->>'id') items FROM jsonb_array_elements(p.content->'citations') citation WHERE citation->>'id' IN(SELECT jsonb_array_elements_text(c->'citationIds')) AND citation->>'relation'='supports' AND citation->>'verification'='located') citations
-     WHERE c->>'supportState'='cited' AND c->'review'->>'state'='reviewed' AND jsonb_array_length(coalesce(citations.items,'[]'::jsonb))>0
-     ORDER BY (c->>'originalLanguage'=${input.locale} OR variant IS NOT NULL) DESC,(c->>'ordinal')::int,c->>'claimKey' LIMIT 1) excerpt ON true),'[]'::jsonb)) data`;
+   ${reviewedExcerptSql(input.locale)}),'[]'::jsonb)) data`;
 }
 
 interface SearchSqlOptions {

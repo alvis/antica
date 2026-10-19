@@ -316,3 +316,15 @@ export type {
   RecordMessagePosted,
 } from './record-message.js';
 export * from './knowledge-search.js';
+
+export {
+  relatedKnowledgeQuerySchema,
+  relatedKnowledgeMatchSchema,
+  relatedKnowledgeCardSchema,
+  relatedKnowledgePageSchema,
+} from './knowledge-related.js';
+export type {
+  RelatedKnowledgeQuery,
+  RelatedKnowledgePage,
+  RelatedKnowledgeDiscovery,
+} from './knowledge-related.js';
