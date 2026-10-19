@@ -20,7 +20,8 @@
     "typecheck": "pnpm run typecheck:tooling && pnpm --filter '!@antica/monorepo' -r run typecheck",
     "typecheck:tooling": "tsc6 --project tsconfig.json --noEmit",
     "e2e:android": "node tooling/run-maestro.ts",
-    "test:tooling": "node --test tooling/check-mobile-coverage.spec.ts tooling/check-mobile-coverage.cli.spec.ts tooling/run-maestro.spec.ts"
+    "test:tooling": "node --test tooling/check-mobile-coverage.spec.ts tooling/check-mobile-coverage.cli.spec.ts tooling/run-maestro.spec.ts",
+    "corpus:validate": "pnpm --filter @antica/corpus run validate"
   },
   "devDependencies": {
     "@presetter/preset-esm": "9.1.0",
