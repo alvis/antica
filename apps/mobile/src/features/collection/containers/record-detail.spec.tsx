@@ -10,15 +10,27 @@ import { useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
 import { Linking } from 'react-native';
 
-import { analysisRunDetailSchema } from '@antica/contracts';
+import { analysisRunDetailSchema, recordDetailSchema } from '@antica/contracts';
 
 import AnalysisRoute from '../../../app/(private)/analysis/[runId]';
 import RecordRoute from '../../../app/(private)/collection/[recordId]';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import {
+  useInterfaceLanguage,
+  useLocale,
+} from '../../../providers/LocaleProvider';
 import { createReferencedRun } from '../../../saved-analysis.spec.fixtures';
 
 import { media } from '../../media/containers/media.spec.fixtures';
+
+import { setRecordEditNotice } from '../api/record-edit-notice';
+import {
+  filledRecord,
+  knowledgeDetail,
+  locations,
+  materialId,
+  receipt,
+} from '../record-edit.spec.fixtures';
 
 import {
   observationId,
@@ -125,12 +137,13 @@ const InLocale: FC<InLocaleProps> = ({
   locale,
   children,
 }): ReactElement | null => {
-  const { locale: currentLocale, setLocale } = useLocale();
+  const { locale: currentLocale } = useLocale();
+  const { save } = useInterfaceLanguage();
   useEffect(() => {
     if (currentLocale !== locale) {
-      void setLocale(locale);
+      void save(locale);
     }
-  }, [currentLocale, locale, setLocale]);
+  }, [currentLocale, locale, save]);
 
   return currentLocale === locale ? <>{children}</> : null;
 };
@@ -141,15 +154,16 @@ const InLocale: FC<InLocaleProps> = ({
  * @param labels active locale labels
  * @param labels.previous previous-value label
  * @param labels.proposed proposed-value label
+ * @param labels.empty shown for an empty value
  */
 function expectNameContent(
   proposal: Parameters<typeof within>[0],
-  labels: { previous: string; proposed: string },
+  labels: { previous: string; proposed: string; empty: string },
 ): void {
-  expect(within(proposal).getByText(`${labels.previous}: null`)).toBeTruthy();
-  expect(
-    within(proposal).getByText(`${labels.proposed}: "Blue vase"`),
-  ).toBeTruthy();
+  expect(within(proposal).getByText(labels.previous)).toBeTruthy();
+  expect(within(proposal).getByText(labels.empty)).toBeTruthy();
+  expect(within(proposal).getByText(labels.proposed)).toBeTruthy();
+  expect(within(proposal).getByText('Blue vase')).toBeTruthy();
   expect(
     within(proposal).getByText('Mixed supporting references'),
   ).toBeTruthy();
@@ -158,20 +172,22 @@ function expectNameContent(
 it.each([
   {
     locale: 'en' as const,
-    results: 'Results',
+    results: 'View analysis',
     name: 'Name',
     description: 'Description',
     previous: 'Previous',
     proposed: 'Proposed',
+    empty: '(empty)',
     apply: 'Apply selected changes',
   },
   {
     locale: 'zh-Hant' as const,
-    results: '結果',
+    results: '查看分析',
     name: '名稱',
     description: '描述',
     previous: '目前內容',
     proposed: '建議內容',
+    empty: '（空白）',
     apply: '套用所選變更',
   },
 ])(
@@ -206,13 +222,10 @@ it.each([
       name: new RegExp(labels.description),
     });
     expectNameContent(nameProposal, labels);
+    // an empty description reads as empty rather than as quotes
+    expect(within(descriptionProposal).getByText(labels.empty)).toBeTruthy();
     expect(
-      within(descriptionProposal).getByText(`${labels.previous}: ""`),
-    ).toBeTruthy();
-    expect(
-      within(descriptionProposal).getByText(
-        `${labels.proposed}: "Floral decoration"`,
-      ),
+      within(descriptionProposal).getByText('Floral decoration'),
     ).toBeTruthy();
     expect(
       within(descriptionProposal).queryByText('Mixed supporting references'),
@@ -237,7 +250,7 @@ it.each([
   },
 );
 
-it('should show a record, open capture, and save trimmed edits against its revision', async () => {
+it('should show a record, open capture, and open the manual editor', async () => {
   jest
     .mocked(useLocalSearchParams)
     .mockReturnValue({ recordId: collectionRecord.id });
@@ -254,26 +267,107 @@ it('should show a record, open capture, and save trimmed edits against its revis
   expect(view.router.push).toHaveBeenCalledWith(
     `/capture?recordId=${collectionRecord.id}`,
   );
-  await fireEvent.press(screen.getByRole('button', { name: 'Edit' }));
-  await fireEvent.changeText(screen.getByLabelText('Name'), '  Blue bowl  ');
-  await fireEvent.changeText(
-    screen.getByLabelText('Description'),
-    'Blue glaze',
+  await fireEvent.press(screen.getByRole('button', { name: 'Edit details' }));
+  expect(view.router.push).toHaveBeenLastCalledWith(
+    `/collection/${collectionRecord.id}/edit`,
   );
-  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(view.patches).toHaveBeenCalledTimes(1));
-  expect(view.patches.mock.calls[0]).toEqual([
-    `/v1/records/${collectionRecord.id}`,
-    expect.anything(),
-    expect.objectContaining({
-      body: {
-        expectedRevision: 1,
-        fields: { name: 'Blue bowl', description: 'Blue glaze' },
-      },
-    }),
-  ]);
+  expect(view.patches).not.toHaveBeenCalled();
+});
+
+it('should show the key details first and every known detail on request, with labels', async () => {
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ recordId: filledRecord.id });
+  await renderMobile(<RecordRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${filledRecord.id}`
+        ? filledRecord
+        : path === '/v1/locations'
+          ? locations
+          : path.startsWith('/v1/knowledge/')
+            ? knowledgeDetail(materialId, 'Porcelain')
+            : path.startsWith('/v1/media/')
+              ? receipt
+              : { items: [], nextCursor: null },
+  });
+
+  const details = await screen.findByTestId('record-fields');
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy(),
+    expect(
+      within(details).getByTestId('record-field-location-id'),
+    ).toHaveTextContent('Main display-room cabinet'),
+  );
+  expect(
+    within(details).getByTestId('record-field-location-detail'),
+  ).toHaveTextContent('Second shelf');
+  expect(within(details).getByTestId('record-field-height')).toHaveTextContent(
+    '8.4 cm',
+  );
+  expect(within(details).getByText('Description and notes')).toBeTruthy();
+  // the rest waits behind the toggle (B06)
+  expect(within(details).queryByTestId('record-field-purchase')).toBeNull();
+  const toggle = within(details).getByTestId('record-fields-toggle');
+  expect(toggle).toHaveTextContent('Show all details');
+  expect(toggle).toHaveProp('accessibilityState', { expanded: false });
+
+  await fireEvent.press(toggle);
+
+  expect(
+    within(details).getByTestId('record-field-purchase'),
+  ).toHaveTextContent('1200 HKD');
+  await waitFor(() =>
+    expect(
+      within(details).getByTestId('record-field-material-ids'),
+    ).toHaveTextContent('Porcelain'),
+  );
+  expect(within(details).queryByTestId('record-field-name')).toBeNull();
+  expect(toggle).toHaveTextContent('Show fewer details');
+  await fireEvent.press(toggle);
+  expect(within(details).queryByTestId('record-field-purchase')).toBeNull();
+});
+
+it('should leave unknown details out instead of filling them in', async () => {
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ recordId: collectionRecord.id });
+  await renderMobile(<RecordRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${collectionRecord.id}`
+        ? recordDetailSchema.parse({
+            ...collectionRecord,
+            pieceCount: null,
+            description: '',
+            dimensions: {},
+            location: { locationId: null, detail: '' },
+          })
+        : { items: [], nextCursor: null },
+  });
+
+  const details = await screen.findByTestId('record-fields');
+  expect(within(details).getByText('Nothing here yet.')).toBeTruthy();
+  expect(within(details).queryByTestId('record-field-location-id')).toBeNull();
+  expect(within(details).queryByTestId('record-fields-toggle')).toBeNull();
+});
+
+it('should tell the collector once that a save landed on a refreshed record', async () => {
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ recordId: collectionRecord.id });
+  const view = await renderMobile(<RecordRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${collectionRecord.id}`
+        ? collectionRecord
+        : { items: [], nextCursor: null },
+  });
+  setRecordEditNotice(view.client, collectionRecord.id, 'refreshed');
+
+  expect(await screen.findByTestId('record-edit-refreshed')).toHaveProp(
+    'accessibilityRole',
+    'alert',
+  );
+  await fireEvent.press(screen.getByTestId('record-edit-refreshed-dismiss'));
+  await waitFor(() =>
+    expect(screen.queryByTestId('record-edit-refreshed')).toBeNull(),
   );
 });
 
@@ -314,7 +408,7 @@ it('should start analysis explicitly and keep the check context on a signed phot
   });
   expect(screen.getByText('New evidence not analyzed')).toBeTruthy();
   await fireEvent.press(screen.getByRole('button', { name: 'View' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Results' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'View analysis' }));
   await fireEvent.press(screen.getByRole('button', { name: /^Checks / }));
   expect(jest.mocked(view.router.push).mock.calls).toEqual([
     [`/media/${photo.asset.id}?checkId=${checkId}`],
@@ -463,7 +557,7 @@ it('should reopen observations, video, and saved collection, page, and web refer
     ),
   );
   expect(screen.getByText('Blue glaze')).toBeTruthy();
-  expect(screen.getByText('Saved')).toBeTruthy();
+  expect(screen.getByText('✓ Saved')).toBeTruthy();
   expect(screen.getByText('collection')).toBeTruthy();
   expect(
     screen.queryByRole('button', { name: 'Find similar images' }),
@@ -480,7 +574,7 @@ it('should reopen observations, video, and saved collection, page, and web refer
   expect(openURL).toHaveBeenCalledWith('https://museum.example/bowl');
 });
 
-it('should show failed analysis and stale edit without discarding the edit', async () => {
+it('should keep a failed analysis start beside its action', async () => {
   jest
     .mocked(useLocalSearchParams)
     .mockReturnValue({ recordId: collectionRecord.id });
@@ -498,22 +592,15 @@ it('should show failed analysis and stale edit without discarding the edit', asy
   view.commands.mockRejectedValueOnce(new Error('Analysis unavailable'));
   await fireEvent.press(screen.getByRole('button', { name: 'Analyze' }));
   await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Analysis unavailable'),
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Something went wrong.',
+    ),
   );
   expect(view.router.push).not.toHaveBeenCalled();
 
-  await fireEvent.press(screen.getByRole('button', { name: 'Edit' }));
-  await fireEvent.changeText(screen.getByLabelText('Name'), '   ');
-  view.patches.mockRejectedValueOnce(new Error('Revision changed'));
-  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent('Revision changed'),
+  expect(screen.getByTestId('record-analyse-error')).toHaveTextContent(
+    'Something went wrong.',
   );
-  expect(view.patches.mock.calls[0][2].body).toEqual({
-    expectedRevision: 1,
-    fields: { name: null, description: '' },
-  });
-  expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
 });
 
 it('should retry a failed record read and restore its actions', async () => {
@@ -535,7 +622,7 @@ it('should retry a failed record read and restore its actions', async () => {
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy(),
+    expect(screen.getByRole('button', { name: 'Edit details' })).toBeTruthy(),
   );
   expect(
     view.reads.mock.calls.filter(

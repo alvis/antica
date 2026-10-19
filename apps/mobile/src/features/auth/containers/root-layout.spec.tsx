@@ -31,8 +31,8 @@ jest.mock(
               '../../../app/index',
             );
           const { useLocale } = jest.requireActual<
-            typeof import('../../../i18n/LocaleProvider')
-          >('../../../i18n/LocaleProvider');
+            typeof import('../../../providers/LocaleProvider')
+          >('../../../providers/LocaleProvider');
           const { t } = useLocale();
 
           return (
@@ -48,17 +48,32 @@ jest.mock(
 );
 
 describe('rc:RootLayout', () => {
-  it('should restore a private session before presenting the signed-out route', async () => {
+  it('should present the signed-out route in Traditional Chinese on a new installation', async () => {
     await render(<RootLayout />);
 
-    expect(
-      screen.getByText('Your private collection and research'),
-    ).toBeTruthy();
+    expect(screen.getByText('您的私人藏品與研究')).toBeTruthy();
     await waitFor(() =>
       expect(jest.mocked(Redirect).mock.calls.at(-1)?.[0]).toEqual(
         expect.objectContaining({ href: '/login' }),
       ),
     );
+  });
+
+  it('should leave the development language link out of release builds', async () => {
+    const developmentBuild = __DEV__;
+    Reflect.set(globalThis, '__DEV__', false);
+    try {
+      await render(<RootLayout />);
+
+      expect(screen.getByText('您的私人藏品與研究')).toBeTruthy();
+      await waitFor(() =>
+        expect(jest.mocked(Redirect).mock.calls.at(-1)?.[0]).toEqual(
+          expect.objectContaining({ href: '/login' }),
+        ),
+      );
+    } finally {
+      Reflect.set(globalThis, '__DEV__', developmentBuild);
+    }
   });
 
   it('should present the collection route after restoring the collector session', async () => {

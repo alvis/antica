@@ -1,0 +1,139 @@
+# Interface language on a fresh install, before and after sign-in (Usage F,
+# PT-30-32). Runs in two stages because the runner reads the development OTP
+# between them:
+#   STAGE=pre-login  clears state without a devLocale link, proves the zh-Hant
+#                    default, uses the login shortcut to compare Cancel and
+#                    Back with Save (English), then requests a code.
+#   STAGE=signed-in  signs in with OTP_CODE, checks the tabs are English, saves
+#                    繁體中文 from the tab gear and relaunches to prove it stays.
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      true: ${STAGE == 'pre-login'}
+    commands:
+      - launchApp:
+          clearState: true
+      # A cold start on a loaded host can take well over a minute in dev builds.
+      - extendedWaitUntil:
+          visible:
+            id: login-start
+          timeout: 120000
+      # Nothing stored: Traditional Chinese, whatever the emulator language.
+      - assertVisible: 使用 WhatsApp 登入
+      - tapOn:
+          id: login-language
+      - extendedWaitUntil:
+          visible:
+            id: language-option-zh-Hant
+          timeout: 30000
+      # The shortcut opens only the selector, never the signed-in Settings home.
+      - assertNotVisible:
+          id: settings-sign-out
+      - assertNotVisible:
+          id: settings-language
+      # Cancel: the preview changes, the interface does not.
+      - tapOn:
+          id: language-option-en
+      - assertVisible: Settings · Language
+      - tapOn:
+          id: language-cancel
+      - extendedWaitUntil:
+          visible: 使用 WhatsApp 登入
+          timeout: 30000
+      # Back leaves without saving, like Cancel.
+      - tapOn:
+          id: login-language
+      - tapOn:
+          id: language-option-en
+      - assertVisible: Settings · Language
+      - back
+      - extendedWaitUntil:
+          visible: 使用 WhatsApp 登入
+          timeout: 30000
+      # Save: the interface switches without a restart.
+      - tapOn:
+          id: login-language
+      - tapOn:
+          id: language-option-en
+      - tapOn:
+          id: language-save
+      - extendedWaitUntil:
+          visible:
+            id: language-updated
+          timeout: 30000
+      - assertVisible: Interface language updated
+      # After a save, the exit control confirms rather than cancels.
+      - assertVisible:
+          id: language-cancel
+          text: Done
+      - tapOn:
+          id: language-cancel
+      - extendedWaitUntil:
+          visible: Sign in with WhatsApp
+          timeout: 30000
+      - tapOn:
+          id: login-start
+      - tapOn:
+          id: login-phone
+      - inputText: ${PHONE_NUMBER}
+      - tapOn:
+          id: login-send-code
+      - assertVisible:
+          id: login-code
+- runFlow:
+    when:
+      true: ${STAGE == 'signed-in'}
+    commands:
+      - tapOn:
+          id: login-code
+      - inputText: ${OTP_CODE}
+      - tapOn:
+          id: login-verify
+      - extendedWaitUntil:
+          visible:
+            id: collection-add-item
+          timeout: 60000
+      - runFlow: support/dismiss-dev-logbox.yaml
+      # The choice saved before sign-in carries into the tabs.
+      - assertVisible: Tasks
+      - assertVisible: Knowledge
+      - assertVisible: Research
+      - tapOn:
+          id: open-settings
+      - extendedWaitUntil:
+          visible: Language · English
+          timeout: 30000
+      - tapOn:
+          id: settings-language
+      - tapOn:
+          id: language-option-zh-Hant
+      - tapOn:
+          id: language-save
+      - extendedWaitUntil:
+          visible: 介面語言已更新
+          timeout: 30000
+      - assertVisible:
+          id: language-cancel
+          text: 完成
+      - tapOn:
+          id: language-cancel
+      - extendedWaitUntil:
+          visible: 語言 · 繁體中文
+          timeout: 30000
+      - back
+      - extendedWaitUntil:
+          visible:
+            id: collection-add-item
+          timeout: 30000
+      - assertVisible: 待辦
+      - assertVisible: 知識庫
+      # Relaunch without clearing state: the saved choice is read back.
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: collection-add-item
+          timeout: 120000
+      - runFlow: support/dismiss-dev-logbox.yaml
+      - assertVisible: 待辦
+      - assertVisible: 研究

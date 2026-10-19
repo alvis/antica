@@ -28,8 +28,8 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -353,7 +353,7 @@ export const SimilarSearchContainer: FC<SimilarSearchContainerProps> = ({
             {match.sourceTitle ?? t('myCollection')}
           </Text>
           <Text style={styles.secondary}>
-            {t('rank')} {match.rank} ·{' '}
+            {t('rankValue', { rank: match.rank })} ·{' '}
             {match.contributorNames.join(', ') || t('unknownAuthor')}
           </Text>
           <ActionButton

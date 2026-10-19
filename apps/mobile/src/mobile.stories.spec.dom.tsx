@@ -56,7 +56,7 @@ describe('Mobile container story interactions', () => {
     });
   });
 
-  it('should save an edited record through its rendered form', async () => {
+  it('should show the saved details beside the way into the editor', async () => {
     await withCanvas(<record.SavedRecord />, async (canvas) => {
       const play = record.SavedRecord.play;
       if (!play) {
@@ -64,10 +64,11 @@ describe('Mobile container story interactions', () => {
       }
 
       await play({ canvasElement: canvas });
-      await findStoryText(canvas, 'Blue-and-white bowl, edited');
 
+      expect(
+        canvas.querySelector('[data-testid="record-fields"]')?.textContent,
+      ).toContain('Study cabinet, shelf 2');
       expect(canvas.querySelector('input[aria-label="Name"]')).toBeNull();
-      expect(canvas.textContent).toContain('Blue-and-white bowl, edited');
     });
   });
 
@@ -296,5 +297,42 @@ describe('Story authenticated session', () => {
         expect(canvas.textContent).not.toContain('Signed in');
       },
     );
+  });
+});
+
+describe('Mobile story analysis states and action cards', () => {
+  it.each([
+    {
+      name: 'saved, not yet analysed (B06)',
+      story: record.SavedNotYetAnalysedInTraditionalChinese,
+      testId: 'record-analysis-status-unanalysed',
+    },
+    {
+      name: 'analysing',
+      story: record.Analysing,
+      testId: 'record-analysis-status-running',
+    },
+    {
+      name: 'new evidence not yet analysed (C05)',
+      story: record.NewEvidenceNotYetAnalysed,
+      testId: 'record-analysis-status-outdated',
+    },
+    {
+      name: 'action cards (C04)',
+      story: analysis.ActionCardsInTraditionalChinese,
+      testId: 'analysis-action-00000000-0000-4000-8000-000000000016',
+    },
+    {
+      name: 'supplied actions reopened (PT-13)',
+      story: analysis.SuppliedActionsReopened,
+      testId: 'analysis-action-00000000-0000-4000-8000-000000000017',
+    },
+  ])('should play the $name story', async ({ story, testId }) => {
+    const Story = story;
+    await withCanvas(<Story />, async (canvas) => {
+      await story.play?.({ canvasElement: canvas });
+
+      expect(canvas.querySelector(`[data-testid="${testId}"]`)).not.toBeNull();
+    });
   });
 });

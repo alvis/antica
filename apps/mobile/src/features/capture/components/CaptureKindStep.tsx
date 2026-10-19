@@ -2,7 +2,7 @@ import { Text, View } from 'react-native';
 
 import { ActionButton, styles } from '@antica/ui';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -23,11 +23,13 @@ export const CaptureKindStep: FC<CaptureKindStepProps> = ({
         {t('single')} / {t('set')}
       </Text>
       <ActionButton
+        testID="capture-kind-single"
         label={t('single')}
         onPress={() => onSelect('single')}
         disabled={busy}
       />
       <ActionButton
+        testID="capture-kind-set"
         label={t('set')}
         onPress={() => onSelect('set')}
         disabled={busy}

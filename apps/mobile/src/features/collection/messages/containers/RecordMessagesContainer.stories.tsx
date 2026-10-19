@@ -24,6 +24,7 @@ import type { ReactElement } from 'react';
 
 import type { RecordMessageDraft, RecordMessageEntry } from '@antica/contracts';
 
+import type { Locale } from '../../../../i18n/resources';
 import type { StoryResponses } from '../../../../mobile.stories.fixtures';
 
 import type { RecordMessagesContainerProps } from './RecordMessagesContainer';
@@ -177,7 +178,7 @@ function MessagesStory({
 }: Readonly<
   RecordMessagesContainerProps & {
     responses: StoryResponses;
-    locale?: 'en' | 'zh-Hant';
+    locale?: Locale;
   }
 >): ReactElement {
   return (
@@ -387,13 +388,13 @@ export const EditCardReady = {
   play: async ({ canvasElement }) => {
     const confirm = await findStoryElement(
       canvasElement,
-      `[data-testid="record-message-card-confirm-${nameChangeId}"]`,
+      `[data-testid="record-message-card-confirm-name-${nameChangeId}"]`,
     );
     confirm.click();
     (
       await findStoryElement(
         canvasElement,
-        `[data-testid="record-message-card-reject-${descriptionChangeId}"]`,
+        `[data-testid="record-message-card-reject-description-${descriptionChangeId}"]`,
       )
     ).click();
     const apply = await findStoryElement(
@@ -405,11 +406,11 @@ export const EditCardReady = {
     await findStoryText(canvasElement, 'All changes decided; some not applied');
     await findStoryElement(
       canvasElement,
-      `[data-testid="record-message-card-applied-${nameChangeId}"]`,
+      `[data-testid="record-message-card-applied-name-${nameChangeId}"]`,
     );
     await findStoryElement(
       canvasElement,
-      `[data-testid="record-message-card-skipped-${descriptionChangeId}"]`,
+      `[data-testid="record-message-card-skipped-description-${descriptionChangeId}"]`,
     );
   },
 } satisfies Story;
@@ -419,7 +420,7 @@ export const RejectOnly = {
   play: async ({ canvasElement }) => {
     const reject = await findStoryElement(
       canvasElement,
-      `[data-testid="record-message-card-reject-${descriptionChangeId}"]`,
+      `[data-testid="record-message-card-reject-description-${descriptionChangeId}"]`,
     );
     reject.click();
     await findStoryText(canvasElement, 'Apply decisions (1)');
@@ -431,7 +432,7 @@ export const RejectOnly = {
     ).click();
     await findStoryElement(
       canvasElement,
-      `[data-testid="record-message-card-skipped-${descriptionChangeId}"]`,
+      `[data-testid="record-message-card-skipped-description-${descriptionChangeId}"]`,
     );
     await findStoryText(canvasElement, 'Some changes decided');
   },
@@ -503,7 +504,7 @@ export const ResolvedWithSkipped = {
     await findStoryText(canvasElement, 'All changes decided; some not applied');
     await findStoryElement(
       canvasElement,
-      `[data-testid="record-message-card-skipped-${descriptionChangeId}"]`,
+      `[data-testid="record-message-card-skipped-description-${descriptionChangeId}"]`,
     );
     await findStoryText(canvasElement, 'Not applied');
   },
@@ -543,7 +544,7 @@ export const StaleChangeInTraditionalChinese = {
   play: async ({ canvasElement }) => {
     const confirm = await findStoryElement(
       canvasElement,
-      `[data-testid="record-message-card-confirm-${descriptionChangeId}"]`,
+      `[data-testid="record-message-card-confirm-description-${descriptionChangeId}"]`,
     );
     confirm.click();
     await findStoryText(canvasElement, '套用決定 (1)');

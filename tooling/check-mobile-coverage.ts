@@ -17,11 +17,22 @@ export const domCoverageSources = [
   'features/analysis/containers/AnalysisContainer.stories.tsx',
   'features/collection/containers/RecordContainer.stories.tsx',
   'features/collection/containers/RecordHistoryContainer.stories.tsx',
+  'features/collection/containers/RecordEditContainer.stories.tsx',
   'features/capture/containers/CaptureContainer.stories.tsx',
   'features/collection/messages/containers/RecordMessagesContainer.stories.tsx',
   'components/QueryState.stories.tsx',
   'components/Screen.stories.tsx',
+  'features/settings/components/LanguageOption.stories.tsx',
+  'features/settings/containers/LanguageSettingsContainer.stories.tsx',
+  'features/settings/containers/SettingsContainer.stories.tsx',
+  'components/SettingsAction.stories.tsx',
   'mobile.stories.spec.dom.helpers.tsx',
+  'features/auth/components/LoginCodeStep.stories.tsx',
+  'features/capture/components/CaptureCamera.stories.tsx',
+  'features/capture/components/CaptureCameraFallback.stories.tsx',
+  'features/capture/components/CaptureGridStep.stories.tsx',
+  'features/capture/components/CaptureSaveStep.stories.tsx',
+  'features/capture/components/UploadResumeBanner.stories.tsx',
 ] as const;
 
 /** runtime helpers required even though generic discovery excludes spec files */

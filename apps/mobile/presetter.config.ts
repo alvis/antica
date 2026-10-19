@@ -45,17 +45,22 @@ export default preset('@antica/mobile', {
                 ),
               ),
             },
-            ...['audio', 'file-system', 'crypto', 'image-picker', 'router'].map(
-              (moduleName) => ({
-                find: new RegExp(`^expo-${moduleName}$`),
-                replacement: fileURLToPath(
-                  new URL(
-                    `../../packages/ui/.storybook/expo-${moduleName}.ts`,
-                    import.meta.url,
-                  ),
-                ),
-              }),
-            ),
+            // browser stubs for native modules: shared Storybook fixtures, plus this app's own
+            // for the camera and video stills
+            ...[
+              ['audio', '../../packages/ui/.storybook'],
+              ['file-system', '../../packages/ui/.storybook'],
+              ['crypto', '../../packages/ui/.storybook'],
+              ['image-picker', '../../packages/ui/.storybook'],
+              ['router', '../../packages/ui/.storybook'],
+              ['camera', './.storybook'],
+              ['video-thumbnails', './.storybook'],
+            ].map(([moduleName, directory]) => ({
+              find: new RegExp(`^expo-${moduleName}$`),
+              replacement: fileURLToPath(
+                new URL(`${directory}/expo-${moduleName}.ts`, import.meta.url),
+              ),
+            })),
           ],
         },
         define: {
@@ -94,6 +99,10 @@ export default preset('@antica/mobile', {
               'src/features/collection/messages/containers/*.stories.tsx',
               'src/components/QueryState.stories.tsx',
               'src/components/Screen.stories.tsx',
+              'src/components/SettingsAction.stories.tsx',
+              'src/features/settings/*/*.stories.tsx',
+              'src/features/auth/components/*.stories.tsx',
+              'src/features/capture/components/*.stories.tsx',
               'src/mobile.stories.spec.dom.helpers.tsx',
             ],
           },

@@ -1,31 +1,15 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { screen, userEvent, waitFor } from '@testing-library/react-native';
 
-import { deleteItemAsync, setItemAsync } from 'expo-secure-store';
 import { Text } from 'react-native';
 
 import TabLayout from '../../../app/(private)/(tabs)/_layout';
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
+import { memoryPreferences } from '../../../i18n/preferences.spec.fixtures';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { renderRouter } from 'expo-router/testing-library';
 
-import type { ReactElement } from 'react';
-
-jest.mock('expo-secure-store', () => {
-  const storage = new Map<string, string>();
-
-  return {
-    getItemAsync: jest.fn(
-      async (key: string): Promise<string | null> => storage.get(key) ?? null,
-    ),
-    setItemAsync: jest.fn(async (key: string, value: string): Promise<void> => {
-      storage.set(key, value);
-    }),
-    deleteItemAsync: jest.fn(async (key: string): Promise<void> => {
-      storage.delete(key);
-    }),
-  } satisfies Partial<typeof import('expo-secure-store')>;
-});
+import type { FC, PropsWithChildren, ReactElement } from 'react';
 
 const CollectionScene = (): ReactElement => <Text>Collection route</Text>;
 const TasksScene = (): ReactElement => <Text>Tasks route</Text>;
@@ -43,22 +27,26 @@ const sceneLabels = [
 describe('rc:TabLayout', () => {
   it.each([
     {
-      language: 'English',
+      language: 'Traditional Chinese on a new installation',
       storedLocale: null,
-      titles: ['Collection', 'Tasks', 'Knowledge', 'Research'],
+      titles: ['藏品', '待辦', '知識庫', '研究'],
     },
     {
-      language: 'Traditional Chinese after locale restoration',
-      storedLocale: 'zh-Hant',
-      titles: ['藏品', '待辦', '知識庫', '研究'],
+      language: 'English once it is saved',
+      storedLocale: 'en' as const,
+      titles: ['Collection', 'Tasks', 'Knowledge', 'Research'],
     },
   ])(
     'should label and navigate the collector journeys in $language',
     async ({ storedLocale, titles }) => {
-      await deleteItemAsync('antica.locale');
-      if (storedLocale !== null) {
-        await setItemAsync('antica.locale', storedLocale);
-      }
+      const preferences = memoryPreferences(
+        storedLocale === null
+          ? null
+          : { schemaVersion: 1, interfaceLanguage: storedLocale },
+      );
+      const Device: FC<PropsWithChildren> = ({ children }) => (
+        <LocaleProvider preferences={preferences}>{children}</LocaleProvider>
+      );
       const pending = renderRouter(
         {
           _layout: TabLayout,
@@ -67,7 +55,7 @@ describe('rc:TabLayout', () => {
           knowledge: KnowledgeScene,
           research: ResearchScene,
         },
-        { initialUrl: '/collection', wrapper: LocaleProvider },
+        { initialUrl: '/collection', wrapper: Device },
       );
       await pending;
 

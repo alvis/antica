@@ -2,7 +2,7 @@ import { Text, View } from 'react-native';
 
 import { styles } from '@antica/ui';
 
-import { useLocale } from '../../../../i18n/LocaleProvider';
+import { useLocale } from '../../../../providers/LocaleProvider';
 
 import { EditCardRow } from './EditCardRow';
 import { MessageButton } from './MessageButton';
@@ -11,7 +11,7 @@ import type { FC } from 'react';
 
 import type { RecordMessageDraft } from '@antica/contracts';
 
-import type { MessageKey } from '../../../../i18n/messages';
+import type { PlainMessageKey } from '../../../../i18n/messages';
 
 import type { ProposalDecision } from '../hooks/useEditCardStates';
 
@@ -32,23 +32,36 @@ export type EditCardProps = {
   onApply?: () => void;
 };
 
+/** how far a card's proposals are settled */
+type EditCardState =
+  'ready' | 'partly-applied' | 'partly-decided' | 'applied' | 'resolved';
+
+/** status line shown for each card state */
+const editCardStatusKeys = {
+  'ready': 'editCardReady',
+  'partly-applied': 'editCardPartlyApplied',
+  'partly-decided': 'editCardPartlyDecided',
+  'applied': 'editCardApplied',
+  'resolved': 'editCardResolved',
+} as const satisfies Record<EditCardState, PlainMessageKey>;
+
 /**
- * picks the status line for a card from how far its proposals are settled
+ * tells how far a card's proposals are settled
  * @param draft draft status with its applied and skipped proposals
- * @returns message key of the status line
+ * @returns the card state, which picks its status line
  */
-function editCardStatusKey(draft: RecordMessageDraft): MessageKey {
+function editCardState(draft: RecordMessageDraft): EditCardState {
   const someSkipped = draft.skippedProposalIds.length > 0;
 
   switch (draft.status) {
     case 'applied':
-      return someSkipped ? 'editCardResolved' : 'editCardApplied';
+      return someSkipped ? 'resolved' : 'applied';
     case 'partially_applied':
       return draft.appliedProposalIds.length > 0
-        ? 'editCardPartlyApplied'
-        : 'editCardPartlyDecided';
+        ? 'partly-applied'
+        : 'partly-decided';
     default:
-      return 'editCardReady';
+      return 'ready';
   }
 }
 
@@ -93,6 +106,7 @@ export const EditCard: FC<EditCardProps> = ({
   onApply,
 }) => {
   const { t } = useLocale();
+  const state = editCardState(draft);
 
   return (
     <View
@@ -102,9 +116,9 @@ export const EditCard: FC<EditCardProps> = ({
         {t('editCardTitle')}
       </Text>
       <Text
-        testID={`record-message-card-status-${editDraftId}`}
+        testID={`record-message-card-status-${state}-${editDraftId}`}
         style={styles.secondary}>
-        {t(editCardStatusKey(draft))}
+        {t(editCardStatusKeys[state])}
       </Text>
       {draft.proposedChanges.map((change) => (
         <EditCardRow
@@ -128,7 +142,7 @@ export const EditCard: FC<EditCardProps> = ({
       )}
       {draft.status !== 'applied' && (
         <MessageButton
-          label={`${t('applyDecisions')} (${decisionCount})`}
+          label={t('applyDecisionsCount', { count: decisionCount })}
           testID={`record-message-card-apply-${editDraftId}`}
           onPress={onApply}
         />

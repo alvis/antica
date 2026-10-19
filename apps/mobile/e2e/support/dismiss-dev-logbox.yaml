@@ -4,7 +4,8 @@
 # now that the root navigator mounts while the session restores. Limits: each
 # check runs once per call, so a LogBox that appears afterwards stays until the
 # next call; the warning-toast close button is unlabelled and tapped by
-# position, tuned for the Pixel 7 test AVD.
+# position, tuned for the Pixel 7 test AVD, and a full warning page it opens by
+# mistake is dismissed.
 appId: ${APP_ID}
 ---
 - runFlow:
@@ -25,3 +26,10 @@ appId: ${APP_ID}
       # The warning toast's close button has no label; it sits at the toast's right edge.
       - tapOn:
           point: 92%,92%
+# A tap that lands on the toast body instead of its close button opens the full
+# warning page; close that page too.
+- runFlow:
+    when:
+      visible: Console Warning
+    commands:
+      - tapOn: Dismiss

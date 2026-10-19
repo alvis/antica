@@ -15,8 +15,11 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { SettingsAction } from '../../../components/SettingsAction';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
+
+import { UploadResumeContainer } from '../../capture/containers/UploadResumeContainer';
 
 import { FreshnessOption } from '../components/FreshnessOption';
 
@@ -162,7 +165,10 @@ export const CollectionContainer: FC = () => {
     pending;
 
   return (
-    <Screen title={t('collection')} scrollable={false}>
+    <Screen
+      title={t('collection')}
+      scrollable={false}
+      action={<SettingsAction />}>
       <FlatList
         style={styles.screen}
         data={page.isPending || page.error ? [] : page.data.items}
@@ -175,17 +181,12 @@ export const CollectionContainer: FC = () => {
               gap: styles.content.gap,
               marginBottom: styles.content.gap,
             }}>
-            <View style={styles.row}>
-              <ActionButton
-                label={t('addItem')}
-                onPress={() => router.push('/capture')}
-              />
-              <ActionButton
-                label={t('settings')}
-                onPress={() => router.push('/settings')}
-                secondary
-              />
-            </View>
+            <ActionButton
+              testID="collection-add-item"
+              label={t('addItem')}
+              onPress={() => router.push('/capture')}
+            />
+            <UploadResumeContainer />
             <View style={{ gap: styles.card.gap }}>
               <ActionButton
                 label={t('filters')}
@@ -349,6 +350,7 @@ export const CollectionContainer: FC = () => {
                   )}
                   {!hasRecordFilters && (
                     <ActionButton
+                      testID="collection-empty-add-item"
                       label={t('addItem')}
                       onPress={() => router.push('/capture')}
                     />
@@ -385,7 +387,7 @@ export const CollectionContainer: FC = () => {
             </Text>
             {item.pendingCheckCount > 0 && (
               <Text style={styles.secondary}>
-                {item.pendingCheckCount} {t('tasks')}
+                {t('pendingTaskCount', { count: item.pendingCheckCount })}
               </Text>
             )}
           </Pressable>

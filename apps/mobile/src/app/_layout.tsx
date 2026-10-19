@@ -5,8 +5,9 @@ import { StatusBar } from 'react-native';
 import { colors } from '@antica/ui';
 
 import { SessionNavigator } from '../features/auth/containers/SessionNavigator';
-import { LocaleProvider } from '../i18n/LocaleProvider';
+import { DevLocaleLink } from '../i18n/DevLocaleLink';
 import { AuthProvider } from '../providers/AuthProvider';
+import { LocaleProvider } from '../providers/LocaleProvider';
 
 import type { ReactElement } from 'react';
 
@@ -19,6 +20,8 @@ export default function RootLayout(): ReactElement {
     <QueryClientProvider client={queryClient}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.canvas} />
       <LocaleProvider>
+        {/* release bundles drop the development-only language link */}
+        {__DEV__ ? <DevLocaleLink /> : null}
         <AuthProvider>
           <SessionNavigator />
         </AuthProvider>

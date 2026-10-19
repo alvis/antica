@@ -17,9 +17,9 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -119,7 +119,7 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
               {detail.data.sourceIds.map((id) => (
                 <ActionButton
                   key={id}
-                  label={`${t('viewSource')} ${id.slice(0, 8)}`}
+                  label={t('viewSourceWithId', { id: id.slice(0, 8) })}
                   onPress={() => router.push(`/sources/${id}`)}
                   secondary
                 />
@@ -139,7 +139,7 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
                 {detail.data.draft.paragraphs.map((item, index) => (
                   <View key={index}>
                     <TextField
-                      label={`${t('description')} ${index + 1}`}
+                      label={t('descriptionNumber', { number: index + 1 })}
                       value={paragraphs[index] ?? item.textZhHant}
                       onChangeText={(value) =>
                         setParagraphs((current) => ({
@@ -152,14 +152,18 @@ export const ResearchDetailContainer: FC<ResearchDetailContainerProps> = ({
                     <Text style={styles.secondary}>
                       {item.support === 'needs_source'
                         ? t('sourceNeedsReview')
-                        : `${item.citationIds.length} ${t('citations')}`}
+                        : t('citationCount', {
+                            count: item.citationIds.length,
+                          })}
                     </Text>
                   </View>
                 ))}
                 {detail.data.draft.citations.map((citation) => (
                   <ActionButton
                     key={citation.id}
-                    label={`${t('viewSource')} ${citation.id.slice(0, 8)}`}
+                    label={t('viewSourceWithId', {
+                      id: citation.id.slice(0, 8),
+                    })}
                     onPress={() =>
                       citation.locator.kind === 'page'
                         ? router.push(

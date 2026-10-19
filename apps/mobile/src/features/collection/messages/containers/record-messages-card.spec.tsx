@@ -13,6 +13,8 @@ import {
   renderMobile,
 } from '../../../../mobile.spec.fixtures';
 
+import { proposalFieldTestId } from '../../proposal-field-test-id';
+
 import {
   apiError,
   descriptionChange,
@@ -132,39 +134,48 @@ it('should show every proposed field with nothing preselected, apply confirmed f
     within(card).getByText('Nothing changes until you tap “Apply decisions”.'),
   ).toBeTruthy();
   expect(within(card).getByText('Blue vase')).toBeTruthy();
-  expect(within(card).getByText('Kangxi · 1662–1722')).toBeTruthy();
+  expect(
+    within(card).getByText('Kangxi (1662–1722) · unconfirmed'),
+  ).toBeTruthy();
   expect(within(card).getByText('porcelain, blue-and-white')).toBeTruthy();
   expect(within(card).getByText('Old words')).toBeTruthy();
   expect(within(card).getAllByText('(empty)')).toHaveLength(3);
   expect(
-    screen.getByTestId(`record-message-card-confirm-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
   ).toHaveAccessibleName('Confirm: Name');
   for (const change of changes) {
-    expect(checked(`record-message-card-confirm-${change.id}`)).toBe(false);
-    expect(checked(`record-message-card-reject-${change.id}`)).toBe(false);
+    const row = `${proposalFieldTestId(change.field)}-${change.id}`;
+    expect(checked(`record-message-card-confirm-${row}`)).toBe(false);
+    expect(checked(`record-message-card-reject-${row}`)).toBe(false);
   }
   const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
   expect(apply).toBeDisabled();
   expect(apply).toHaveAccessibleName('Apply decisions (0)');
 
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
   );
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${periodChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-period-${periodChangeId}`),
   );
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-reject-${periodChangeId}`),
+    screen.getByTestId(`record-message-card-reject-period-${periodChangeId}`),
   );
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${tagsChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
   );
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${tagsChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
   );
-  expect(checked(`record-message-card-reject-${periodChangeId}`)).toBe(true);
-  expect(checked(`record-message-card-confirm-${periodChangeId}`)).toBe(false);
-  expect(checked(`record-message-card-confirm-${tagsChangeId}`)).toBe(false);
+  expect(checked(`record-message-card-reject-period-${periodChangeId}`)).toBe(
+    true,
+  );
+  expect(checked(`record-message-card-confirm-period-${periodChangeId}`)).toBe(
+    false,
+  );
+  expect(checked(`record-message-card-confirm-tags-${tagsChangeId}`)).toBe(
+    false,
+  );
   expect(apply).toHaveAccessibleName('Apply decisions (2)');
 
   await fireEvent.press(apply);
@@ -179,7 +190,9 @@ it('should show every proposed field with nothing preselected, apply confirmed f
     skippedProposalIds: [periodChangeId],
   });
   await waitFor(() =>
-    expect(checked(`record-message-card-confirm-${nameChangeId}`)).toBe(false),
+    expect(checked(`record-message-card-confirm-name-${nameChangeId}`)).toBe(
+      false,
+    ),
   );
   expect(
     view.reads.mock.calls.filter(([path]) => path === `/v1/records/${recordId}`)
@@ -197,7 +210,7 @@ it('should lock the choices while an apply is in flight', async () => {
       }),
   );
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
   );
 
   await fireEvent.press(
@@ -205,7 +218,7 @@ it('should lock the choices while an apply is in flight', async () => {
   );
 
   expect(
-    screen.getByTestId(`record-message-card-reject-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-reject-name-${nameChangeId}`),
   ).toBeDisabled();
   expect(
     screen.getByTestId(`record-message-card-apply-${draftId}`),
@@ -213,7 +226,7 @@ it('should lock the choices while an apply is in flight', async () => {
   finish();
   await waitFor(() =>
     expect(
-      screen.getByTestId(`record-message-card-reject-${nameChangeId}`),
+      screen.getByTestId(`record-message-card-reject-name-${nameChangeId}`),
     ).toBeEnabled(),
   );
 });
@@ -230,15 +243,15 @@ it('should mark applied and skipped rows of a partly settled card as locked', as
 
   expect(screen.getByText('Some changes applied')).toBeTruthy();
   expect(
-    screen.getByTestId(`record-message-card-applied-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-applied-name-${nameChangeId}`),
   ).toHaveTextContent('✓ Applied');
   expect(
-    screen.getByTestId(`record-message-card-skipped-${periodChangeId}`),
+    screen.getByTestId(`record-message-card-skipped-period-${periodChangeId}`),
   ).toHaveTextContent('✕ Not applied');
   expect(
-    screen.getByTestId(`record-message-card-skipped-${periodChangeId}`),
+    screen.getByTestId(`record-message-card-skipped-period-${periodChangeId}`),
   ).toHaveAccessibleName('Not applied');
-  for (const locked of [nameChangeId, periodChangeId]) {
+  for (const locked of [`name-${nameChangeId}`, `period-${periodChangeId}`]) {
     expect(
       screen.queryByTestId(`record-message-card-confirm-${locked}`),
     ).toBeNull();
@@ -247,10 +260,10 @@ it('should mark applied and skipped rows of a partly settled card as locked', as
     ).toBeNull();
   }
   expect(
-    screen.queryByTestId(`record-message-card-skipped-${tagsChangeId}`),
+    screen.queryByTestId(`record-message-card-skipped-tags-${tagsChangeId}`),
   ).toBeNull();
   expect(
-    screen.getByTestId(`record-message-card-confirm-${tagsChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
   ).toBeEnabled();
   expect(
     screen.getByTestId(`record-message-card-apply-${draftId}`),
@@ -263,28 +276,32 @@ it.each([
     appliedProposalIds: [nameChangeId],
     skippedProposalIds: [periodChangeId],
     text: 'All changes decided; some not applied',
+    state: 'resolved',
   },
   {
     status: 'applied',
     appliedProposalIds: [nameChangeId, periodChangeId],
     skippedProposalIds: [],
     text: 'All changes applied',
+    state: 'applied',
   },
   {
     status: 'partially_applied',
     appliedProposalIds: [nameChangeId],
     skippedProposalIds: [],
     text: 'Some changes applied',
+    state: 'partly-applied',
   },
   {
     status: 'partially_applied',
     appliedProposalIds: [],
     skippedProposalIds: [periodChangeId],
     text: 'Some changes decided',
+    state: 'partly-decided',
   },
 ] as const)(
   'should say “$text” for a $status card with $appliedProposalIds.length applied and $skippedProposalIds.length skipped',
-  async ({ status, appliedProposalIds, skippedProposalIds, text }) => {
+  async ({ status, appliedProposalIds, skippedProposalIds, text, state }) => {
     await renderCard(
       entry('assistant', 'Two changes.', {
         status,
@@ -295,7 +312,7 @@ it.each([
     );
 
     expect(
-      screen.getByTestId(`record-message-card-status-${draftId}`),
+      screen.getByTestId(`record-message-card-status-${state}-${draftId}`),
     ).toHaveTextContent(text);
   },
 );
@@ -308,7 +325,7 @@ it('should enable the apply action only while a field is confirmed or rejected',
   );
   const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
   const reject = screen.getByTestId(
-    `record-message-card-reject-${periodChangeId}`,
+    `record-message-card-reject-period-${periodChangeId}`,
   );
 
   expect(apply).toBeDisabled();
@@ -332,7 +349,7 @@ it('should skip rejected fields without selecting any and reload only the messag
   await waitFor(() => expect(reads(recordPath)).toBe(1));
   const threadBefore = reads(messagesPath);
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-reject-${periodChangeId}`),
+    screen.getByTestId(`record-message-card-reject-period-${periodChangeId}`),
   );
 
   await fireEvent.press(
@@ -383,7 +400,7 @@ it('should show a stale field inline, reload the record and messages, and rebuil
     view.reads.mock.calls.filter(([path]) => path === messagesPath).length;
   const before = threadReads();
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
   );
 
   await fireEvent.press(
@@ -414,7 +431,7 @@ it('should retry an interrupted apply under the same key until the choice change
     },
   );
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
   );
   const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
 
@@ -425,7 +442,7 @@ it('should retry an interrupted apply under the same key until the choice change
   await fireEvent.press(apply);
   await waitFor(() => expect(sentTo(view.commands, applyPath)).toHaveLength(2));
   await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-${tagsChangeId}`),
+    screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
   );
   expect(
     screen.queryByTestId(`record-message-card-error-${draftId}`),
@@ -465,7 +482,9 @@ it('should keep a card’s choices when its list cell is unmounted and mounted a
       path === `/v1/records/${recordId}` ? collectionRecord : page(items),
   });
   await fireEvent.press(
-    await screen.findByTestId(`record-message-card-confirm-${nameChangeId}`),
+    await screen.findByTestId(
+      `record-message-card-confirm-name-${nameChangeId}`,
+    ),
   );
 
   items = [question];
@@ -477,6 +496,10 @@ it('should keep a card’s choices when its list cell is unmounted and mounted a
   await act(async () => view.client.invalidateQueries());
 
   await screen.findByTestId(`record-message-card-${draftId}`);
-  expect(checked(`record-message-card-confirm-${nameChangeId}`)).toBe(true);
-  expect(checked(`record-message-card-confirm-${periodChangeId}`)).toBe(false);
+  expect(checked(`record-message-card-confirm-name-${nameChangeId}`)).toBe(
+    true,
+  );
+  expect(checked(`record-message-card-confirm-period-${periodChangeId}`)).toBe(
+    false,
+  );
 });

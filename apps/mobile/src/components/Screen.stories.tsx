@@ -104,6 +104,10 @@ const meta = {
       control: false,
       description: 'Optional handle for the scrollable container',
     },
+    action: {
+      control: false,
+      description: 'Optional header control beside the heading',
+    },
   },
   render: (args) => <ScreenDemo {...args} />,
 } satisfies Meta<typeof Screen>;
@@ -194,6 +198,20 @@ export const SubtitleOnly = {
     await interactions.expectText(collectionSubtitle);
     await interactions.expectText(collectionText);
     await interactions.expectScrollable();
+  },
+} satisfies Story;
+
+/** places a header control, such as the Settings gear, beside the heading */
+export const WithAction = {
+  args: { action: <Text>Settings action</Text> },
+  play: async ({ canvasElement, loaded }) => {
+    const { interactions: suppliedInteractions }: ScreenLoadedInteractions =
+      loaded;
+    const interactions =
+      suppliedInteractions ?? createDomScreenInteractions(canvasElement);
+    await interactions.expectHeading('Collection');
+    await interactions.expectText('Settings action');
+    await interactions.expectText(collectionText);
   },
 } satisfies Story;
 

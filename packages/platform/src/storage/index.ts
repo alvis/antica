@@ -5,7 +5,9 @@ export type { LocalMediaConfig } from './local.js';
 export type { S3MediaConfig } from './s3.js';
 export type {
   MediaStore,
+  MultipartResume,
   MultipartTransfer,
   OriginalObject,
   SignedTransfer,
+  UploadedPart,
 } from './media-store.js';

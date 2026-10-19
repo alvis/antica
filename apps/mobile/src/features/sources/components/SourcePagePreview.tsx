@@ -4,7 +4,7 @@ import { Image, Platform, Pressable, Text, View } from 'react-native';
 
 import { ActionButton, styles } from '@antica/ui';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 import type { GestureResponderEvent } from 'react-native';
@@ -160,7 +160,7 @@ export const SourcePagePreview: FC<SourcePagePreviewProps> = ({
           source={{ uri: previewUri }}
           style={{ width: displayWidth, height: 220 }}
           resizeMode="contain"
-          accessibilityLabel={`${name}, ${t('preparedPreview')}`}
+          accessibilityLabel={t('preparedPreviewOf', { name })}
         />
       )}
       {previewFailed && (

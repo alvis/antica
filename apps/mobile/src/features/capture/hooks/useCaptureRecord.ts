@@ -8,8 +8,17 @@ import type { CaptureDraftState, CaptureRuntime } from './useCaptureDraft';
 /** creates the draft record for a single item or a set */
 export type CreateDraft = (kind: 'single' | 'set') => Promise<void>;
 
+/** draft updaters and the record a capture resumes */
+type ResumeContext = Pick<
+  CaptureDraftState,
+  'setDraft' | 'setStep' | 'update'
+> & {
+  recordId: string | undefined;
+  resumeStep: number;
+};
+
 /**
- * resumes an existing record at the media step, or creates a new draft record
+ * resumes an existing record at the given step, or creates a new draft record
  * @param runtime API transport and shared busy/error status
  * @param runtime.api authenticated API transport
  * @param runtime.busy whether another capture action is running
@@ -20,18 +29,12 @@ export type CreateDraft = (kind: 'single' | 'set') => Promise<void>;
  * @param context.setStep capture step updater
  * @param context.update capture draft patcher
  * @param context.recordId record to resume, when capture was opened for one
+ * @param context.resumeStep step a resumed record opens at
  * @returns the action that creates a new draft record
  */
 export function useCaptureRecord(
   { api, busy, setBusy, setError }: Omit<CaptureRuntime, 't'>,
-  {
-    setDraft,
-    setStep,
-    update,
-    recordId,
-  }: Pick<CaptureDraftState, 'setDraft' | 'setStep' | 'update'> & {
-    recordId: string | undefined;
-  },
+  { setDraft, setStep, update, recordId, resumeStep }: ResumeContext,
 ): CreateDraft {
   useEffect(() => {
     if (!recordId) {
@@ -50,7 +53,7 @@ export function useCaptureRecord(
             preparedDescription: record.description,
             locationDetail: record.location.detail,
           }));
-          setStep(2);
+          setStep(resumeStep);
         }
       })
       .catch((cause) => {
@@ -62,7 +65,7 @@ export function useCaptureRecord(
     return () => {
       active = false;
     };
-  }, [api, recordId]);
+  }, [api, recordId, resumeStep]);
 
   return async (kind) => {
     if (busy) {

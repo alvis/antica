@@ -5,9 +5,12 @@ import { S3Client } from '@aws-sdk/client-s3';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { OriginalVerificationError } from '@antica/application/ports';
+
 import { createS3MediaStore } from './s3.js';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+
 import type { GetObjectCommandOutput } from '@aws-sdk/client-s3';
 
 import type { S3MediaStore } from './s3.js';
@@ -156,18 +159,26 @@ describe('fn:createS3MediaStore', () => {
       },
     });
     const part = { partNumber: 1, etag: 'etag' };
+    const upload = { uploadId: 'upload-id', layout: [{ partNumber: 1 }] };
 
     await expect(
-      store.completeMultipart(original, '', [part]),
+      store.completeMultipart(original, { ...upload, uploadId: '' }, [part]),
     ).rejects.toThrow();
     await expect(
-      store.completeMultipart(original, 'upload-id', []),
+      store.completeMultipart(original, upload, []),
     ).rejects.toThrow();
     await expect(
-      store.completeMultipart(original, 'upload-id', [
+      store.completeMultipart(original, upload, [
         { partNumber: 1, etag: 'e'.repeat(257) },
       ]),
     ).rejects.toThrow();
+    await expect(
+      store.completeMultipart(
+        original,
+        { ...upload, layout: [{ partNumber: 2 }] },
+        [part],
+      ),
+    ).rejects.toThrow('incomplete or unordered');
   });
 
   it('should cancel an identified multipart upload without contacting storage for an empty ID', async () => {
@@ -204,7 +215,12 @@ describe('fn:createS3MediaStore', () => {
           response.end();
         },
         async (store) => {
-          await expect(store.verifyOriginal(original)).rejects.toThrow();
+          await expect(store.verifyOriginal(original)).rejects.toEqual(
+            expect.objectContaining({
+              constructor: OriginalVerificationError,
+              reason: 'mismatch',
+            }),
+          );
         },
       );
 
@@ -236,7 +252,12 @@ describe('fn:createS3MediaStore', () => {
         async (store) => {
           await expect(
             store.verifyOriginal({ ...original, sha256 }),
-          ).rejects.toThrow();
+          ).rejects.toEqual(
+            expect.objectContaining({
+              constructor: OriginalVerificationError,
+              reason: 'mismatch',
+            }),
+          );
         },
       );
 
@@ -341,5 +362,139 @@ describe('fn:createS3MediaStore', () => {
       },
     );
     expect(methods).toEqual(['GET', 'PUT', 'PUT']);
+  });
+
+  describe('mt:resumeMultipart', () => {
+    const large = { ...original, byteLength: 64 * 1024 * 1024 + 7 };
+    // a layout stored by an earlier part-size policy: 8 MiB parts, not today's 16 MiB
+    const storedLayout = Array.from({ length: 9 }, (_, index) => ({
+      partNumber: index + 1,
+      offset: index * 8 * 1024 * 1024,
+      byteLength: index < 8 ? 8 * 1024 * 1024 : 7,
+    }));
+    const part = (number: number, etag?: string): string => {
+      const tag = etag ? '<ETag>&quot;' + etag + '&quot;</ETag>' : '';
+
+      return `<Part><PartNumber>${number}</PartNumber>${tag}<Size>1</Size></Part>`;
+    };
+    const page = (body: string): string =>
+      `<ListPartsResult><Bucket>private-originals</Bucket><Key>${large.key}</Key><UploadId>upload-id</UploadId>${body}</ListPartsResult>`;
+
+    it('should re-sign exactly the stored layout and collect stored parts across every page', async () => {
+      const markers: Array<string | null> = [];
+      const resumed = await runWithS3Server(
+        (request, response) => {
+          const url = new URL(request.url ?? '', 'http://s3.test');
+          const marker = url.searchParams.get('part-number-marker');
+          markers.push(marker);
+          response.writeHead(200, { 'content-type': 'application/xml' });
+          response.end(
+            page(
+              {
+                'none': `<IsTruncated>true</IsTruncated><NextPartNumberMarker>2</NextPartNumberMarker>${part(1, 'one')}${part(2, 'two')}`,
+                '2': '<IsTruncated>true</IsTruncated><NextPartNumberMarker>3</NextPartNumberMarker>',
+                '3': `<IsTruncated>false</IsTruncated>${part(4, 'four')}${part(5)}`,
+              }[marker ?? 'none']!,
+            ),
+          );
+        },
+        async (store) =>
+          store.resumeMultipart(large, 'upload-id', storedLayout),
+      );
+
+      expect(markers).toEqual([null, '2', '3']);
+      if (resumed.state !== 'active') {
+        throw new Error('Expected an active upload');
+      }
+      expect(resumed.uploadId).toBe('upload-id');
+      expect(resumed.uploadedParts).toEqual([
+        { partNumber: 1, etag: '"one"' },
+        { partNumber: 2, etag: '"two"' },
+        { partNumber: 4, etag: '"four"' },
+      ]);
+      expect(
+        resumed.parts.map(({ partNumber, offset, byteLength }) => ({
+          partNumber,
+          offset,
+          byteLength,
+        })),
+      ).toEqual(storedLayout);
+      for (const signed of resumed.parts.map(
+        (entry) => new URL(entry.putUrl),
+      )) {
+        expect(signed.origin).toBe('https://phone-storage.example');
+        expect(signed.searchParams.get('uploadId')).toBe('upload-id');
+      }
+      expect(Date.parse(resumed.expiresAt)).toBeGreaterThan(Date.now());
+    });
+
+    it('should report an aborted or expired provider upload as expired', async () => {
+      const resumed = await runWithS3Server(
+        (_request, response) => {
+          response.writeHead(404, { 'content-type': 'application/xml' });
+          response.end(
+            '<Error><Code>NoSuchUpload</Code><Message>The specified upload does not exist.</Message></Error>',
+          );
+        },
+        async (store) =>
+          store.resumeMultipart(large, 'upload-id', storedLayout),
+      );
+
+      expect(resumed).toEqual({ state: 'expired' });
+    });
+
+    it('should surface other provider failures and a truncated page without a marker', async () => {
+      await runWithS3Server(
+        (_request, response) => {
+          response.writeHead(403, { 'content-type': 'application/xml' });
+          response.end(
+            '<Error><Code>AccessDenied</Code><Message>Denied</Message></Error>',
+          );
+        },
+        async (store) => {
+          await expect(
+            store.resumeMultipart(large, 'upload-id', storedLayout),
+          ).rejects.toMatchObject({ name: 'AccessDenied' });
+        },
+      );
+      await runWithS3Server(
+        (_request, response) => {
+          response.writeHead(200, { 'content-type': 'application/xml' });
+          response.end(page('<IsTruncated>true</IsTruncated>'));
+        },
+        async (store) => {
+          await expect(
+            store.resumeMultipart(large, 'upload-id', storedLayout),
+          ).rejects.toThrow('without a marker');
+        },
+      );
+    });
+
+    it('should reject a missing upload identity, empty layout, or unsafe key before contacting storage', async () => {
+      const send = vi.spyOn(S3Client.prototype, 'send');
+      const store = createS3MediaStore({
+        bucket: 'private-originals',
+        region: 'eu-west-2',
+        credentials: {
+          accessKeyId: 'test-access',
+          secretAccessKey: 'test-secret',
+        },
+      });
+
+      await expect(
+        store.resumeMultipart(large, '', storedLayout),
+      ).rejects.toThrow();
+      await expect(
+        store.resumeMultipart(large, 'upload-id', []),
+      ).rejects.toThrow();
+      await expect(
+        store.resumeMultipart(
+          { ...large, key: 'public/file' },
+          'upload-id',
+          storedLayout,
+        ),
+      ).rejects.toThrow('Invalid storage key');
+      expect(send).not.toHaveBeenCalled();
+    });
   });
 });

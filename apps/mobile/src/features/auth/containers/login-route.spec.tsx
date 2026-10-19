@@ -9,11 +9,12 @@ import {
 
 import { Redirect } from 'expo-router';
 
-import { ApiTransport } from '@antica/client';
-
 import LoginRoute from '../../../app/login';
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
+import { savedPreferences } from '../../../i18n/preferences.spec.fixtures';
 import { authClient, useAuth } from '../../../providers/AuthProvider';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
+
+import { authValue } from './login.spec.fixtures';
 
 jest.mock('@better-auth/expo/client', () => ({ expoClient: () => ({}) }));
 jest.mock('better-auth/client/plugins', () => ({
@@ -49,28 +50,17 @@ jest.mock(
   () =>
     ({
       Redirect: jest.fn<typeof import('expo-router').Redirect>(() => null),
+      useRouter: jest.fn<typeof import('expo-router').useRouter>(),
     }) satisfies Partial<typeof import('expo-router')>,
 );
 
-const authValue = {
-  api: new ApiTransport({
-    baseUrl: 'https://api.example',
-    session: { getCookie: async () => '', onUnauthorized: () => undefined },
-  }),
-  authenticated: false,
-  loading: false,
-  phone: null,
-  refresh: async () => undefined,
-  signOut: async () => undefined,
-  expire: () => undefined,
-} satisfies ReturnType<typeof useAuth>;
 jest.mocked(useAuth).mockReturnValue(authValue);
 const resendCooldownMilliseconds = 60_000;
 
 describe('rc:LoginRoute', () => {
   it('should move from welcome to phone entry and require a number', async () => {
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -93,10 +83,10 @@ describe('rc:LoginRoute', () => {
   it('should send a trimmed number, accept only six digits, and refresh the session', async () => {
     const send = jest.mocked(authClient.phoneNumber.sendOtp);
     const verify = jest.mocked(authClient.phoneNumber.verify);
-    const refresh = jest.fn(async () => undefined);
+    const refresh = jest.fn(async () => true);
     jest.mocked(useAuth).mockReturnValue({ ...authValue, refresh });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -110,7 +100,10 @@ describe('rc:LoginRoute', () => {
     );
     await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() =>
-      expect(screen.getByText('Code sent to ••••••••5678')).toBeTruthy(),
+      expect(screen.getByText('WhatsApp number +852 1••• ••78')).toBeTruthy(),
+    );
+    expect(screen.getByTestId('login-delivery-sent')).toHaveTextContent(
+      'If this number is permitted, a code was sent via WhatsApp',
     );
     expect(send).toHaveBeenCalledWith({ phoneNumber: '+85212345678' });
     await fireEvent.changeText(
@@ -135,7 +128,7 @@ describe('rc:LoginRoute', () => {
       error: { code: 'OTP_EXPIRED', message: 'Expired' },
     });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -164,7 +157,14 @@ describe('rc:LoginRoute', () => {
     expect(
       screen.getByRole('button', { name: 'Verify code' }).props
         .accessibilityState,
-    ).toEqual({ disabled: true });
+    ).toEqual({ busy: false, disabled: true });
+    expect(screen.getByLabelText('Six-digit code')).toHaveProp(
+      'value',
+      '123456',
+    );
+    expect(screen.getByTestId('login-masked-phone')).toHaveTextContent(
+      'WhatsApp number +852 1••• ••78',
+    );
   });
 });
 
@@ -177,10 +177,10 @@ describe('Login recovery and session navigation', () => {
     jest
       .mocked(authClient.phoneNumber.verify)
       .mockReturnValueOnce(pending.promise);
-    const refresh = jest.fn(async () => undefined);
+    const refresh = jest.fn(async () => true);
     jest.mocked(useAuth).mockReturnValue({ ...authValue, refresh });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -224,7 +224,7 @@ describe('Login recovery and session navigation', () => {
       error: { message: 'Service unavailable' },
     });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );
@@ -239,20 +239,22 @@ describe('Login recovery and session navigation', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        'Service unavailable',
+        'The code could not be sent. Check your connection and try again.',
       ),
     );
-    await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByTestId('login-delivery-failed')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
-      expect(screen.getByLabelText('Six-digit code')).toBeTruthy(),
+      expect(screen.getByTestId('login-delivery-sent')).toBeTruthy(),
     );
+    expect(authClient.phoneNumber.sendOtp).toHaveBeenCalledTimes(2);
   });
 
   it('should unlock resend when the countdown finishes', async () => {
     jest.useFakeTimers();
     try {
       await render(
-        <LocaleProvider>
+        <LocaleProvider preferences={savedPreferences('en')}>
           <LoginRoute />
         </LocaleProvider>,
       );
@@ -291,7 +293,7 @@ describe('Login recovery and session navigation', () => {
       .mocked(useAuth)
       .mockReturnValueOnce({ ...authValue, authenticated: true });
     await render(
-      <LocaleProvider>
+      <LocaleProvider preferences={savedPreferences('en')}>
         <LoginRoute />
       </LocaleProvider>,
     );

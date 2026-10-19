@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   adbStep,
+  journeyLocale,
   latestOtp,
   maestroStep,
   runMaestroJourneys,
@@ -61,6 +62,7 @@ function recordingIO(overrides: Partial<RunnerIO> = {}): {
 
 const run: MaestroRun = {
   appId: 'app.id',
+  locale: 'zh-Hant',
   phoneNumber: phone,
   otpInboxPath: '/api/inbox.jsonl',
   sampleImagePath: '/fixtures/sample.jpg',
@@ -133,6 +135,21 @@ void describe('fn:latestOtp', () => {
     assert.throws(
       () => latestOtp(content, { phoneNumber: phone, since, source }),
       /Malformed OTP inbox entry at inbox\.jsonl:2/,
+    );
+  });
+});
+
+void describe('fn:journeyLocale', () => {
+  void it('should run in Traditional Chinese unless another language is requested', () => {
+    assert.equal(journeyLocale(undefined), 'zh-Hant');
+    assert.equal(journeyLocale('en'), 'en');
+    assert.equal(journeyLocale('zh-Hans'), 'zh-Hans');
+  });
+
+  void it('should reject a language the app does not offer', () => {
+    assert.throws(
+      () => journeyLocale('fr'),
+      /Unsupported journey locale fr; use one of en, zh-Hant, zh-Hans\./,
     );
   });
 });
@@ -232,10 +249,10 @@ void describe('fn:waitForGalleryIndex', () => {
 });
 
 void describe('fn:runMaestroJourneys', () => {
-  void it('should sign in with the issued code, seed the gallery, then run imports, camera capture and record messages', () => {
+  void it('should sign in with the issued code, seed the gallery, then run imports, camera capture, record messages, record editing, a labelled set and a resumed upload', () => {
     const { io, ran } = recordingIO();
 
-    runMaestroJourneys(run, io);
+    runMaestroJourneys({ ...run, locale: 'en' }, io);
 
     assert.deepEqual(
       ran.map((step) => `${step.command} ${step.args.at(-1)}`),
@@ -248,14 +265,105 @@ void describe('fn:runMaestroJourneys', () => {
         'maestro /e2e/03-capture-reopen.yaml',
         'maestro /e2e/04-camera-capture.yaml',
         'maestro /e2e/05-record-messages.yaml',
+        'maestro /e2e/07-record-edit.yaml',
+        'maestro /e2e/08-capture-set.yaml',
+        'maestro /e2e/09-upload-resume.yaml',
       ],
     );
+    assert.ok(ran[0]?.args.includes('APP_LOCALE=en'));
     assert.ok(ran[1]?.args.includes('OTP_CODE=424242'));
     assert.ok(ran[5]?.args.includes('RECORD_NAME=E2E 2026-10-16T10:00:00'));
     assert.ok(ran[6]?.args.includes('RECORD_NAME=Camera 2026-10-16T10:00:00'));
     assert.ok(ran[7]?.args.includes('RECORD_NAME=Camera 2026-10-16T10:00:00'));
     assert.ok(ran[7]?.args.includes('NEW_NAME=青瓷碗 2026-10-16T10:00:00'));
     assert.ok(ran[7]?.args.includes('NEW_PERIOD=清代'));
+    assert.ok(ran[7]?.args.includes('APP_LOCALE=en'));
+    assert.ok(ran[8]?.args.includes('RECORD_NAME=青瓷碗 2026-10-16T10:00:00'));
+    assert.ok(
+      ran[8]?.args.includes('EDITED_NAME=Celadon bowl 2026-10-16T10:00:00'),
+    );
+    assert.ok(ran[8]?.args.includes('LOCATION=Main display-room cabinet'));
+    assert.ok(ran[9]?.args.includes('RECORD_NAME=Set 2026-10-16T10:00:00'));
+    assert.deepEqual(ran[10]?.args.slice(3), [
+      '-e',
+      'APP_ID=app.id',
+      '/e2e/09-upload-resume.yaml',
+    ]);
+  });
+
+  void it('should add the language-settings flow around a second code in the default language', () => {
+    const codes = ['111111', '222222'];
+    const { io, ran } = recordingIO({
+      readText: () =>
+        inbox({
+          phoneNumber: phone,
+          code: codes.shift(),
+          createdAt: '2026-10-16T10:00:00.000Z',
+        }),
+    });
+
+    runMaestroJourneys(run, io);
+
+    assert.deepEqual(
+      ran.slice(7).map((step) => step.args.slice(3)),
+      [
+        [
+          '-e',
+          'APP_ID=app.id',
+          '-e',
+          'APP_LOCALE=zh-Hant',
+          '-e',
+          'RECORD_NAME=Camera 2026-10-16T10:00:00',
+          '-e',
+          'NEW_NAME=青瓷碗 2026-10-16T10:00:00',
+          '-e',
+          'NEW_PERIOD=清代',
+          '/e2e/05-record-messages.yaml',
+        ],
+        [
+          '-e',
+          'APP_ID=app.id',
+          '-e',
+          'RECORD_NAME=青瓷碗 2026-10-16T10:00:00',
+          '-e',
+          'EDITED_NAME=清代青瓷碗 2026-10-16T10:00:00',
+          '-e',
+          'HEIGHT=125',
+          '-e',
+          'LOCATION=主陳列室玻璃櫃',
+          '-e',
+          'LOCATION_DETAIL=第二層右上角',
+          '/e2e/07-record-edit.yaml',
+        ],
+        [
+          '-e',
+          'APP_ID=app.id',
+          '-e',
+          'RECORD_NAME=Set 2026-10-16T10:00:00',
+          '/e2e/08-capture-set.yaml',
+        ],
+        ['-e', 'APP_ID=app.id', '/e2e/09-upload-resume.yaml'],
+        [
+          '-e',
+          'APP_ID=app.id',
+          '-e',
+          'STAGE=pre-login',
+          '-e',
+          `PHONE_NUMBER=${phone}`,
+          '/e2e/06-language-settings.yaml',
+        ],
+        [
+          '-e',
+          'APP_ID=app.id',
+          '-e',
+          'STAGE=signed-in',
+          '-e',
+          'OTP_CODE=222222',
+          '/e2e/06-language-settings.yaml',
+        ],
+      ],
+    );
+    assert.ok(ran[1]?.args.includes('OTP_CODE=111111'));
   });
 
   void it('should stop before authenticating when no code was issued during the run', () => {

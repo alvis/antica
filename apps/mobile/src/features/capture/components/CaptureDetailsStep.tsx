@@ -2,7 +2,7 @@ import { Text, View } from 'react-native';
 
 import { ActionButton, TextField, styles } from '@antica/ui';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -34,18 +34,21 @@ export const CaptureDetailsStep: FC<CaptureDetailsStepProps> = ({
       <Text style={styles.heading}>
         {t('name')} / {t('location')}
       </Text>
-      <TextField
-        label={t('name')}
-        value={draft.name}
-        onChangeText={(value) => editField('name', value)}
-      />
+      {/* the shared field takes no testID, so automation targets its wrapper */}
+      <View testID="capture-details-name">
+        <TextField
+          label={t('name')}
+          value={draft.name}
+          onChangeText={(value) => editField('name', value)}
+        />
+      </View>
       <TextField
         label={t('typeTag')}
         value={draft.category}
         onChangeText={(value) => editField('category', value)}
       />
       <TextField
-        label={`${t('height')} (${draft.heightUnit})`}
+        label={t('heightWithUnit', { unit: draft.heightUnit })}
         value={draft.height}
         onChangeText={(value) => editField('height', value)}
         keyboardType="decimal-pad"
@@ -83,7 +86,11 @@ export const CaptureDetailsStep: FC<CaptureDetailsStepProps> = ({
         onChangeText={(value) => editField('locationDetail', value)}
       />
       <ActionButton label={t('receipt')} onPress={onReceipt} secondary />
-      <ActionButton label={t('continue')} onPress={onContinue} />
+      <ActionButton
+        testID="capture-details-continue"
+        label={t('continue')}
+        onPress={onContinue}
+      />
     </View>
   );
 };

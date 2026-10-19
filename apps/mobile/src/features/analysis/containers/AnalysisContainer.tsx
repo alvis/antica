@@ -11,28 +11,33 @@ import { Linking, Pressable, Text, View } from 'react-native';
 import {
   actionResolutionRequestSchema,
   actionResolutionResultSchema,
-  analysisRunDetailSchema,
   applyAnalysisChangesSchema,
   checkCreateSchema,
   mediaDetailSchema,
   recordCheckSchema,
   recordDetailSchema,
 } from '@antica/contracts';
-import { ActionButton, TextField, colors, styles } from '@antica/ui';
+import { ActionButton, colors, styles } from '@antica/ui';
 
+import { ProposalValues } from '../../../components/ProposalValues';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
+import { actionCaptureHref } from '../action-capture-href';
+import { analysisRunQuery } from '../api/analysis-run-query';
+import { ActionCard } from '../components/ActionCard';
 import { useProposalFocus } from '../hooks/useProposalFocus';
 
 import type { FC } from 'react';
 
 import type { LayoutChangeEvent } from 'react-native';
 
-import type { Finding, ProposedChange } from '@antica/contracts';
+import type { ActionState, Finding, ProposedChange } from '@antica/contracts';
+
+import type { MessageKey } from '../../../i18n/messages';
 
 export type AnalysisContainerProps = {
   runId: string;
@@ -40,6 +45,13 @@ export type AnalysisContainerProps = {
   proposalId?: string;
 };
 type ReferenceKind = 'evidence' | 'observation' | 'citation';
+
+/** button label of each kind of finding reference, followed by a short ID */
+const referenceLabelKeys = {
+  evidence: 'evidenceWithId',
+  observation: 'observationWithId',
+  citation: 'citationWithId',
+} as const satisfies Record<ReferenceKind, MessageKey>;
 
 export const AnalysisContainer: FC<AnalysisContainerProps> = ({
   runId,
@@ -55,15 +67,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
   const [error, setError] = useState('');
   const [applied, setApplied] = useState(false);
   const checkRequestKeys = useRef(new Map<string, string>());
-  const run = useQuery({
-    queryKey: ['analysis', runId],
-    queryFn: async ({ signal }) =>
-      api.get(`/v1/analyses/${runId}`, analysisRunDetailSchema, signal),
-    refetchInterval: (query) =>
-      ['queued', 'running'].includes(query.state.data?.status ?? '')
-        ? 3000
-        : false,
-  });
+  const run = useQuery(analysisRunQuery(api, runId));
   const record = useQuery({
     queryKey: ['record', run.data?.recordId],
     enabled: Boolean(run.data?.recordId),
@@ -157,12 +161,13 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
 
   const resolveAction = async (
     actionId: string,
-    revision: number,
+    state: ActionState,
     status: 'supplied' | 'dismissed',
   ): Promise<void> => {
     if (!record.data || busy) {
       return;
     }
+    const revision = state.revision;
     const note =
       (actionText as Partial<Record<string, string>>)[actionId]?.trim() ?? '';
     if (!note) {
@@ -244,7 +249,10 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
       scrollRef={focus.scrollRef}
       subtitle={
         run.data
-          ? `${localizeStatus(run.data.status, t)} · ${t('version')} ${run.data.snapshot.analysisInputVersion}`
+          ? t('runStatusVersion', {
+              status: localizeStatus(run.data.status, t),
+              version: run.data.snapshot.analysisInputVersion,
+            })
           : undefined
       }>
       <QueryState
@@ -364,63 +372,42 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                     const state = run.data.result.actionStates.find(
                       (item) => item.actionId === action.id,
                     );
+                    const target = {
+                      recordId: run.data.recordId,
+                      runId,
+                      action,
+                    };
 
                     return (
-                      <View key={action.id} style={styles.card}>
-                        <Text style={styles.body}>{action.instruction}</Text>
-                        <Text style={styles.secondary}>{action.reason}</Text>
-                        <Text style={styles.secondary}>
-                          {localizeStatus(state?.status ?? 'pending', t)}
-                        </Text>
-                        {action.checkId && (
-                          <ActionButton
-                            label={t('checks')}
-                            onPress={() =>
-                              router.push(`/checks/${action.checkId}`)
-                            }
-                            secondary
-                          />
-                        )}
-                        {state?.status === 'pending' && (
-                          <>
-                            <TextField
-                              label={t('reason')}
-                              value={actionText[action.id] ?? ''}
-                              onChangeText={(value) =>
-                                setActionText((current) => ({
-                                  ...current,
-                                  [action.id]: value,
-                                }))
-                              }
-                              multiline
-                            />
-                            <ActionButton
-                              label={t('supplied')}
-                              onPress={() =>
-                                void resolveAction(
-                                  action.id,
-                                  state.revision,
-                                  'supplied',
-                                )
-                              }
-                              disabled={busy || !record.data}
-                              secondary
-                            />
-                            <ActionButton
-                              label={t('dismiss')}
-                              onPress={() =>
-                                void resolveAction(
-                                  action.id,
-                                  state.revision,
-                                  'dismissed',
-                                )
-                              }
-                              disabled={busy || !record.data}
-                              secondary
-                            />
-                          </>
-                        )}
-                      </View>
+                      <ActionCard
+                        key={action.id}
+                        action={action}
+                        status={state?.status ?? 'pending'}
+                        note={actionText[action.id] ?? ''}
+                        onNoteChange={(value) =>
+                          setActionText((current) => ({
+                            ...current,
+                            [action.id]: value,
+                          }))
+                        }
+                        busy={busy}
+                        canResolve={Boolean(record.data)}
+                        onCapture={() =>
+                          router.push(actionCaptureHref(target, 'photo'))
+                        }
+                        onDescribe={() =>
+                          router.push(actionCaptureHref(target, 'describe'))
+                        }
+                        onOpenCheck={() =>
+                          router.push(`/checks/${action.checkId}`)
+                        }
+                        onResolve={
+                          state
+                            ? (status) =>
+                                void resolveAction(action.id, state, status)
+                            : undefined
+                        }
+                      />
                     );
                   })}
                 </View>
@@ -459,7 +446,9 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                     />
                   ))}
                   <ActionButton
-                    label={`${t('applySelected')} (${selected.length})`}
+                    label={t('applySelectedCount', {
+                      count: selected.length,
+                    })}
                     onPress={() => void apply()}
                     disabled={
                       busy ||
@@ -540,7 +529,7 @@ const FindingGroup: FC<FindingGroupProps> = ({
           ].map(({ id, kind }) => (
             <ActionButton
               key={`${kind}:${id}`}
-              label={`${t(kind)} ${id.slice(0, 8)}`}
+              label={t(referenceLabelKeys[kind], { id: id.slice(0, 8) })}
               onPress={() => onReference(kind, id)}
               secondary
             />
@@ -592,12 +581,7 @@ const ProposalRow: FC<ProposalRowProps> = ({
         {checked ? '☑' : '☐'} {localizeProposalField(change.field, t)} ·{' '}
         {localizeStatus(status, t)}
       </Text>
-      <Text style={styles.body}>
-        {t('previous')}: {JSON.stringify(change.before)}
-      </Text>
-      <Text style={styles.body}>
-        {t('proposed')}: {JSON.stringify(change.proposed)}
-      </Text>
+      <ProposalValues change={change} />
       {evidence.map((value, index) => (
         <Text key={index} style={styles.secondary}>
           {value}

@@ -30,6 +30,7 @@ const suites = new Set([
   'routes/knowledge',
   'routes/source-branches',
   'routes/media',
+  'routes/media-resume',
   'routes/research-http',
   'routes/analysis',
 ]);

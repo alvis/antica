@@ -75,7 +75,9 @@ it.each(['accepted', 'skipped'] as const)(
     expect(
       screen.getByRole('button', { name: 'Apply selected changes (0)' }),
     ).toBeDisabled();
-    await fireEvent.press(screen.getByRole('button', { name: 'Checks' }));
+    await fireEvent.press(
+      screen.getByRole('button', { name: /^Used for check / }),
+    );
     expect(view.router.push).toHaveBeenCalledWith(`/checks/${runId}`);
     expect(view.commands).not.toHaveBeenCalled();
   },

@@ -3,7 +3,7 @@ import { Text, TextInput, View } from 'react-native';
 import { recordMessageBodyMaxLength } from '@antica/contracts';
 import { colors, styles } from '@antica/ui';
 
-import { useLocale } from '../../../../i18n/LocaleProvider';
+import { useLocale } from '../../../../providers/LocaleProvider';
 
 import { MessageButton } from './MessageButton';
 

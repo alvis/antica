@@ -1,0 +1,16 @@
+# Gives grid tile ${TILE} a new component label typed in the label picker.
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: capture-grid-label-${TILE}
+    direction: DOWN
+- tapOn:
+    id: capture-grid-label-${TILE}
+- tapOn:
+    id: capture-label-new
+- tapOn:
+    id: capture-label-new-input
+- inputText: ${LABEL}
+- tapOn:
+    id: capture-label-apply

@@ -10,8 +10,8 @@ import {
   transcriptionConfirmedSchema,
 } from '@antica/contracts';
 
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { CaptureContainer } from './CaptureContainer';
 import { transcript, transcriptionId, jobId } from './transcript.spec.fixtures';
@@ -126,7 +126,7 @@ it('should not restore another record voice notes after navigating during secure
   await waitFor(() => expect(screen.getByText(nextRecord.code)).toBeTruthy());
   await act(async () => previous.resolve(jobId));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   expect(screen.getByLabelText('Original words')).toHaveDisplayValue('');
   expect(view.reads.mock.calls.map(([path]) => path)).not.toContain(
     `/v1/jobs/${jobId}`,
@@ -196,7 +196,7 @@ it('should retain the current check when confirming a recovered voice transcript
     expect(screen.getByRole('button', { name: 'Import file' })).toBeTruthy(),
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   await waitFor(() =>
     expect(screen.getByLabelText('Original words')).toHaveDisplayValue(
       'Recovered words',

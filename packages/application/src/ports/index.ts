@@ -1,4 +1,5 @@
 export { InvalidCursorError } from './cursor.js';
+export { OriginalVerificationError } from './media-storage-error.js';
 export { ComponentInUseError } from './repository.js';
 export { RecordMessageCursorError } from './message-cursor.js';
 export { RecordMessageReplayConflictError } from './message-replay-conflict.js';

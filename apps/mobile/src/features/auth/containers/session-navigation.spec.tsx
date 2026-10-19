@@ -32,7 +32,8 @@ const authValue = {
   authenticated: false,
   loading: false,
   phone: null,
-  refresh: async () => undefined,
+  userId: null,
+  refresh: async () => true,
   signOut: async () => undefined,
   expire: () => undefined,
 } satisfies ReturnType<typeof useAuth>;

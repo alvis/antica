@@ -1,12 +1,14 @@
 import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
-import { getItemAsync } from 'expo-secure-store';
-
 import { ApiError } from '@antica/client';
 import { analysisRunDetailSchema } from '@antica/contracts';
 
-import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import {
+  collectionRecord,
+  renderMobile,
+  savedLanguage,
+} from '../../../mobile.spec.fixtures';
 import {
   runId,
   firstProposalId,
@@ -21,10 +23,6 @@ jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
 jest.mock('expo-crypto', () => ({
   randomUUID:
     jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID,
-}));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
 }));
 
 it('should apply only proposals the collector leaves selected', async () => {
@@ -157,7 +155,6 @@ it.each(['Evidence supplied', 'Dismiss action'])(
 );
 
 it('should translate finding status and proposal labels while preserving source text', async () => {
-  jest.mocked(getItemAsync).mockResolvedValueOnce('zh-Hant');
   const localized = analysisRunDetailSchema.parse({
     ...run,
     result: {
@@ -179,10 +176,14 @@ it('should translate finding status and proposal labels while preserving source 
       },
     },
   });
-  await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
-      path.startsWith('/v1/analyses/') ? localized : collectionRecord,
-  });
+  await renderMobile(
+    <AnalysisContainer runId={runId} />,
+    {
+      get: async (path) =>
+        path.startsWith('/v1/analyses/') ? localized : collectionRecord,
+    },
+    savedLanguage('zh-Hant'),
+  );
   await waitFor(() => expect(screen.getByText('直接觀察 · 支持')).toBeTruthy());
   expect(screen.getByText('Visible wear')).toBeTruthy();
   expect(screen.getByText(/名稱 · 待處理/)).toBeTruthy();

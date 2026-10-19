@@ -49,6 +49,7 @@ jest.mock(
           .randomUUID,
     }) satisfies Partial<typeof import('expo-crypto')>,
 );
+/** */
 function mockPickFileAsync() {
   const pickFileMock = jest.fn(async () => ({
     canceled: true as const,
@@ -65,7 +66,7 @@ function mockPickFileAsync() {
     initialUri?: string,
     mimeType?: string,
   ): Promise<File | File[]>;
-  function canceledPickFile(
+  async function canceledPickFile(
     _options?: PickSingleFileOptions | PickMultipleFilesOptions | string,
     _mimeType?: string,
   ): Promise<PickSingleFileResult | PickMultipleFilesResult | File | File[]> {
@@ -114,6 +115,7 @@ jest.mock('expo-audio', () => {
     stop: jest.fn<ReturnType<typeof useAudioRecorder>['stop']>(
       async () => undefined,
     ),
+    /** */
     get uri(): string | null {
       return 'file:///voice.m4a';
     },
@@ -172,7 +174,7 @@ async function openAudio(
     await fireEvent.press(screen.getByRole('button', { name: 'Import file' }));
   }
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
 
   return view;
 }

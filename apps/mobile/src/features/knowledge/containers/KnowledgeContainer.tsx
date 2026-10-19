@@ -11,9 +11,10 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { SettingsAction } from '../../../components/SettingsAction';
 import { localizeKnowledgeKind, localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -37,7 +38,7 @@ export const KnowledgeContainer: FC = () => {
   });
 
   return (
-    <Screen title={t('knowledge')}>
+    <Screen title={t('knowledge')} action={<SettingsAction />}>
       <ActionButton
         label={t('importBook')}
         onPress={() => router.push('/sources/new')}

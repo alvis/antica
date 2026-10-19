@@ -1,0 +1,174 @@
+# The editor is a long form and scrolls slowly on the emulator, so each scroll
+# waits up to a minute; targets are centred where the form goes on below them.
+# Proves FR-2 manual editing on the camera record from 04, which 05 renamed:
+# the collector opens Edit details, changes the name, a dimension with its
+# unit, and both location fields, then saves. The record screen shows the new
+# values, and the editor reopens with them kept. The general location is
+# created on the first run and chosen on later ones, so reruns on the same
+# account reuse it. Controls are selected by testID; the typed values are in
+# the run's interface language.
+appId: ${APP_ID}
+---
+- launchApp
+# A cold start on a loaded host can take well over a minute in dev builds.
+- extendedWaitUntil:
+    visible: '.*, ${RECORD_NAME}'
+    timeout: 120000
+- runFlow: support/dismiss-dev-logbox.yaml
+- tapOn: '.*, ${RECORD_NAME}'
+- extendedWaitUntil:
+    visible: ${RECORD_NAME}
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: record-edit
+    direction: DOWN
+- tapOn:
+    id: record-edit
+- extendedWaitUntil:
+    visible:
+      id: record-edit-field-name
+    timeout: 60000
+- runFlow: support/dismiss-dev-logbox.yaml
+
+# 1. The name. Each field is tapped at its end so eraseText, which deletes
+#    backwards from the cursor, clears the whole value.
+- tapOn:
+    id: record-edit-field-name
+    point: 97%,50%
+- eraseText: 60
+- inputText: ${EDITED_NAME}
+- hideKeyboard
+
+# 2. A dimension with its unit.
+- scrollUntilVisible:
+    element:
+      id: record-edit-height-unit-mm
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+- tapOn:
+    id: record-edit-field-height
+    point: 97%,50%
+- eraseText: 20
+- inputText: ${HEIGHT}
+- hideKeyboard
+- tapOn:
+    id: record-edit-height-unit-mm
+
+# 3. The general location: choose it when an earlier run created it, otherwise create it.
+- scrollUntilVisible:
+    element:
+      id: record-edit-location-add
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+- runFlow:
+    when:
+      visible: ${LOCATION}
+    commands:
+      - tapOn: ${LOCATION}
+- runFlow:
+    when:
+      notVisible: ${LOCATION}
+    commands:
+      - tapOn:
+          id: record-edit-location-new
+      - inputText: ${LOCATION}
+      - hideKeyboard
+      - tapOn:
+          id: record-edit-location-add
+      - extendedWaitUntil:
+          visible: ${LOCATION}
+          timeout: 30000
+
+# 4. The detailed location.
+- scrollUntilVisible:
+    element:
+      id: record-edit-field-location-detail
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+- tapOn:
+    id: record-edit-field-location-detail
+    point: 97%,50%
+- eraseText: 60
+- inputText: ${LOCATION_DETAIL}
+- hideKeyboard
+
+# 5. Save; the record screen shows the new name and, in its details card's key
+#    facts below the actions, the new measurement and both location fields.
+- scrollUntilVisible:
+    element:
+      id: record-edit-save
+    direction: DOWN
+    timeout: 60000
+- tapOn:
+    id: record-edit-save
+- extendedWaitUntil:
+    visible: ${EDITED_NAME}
+    timeout: 60000
+- runFlow: support/dismiss-dev-logbox.yaml
+- scrollUntilVisible:
+    element:
+      id: record-field-location-detail
+    direction: DOWN
+- assertVisible:
+    id: record-field-height
+    text: ${HEIGHT} mm
+- assertVisible:
+    id: record-field-location-id
+    text: ${LOCATION}
+- assertVisible:
+    id: record-field-location-detail
+    text: ${LOCATION_DETAIL}
+
+# 6. Reopen the editor from the actions above the details: the saved values are kept.
+- scrollUntilVisible:
+    element:
+      id: record-edit
+    direction: UP
+- tapOn:
+    id: record-edit
+- extendedWaitUntil:
+    visible:
+      id: record-edit-field-name
+      text: ${EDITED_NAME}
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: record-edit-height-unit-mm
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+- assertVisible:
+    id: record-edit-field-height
+    text: ${HEIGHT}
+- assertVisible:
+    id: record-edit-height-unit-mm
+    checked: true
+- scrollUntilVisible:
+    element:
+      id: record-edit-field-location-detail
+    direction: DOWN
+    centerElement: true
+    timeout: 60000
+- assertVisible:
+    id: record-edit-field-location-detail
+    text: ${LOCATION_DETAIL}
+- assertVisible:
+    text: ${LOCATION}
+    checked: true
+# Nothing changed, so Cancel leaves without asking.
+- scrollUntilVisible:
+    element:
+      id: record-edit-cancel
+    direction: DOWN
+    timeout: 60000
+- tapOn:
+    id: record-edit-cancel
+# The record keeps the position Edit details was tapped at, below its title.
+- scrollUntilVisible:
+    element: ${EDITED_NAME}
+    direction: UP
+    timeout: 60000

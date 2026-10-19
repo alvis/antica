@@ -16,9 +16,9 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -265,8 +265,9 @@ export const MediaContainer: FC<MediaContainerProps> = ({
                 )}
                 {frame && (
                   <Text style={styles.secondary}>
-                    {t('actualFrameTime')}:{' '}
-                    {(frame.frame.displayTimeMs / 1000).toFixed(3)}s
+                    {t('actualFrameTimeValue', {
+                      seconds: (frame.frame.displayTimeMs / 1000).toFixed(3),
+                    })}
                   </Text>
                 )}
                 {frameRead && (

@@ -10,18 +10,30 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
-  UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+import { OriginalVerificationError } from '@antica/application/ports';
+
 import { assertStorageKey } from './media-store.js';
+
+import {
+  listUploadedParts,
+  planParts,
+  signPartTransfers,
+  TRANSFER_SECONDS,
+  transferExpiry,
+} from './multipart.js';
 import { sniffMime } from './verify.js';
 
 import type {
   MediaStore,
+  MultipartResume,
+  MultipartTransfer,
   OriginalObject,
   SignedTransfer,
 } from './media-store.js';
+import type { PartRange } from './multipart.js';
 
 /** private bucket and transfer signing endpoints for S3 media storage */
 export interface S3MediaConfig {
@@ -104,12 +116,12 @@ export class S3MediaStore implements MediaStore {
       IfNoneMatch: '*',
     });
     const url = await getSignedUrl(this.#signer, command, {
-      expiresIn: 15 * 60,
+      expiresIn: TRANSFER_SECONDS,
     });
 
     return {
       url,
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      expiresAt: transferExpiry(),
       headers: {
         'Content-Type': input.mimeType,
         'x-amz-checksum-sha256': Buffer.from(input.sha256, 'hex').toString(
@@ -124,17 +136,11 @@ export class S3MediaStore implements MediaStore {
    * creates and signs the parts of a bounded multipart upload
    * @returns provider upload identity and signed URLs with byte ranges
    */
-  public async startMultipart(input: OriginalObject) {
+  public async startMultipart(
+    input: OriginalObject,
+  ): Promise<MultipartTransfer> {
     assertStorageKey(input.key);
-    const minimum = 5 * 1024 * 1024;
-    const partSize = Math.max(
-      16 * 1024 * 1024,
-      Math.ceil(input.byteLength / 10_000 / minimum) * minimum,
-    );
-    if (partSize > 5 * 1024 * 1024 * 1024) {
-      throw new RangeError('Original exceeds S3 multipart limits');
-    }
-    const count = Math.ceil(input.byteLength / partSize);
+    const plan = planParts(input.byteLength);
     const created = await this.#server.send(
       new CreateMultipartUploadCommand({
         Bucket: this.#bucket,
@@ -145,30 +151,12 @@ export class S3MediaStore implements MediaStore {
     if (!created.UploadId) {
       throw new Error('S3 did not return a multipart upload ID');
     }
-    const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
     try {
-      const parts = await Promise.all(
-        Array.from({ length: count }, async (_, position) => {
-          const partNumber = position + 1;
-          const offset = position * partSize;
-          const byteLength = Math.min(partSize, input.byteLength - offset);
-          const putUrl = await getSignedUrl(
-            this.#signer,
-            new UploadPartCommand({
-              Bucket: this.#bucket,
-              Key: input.key,
-              UploadId: created.UploadId!,
-              PartNumber: partNumber,
-              ContentLength: byteLength,
-            }),
-            { expiresIn: 15 * 60 },
-          );
-
-          return { partNumber, offset, byteLength, putUrl, headers: {} };
-        }),
+      return await signPartTransfers(
+        this.#signer,
+        { bucket: this.#bucket, key: input.key, uploadId: created.UploadId },
+        plan,
       );
-
-      return { uploadId: created.UploadId, expiresAt, parts };
     } catch (error) {
       await this.abortMultipart(input, created.UploadId);
       throw error;
@@ -176,36 +164,63 @@ export class S3MediaStore implements MediaStore {
   }
 
   /**
+   * re-signs the stored part layout of a pending upload and lists the parts already stored
+   * @param input immutable original identity whose upload is being resumed
+   * @param uploadId provider upload identity returned by startMultipart
+   * @param layout part ranges persisted when the upload started, signed exactly as stored
+   * @returns fresh part URLs with stored ETags, or expiry when the provider lost the upload
+   */
+  public async resumeMultipart(
+    input: OriginalObject,
+    uploadId: string,
+    layout: readonly PartRange[],
+  ): Promise<MultipartResume> {
+    assertStorageKey(input.key);
+    if (!uploadId || !layout.length) {
+      throw new Error('Multipart upload ID and layout are required');
+    }
+    const target = { bucket: this.#bucket, key: input.key, uploadId };
+    const uploadedParts = await listUploadedParts(this.#server, target);
+    if (!uploadedParts) {
+      return { state: 'expired' };
+    }
+
+    return {
+      state: 'active',
+      ...(await signPartTransfers(this.#signer, target, layout)),
+      uploadedParts,
+    };
+  }
+
+  /**
    * completes an ordered multipart upload and verifies its original
    * @param input immutable original identity and expected media checksum
-   * @param uploadId provider upload identity returned by startMultipart
+   * @param upload provider upload identity and the part layout stored at start
+   * @param upload.uploadId provider upload identity returned by startMultipart
+   * @param upload.layout stored part numbers the completion must match exactly
    * @param parts ordered part numbers and provider ETags for completion
    */
   public async completeMultipart(
     input: OriginalObject,
-    uploadId: string,
+    upload: {
+      readonly uploadId: string;
+      readonly layout: ReadonlyArray<{ readonly partNumber: number }>;
+    },
     parts: ReadonlyArray<{
       readonly partNumber: number;
       readonly etag: string;
     }>,
   ): Promise<void> {
     assertStorageKey(input.key);
-    if (!uploadId || !parts.length) {
+    if (!upload.uploadId || !parts.length) {
       throw new Error('Multipart upload identity and parts are required');
     }
-    const partSize = Math.max(
-      16 * 1024 * 1024,
-      Math.ceil(input.byteLength / 10_000 / (5 * 1024 * 1024)) *
-        5 *
-        1024 *
-        1024,
-    );
-    const expectedCount = Math.ceil(input.byteLength / partSize);
     if (
-      parts.length !== expectedCount ||
+      parts.length !== upload.layout.length ||
       parts.some(
         (part, index) =>
           part.partNumber !== index + 1 ||
+          part.partNumber !== upload.layout[index]!.partNumber ||
           !part.etag ||
           part.etag.length > 256 ||
           /[\r\n]/.test(part.etag),
@@ -217,7 +232,7 @@ export class S3MediaStore implements MediaStore {
       new CompleteMultipartUploadCommand({
         Bucket: this.#bucket,
         Key: input.key,
-        UploadId: uploadId,
+        UploadId: upload.uploadId,
         MultipartUpload: {
           Parts: parts.map((part) => ({
             PartNumber: part.partNumber,
@@ -256,27 +271,57 @@ export class S3MediaStore implements MediaStore {
    */
   public async verifyOriginal(input: OriginalObject): Promise<void> {
     assertStorageKey(input.key);
-    const metadata = await this.#server.send(
-      new HeadObjectCommand({ Bucket: this.#bucket, Key: input.key }),
-    );
-    if (
-      metadata.ContentLength !== input.byteLength ||
-      metadata.ContentType !== input.mimeType
-    ) {
-      throw new Error('Stored media metadata mismatch');
-    }
-    const { bytes } = await this.read(input.key);
-    if (bytes.byteLength !== input.byteLength) {
-      throw new Error('Stored media size mismatch');
-    }
-    if (
-      createHash('sha256').update(bytes).digest('hex') !==
-      input.sha256.toLowerCase()
-    ) {
-      throw new Error('Stored media checksum mismatch');
-    }
-    if (sniffMime(bytes) !== input.mimeType) {
-      throw new Error('Stored media MIME mismatch');
+    try {
+      const metadata = await this.#server.send(
+        new HeadObjectCommand({ Bucket: this.#bucket, Key: input.key }),
+      );
+      if (
+        metadata.ContentLength !== input.byteLength ||
+        metadata.ContentType !== input.mimeType
+      ) {
+        throw new OriginalVerificationError({
+          reason: 'mismatch',
+          message: 'Stored media metadata mismatch',
+        });
+      }
+      const { bytes } = await this.read(input.key);
+      if (bytes.byteLength !== input.byteLength) {
+        throw new OriginalVerificationError({
+          reason: 'mismatch',
+          message: 'Stored media size mismatch',
+        });
+      }
+      if (
+        createHash('sha256').update(bytes).digest('hex') !==
+        input.sha256.toLowerCase()
+      ) {
+        throw new OriginalVerificationError({
+          reason: 'mismatch',
+          message: 'Stored media checksum mismatch',
+        });
+      }
+      if (sniffMime(bytes) !== input.mimeType) {
+        throw new OriginalVerificationError({
+          reason: 'mismatch',
+          message: 'Stored media MIME mismatch',
+        });
+      }
+    } catch (cause) {
+      const error = cause as {
+        name?: string;
+        $metadata?: { httpStatusCode?: number };
+      };
+      if (
+        error.$metadata?.httpStatusCode === 404 ||
+        error.name === 'NoSuchKey'
+      ) {
+        throw new OriginalVerificationError({
+          reason: 'absent',
+          message: 'Original media object not found',
+          cause,
+        });
+      }
+      throw cause;
     }
   }
 

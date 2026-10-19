@@ -16,9 +16,9 @@ import { ActionButton, TextField, styles } from '@antica/ui';
 import { uploadMedia } from '../../../adapters/media-upload';
 import { Screen } from '../../../components/Screen';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import { SourcePagePreview } from '../components/SourcePagePreview';
 
@@ -271,7 +271,9 @@ export const SourceIntakeContainer: FC = () => {
               />
               <Text style={styles.secondary}>
                 {file.presentation.crop
-                  ? `${t('selectRegion')}: ${JSON.stringify(file.presentation.crop)}`
+                  ? t('selectedRegion', {
+                      crop: JSON.stringify(file.presentation.crop),
+                    })
                   : t('fullImage')}
               </Text>
               <View style={styles.row}>

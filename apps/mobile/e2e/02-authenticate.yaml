@@ -1,7 +1,36 @@
+# A04: a rejected code stays in the field with a localized reason, and the
+# right code signs in. Verify locks itself while its request runs, so a second
+# tap cannot submit the same code again (A04).
 appId: ${APP_ID}
 ---
-- tapOn: Six-digit code
+- tapOn:
+    id: login-code-input
+- inputText: "${OTP_CODE == '000000' ? '111111' : '000000'}"
+# a double tap submits once: the button turns into the verifying state and one
+# error comes back. The local API usually answers before Maestro can read the
+# screen, so the verifying state is reported when seen and asserted in the
+# native login-verify spec.
+- doubleTapOn:
+    id: login-verify
+- assertVisible:
+    id: login-verifying
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: login-verify-error
+    timeout: 30000
+- assertNotVisible:
+    id: login-verify-error
+    index: 1
+- assertVisible:
+    id: login-code-input
+    text: "${OTP_CODE == '000000' ? '111111' : '000000'}"
+- tapOn:
+    id: login-code-input
+- eraseText: 6
 - inputText: ${OTP_CODE}
-- tapOn: Verify code
-- assertVisible: Collection
+- tapOn:
+    id: login-verify
+- assertVisible:
+    id: collection-add-item
 - runFlow: support/dismiss-dev-logbox.yaml

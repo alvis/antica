@@ -2,7 +2,7 @@ import { Text, View } from 'react-native';
 
 import { ActionButton, styles } from '@antica/ui';
 
-import { useLocale } from '../../../i18n/LocaleProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
 
 import type { FC } from 'react';
 
@@ -20,18 +20,29 @@ export const CaptureMediaStep: FC<CaptureMediaStepProps> = ({
   return (
     <View style={styles.card}>
       <Text style={styles.heading}>{t('capture')}</Text>
-      <ActionButton label={t('photo')} onPress={() => onChoose(true, false)} />
       <ActionButton
+        testID="capture-media-photo"
+        label={t('photo')}
+        onPress={() => onChoose(true, false)}
+      />
+      <ActionButton
+        testID="capture-media-video"
         label={t('video')}
         onPress={() => onChoose(true, true)}
         secondary
       />
       <ActionButton
+        testID="capture-media-import"
         label={t('import')}
         onPress={() => onChoose(false, false)}
         secondary
       />
-      <ActionButton label={t('continue')} onPress={onContinue} secondary />
+      <ActionButton
+        testID="capture-media-continue"
+        label={t('continue')}
+        onPress={onContinue}
+        secondary
+      />
     </View>
   );
 };

@@ -208,29 +208,46 @@ export const uploadRequestSchema = z.strictObject({
 });
 export type UploadRequest = z.infer<typeof uploadRequestSchema>;
 const uploadBase = { assetId: entityIdSchema, expiresAt: instantSchema };
+const singleUploadSessionSchema = z.strictObject({
+  ...uploadBase,
+  mode: z.literal('single'),
+  putUrl: z.url(),
+  headers: z.record(z.string(), z.string()),
+});
+const multipartUploadSessionSchema = z.strictObject({
+  ...uploadBase,
+  mode: z.literal('multipart'),
+  uploadId: z.string(),
+  parts: z.array(
+    z.strictObject({
+      partNumber: z.int().positive(),
+      offset: z.int().nonnegative(),
+      byteLength: z.int().positive(),
+      putUrl: z.url(),
+      headers: z.record(z.string(), z.string()),
+    }),
+  ),
+});
 export const uploadSessionSchema = z.discriminatedUnion('mode', [
-  z.strictObject({
-    ...uploadBase,
-    mode: z.literal('single'),
-    putUrl: z.url(),
-    headers: z.record(z.string(), z.string()),
-  }),
-  z.strictObject({
-    ...uploadBase,
-    mode: z.literal('multipart'),
-    uploadId: z.string(),
-    parts: z.array(
-      z.strictObject({
-        partNumber: z.int().positive(),
-        offset: z.int().nonnegative(),
-        byteLength: z.int().positive(),
-        putUrl: z.url(),
-        headers: z.record(z.string(), z.string()),
-      }),
-    ),
-  }),
+  singleUploadSessionSchema,
+  multipartUploadSessionSchema,
 ]);
 export type UploadSession = z.infer<typeof uploadSessionSchema>;
+export const uploadedPartSchema = z.strictObject({
+  partNumber: z.int().positive(),
+  etag: z.string().min(1),
+});
+export type UploadedPart = z.infer<typeof uploadedPartSchema>;
+/** a pending upload re-signed for resumption, with the parts storage already holds */
+export const uploadResumeSchema = z.discriminatedUnion('mode', [
+  singleUploadSessionSchema.safeExtend({
+    uploadedParts: z.array(uploadedPartSchema).max(0),
+  }),
+  multipartUploadSessionSchema.safeExtend({
+    uploadedParts: z.array(uploadedPartSchema),
+  }),
+]);
+export type UploadResume = z.infer<typeof uploadResumeSchema>;
 export const completeUploadRequestSchema = z.strictObject({
   requestKey: entityIdSchema,
   parts: z

@@ -11,10 +11,11 @@ import {
 } from '@antica/contracts';
 
 import CollectionRoute from '../../../app/(private)/(tabs)/collection';
-import { LocaleProvider } from '../../../i18n/LocaleProvider';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { RecordContainer } from '../../collection/containers/RecordContainer';
+import { RecordEditContainer } from '../../collection/containers/RecordEditContainer';
 
 import { CaptureContainer } from './CaptureContainer';
 
@@ -60,7 +61,7 @@ jest.mock('expo-image-picker', () => ({
   })),
 }));
 
-type Surface = 'record' | 'capture' | 'collection';
+type Surface = 'record' | 'edit' | 'capture' | 'collection';
 
 const original = recordDetailSchema.parse({
   ...collectionRecord,
@@ -114,7 +115,7 @@ it('should refresh the mounted record and collection screens before returning fr
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Import file' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
   await fireEvent.changeText(screen.getByLabelText('Name'), saved.name!);
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
@@ -157,13 +158,19 @@ it('should refresh the mounted collection title after saving a record edit', asy
     ).toBeTruthy(),
   );
   await showSurface(view.client, 'record');
-  await fireEvent.press(screen.getByRole('button', { name: 'Edit' }));
-  await fireEvent.changeText(screen.getByLabelText('Name'), saved.name!);
-  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy(),
+  await fireEvent.press(await screen.findByTestId('record-edit'));
+  expect(view.router.push).toHaveBeenCalledWith(
+    `/collection/${original.id}/edit`,
   );
-  expect(screen.getByRole('header', { name: saved.name! })).toBeTruthy();
+  await showSurface(view.client, 'edit');
+  await fireEvent.changeText(
+    await screen.findByTestId('record-edit-field-name'),
+    saved.name!,
+  );
+  await fireEvent.press(screen.getByTestId('record-edit-save'));
+  await waitFor(() => expect(view.router.back).toHaveBeenCalled());
+  await showSurface(view.client, 'record');
+  expect(await screen.findByRole('header', { name: saved.name! })).toBeTruthy();
   await showSurface(view.client, 'collection');
   expect(
     screen.getByRole('button', { name: `${saved.code}, ${saved.name}` }),
@@ -199,7 +206,7 @@ it('should refresh mounted observations immediately after confirming original wo
     expect(screen.getByRole('button', { name: 'Import file' })).toBeTruthy(),
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
   await fireEvent.changeText(
     screen.getByLabelText('Original words'),
     observation.text,
@@ -232,6 +239,7 @@ function ReturnJourney({
       <View style={{ display: surface === 'collection' ? 'flex' : 'none' }}>
         <CollectionRoute />
       </View>
+      {surface === 'edit' && <RecordEditContainer recordId={original.id} />}
       {surface === 'capture' && <CaptureContainer />}
     </>
   );
@@ -271,7 +279,11 @@ function readResource(resources: Map<string, unknown>, path: string): unknown {
   if (path.endsWith('/observations')) {
     return resources.get('observations');
   }
-  if (path.endsWith('/references') || path.includes('/messages')) {
+  if (
+    path.endsWith('/references') ||
+    path.includes('/messages') ||
+    path.startsWith('/v1/knowledge?')
+  ) {
     return emptyPage;
   }
 

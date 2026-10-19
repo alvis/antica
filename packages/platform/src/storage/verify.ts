@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+
+import { OriginalVerificationError } from '@antica/application/ports';
+
 import type { OriginalObject } from './media-store.js';
 
 /**
@@ -59,16 +62,25 @@ export function verifyBytes(
   expected: Pick<OriginalObject, 'byteLength' | 'sha256' | 'mimeType'>,
 ): void {
   if (bytes.byteLength !== expected.byteLength) {
-    throw new Error('Stored media size mismatch');
+    throw new OriginalVerificationError({
+      reason: 'mismatch',
+      message: 'Stored media size mismatch',
+    });
   }
   if (
     createHash('sha256').update(bytes).digest('hex') !==
     expected.sha256.toLowerCase()
   ) {
-    throw new Error('Stored media checksum mismatch');
+    throw new OriginalVerificationError({
+      reason: 'mismatch',
+      message: 'Stored media checksum mismatch',
+    });
   }
   const detected = sniffMime(bytes);
   if (detected !== expected.mimeType) {
-    throw new Error('Stored media MIME mismatch');
+    throw new OriginalVerificationError({
+      reason: 'mismatch',
+      message: 'Stored media MIME mismatch',
+    });
   }
 }

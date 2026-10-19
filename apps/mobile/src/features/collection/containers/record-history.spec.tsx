@@ -8,10 +8,13 @@ import {
 } from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
-import { getItemAsync } from 'expo-secure-store';
 
 import RecordHistoryRoute from '../../../app/(private)/collection/[recordId]/history';
-import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import {
+  collectionRecord,
+  renderMobile,
+  savedLanguage,
+} from '../../../mobile.spec.fixtures';
 
 import {
   dated,
@@ -38,10 +41,6 @@ jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
   useLocalSearchParams: jest.fn(),
-}));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
 }));
 
 /**
@@ -112,7 +111,9 @@ it('should show each change with its field, values, decision, time, and source',
   expect(entryText(describedByVoice)).toContain(longDescription);
   expect(entryText(describedByVoice)).toContain('Edited by voice or message');
   expect(
-    screen.queryByTestId(`record-history-entry-${describedByVoice.id}-source`),
+    screen.queryByTestId(
+      `record-history-entry-${describedByVoice.id}-description-source`,
+    ),
   ).toBeNull();
   expect(entryText(dated)).toContain(
     'Qing · unconfirmed | After | Kangxi (1662–1722) · collector’s claim',
@@ -133,7 +134,7 @@ it('should show each change with its field, values, decision, time, and source',
     ),
   ).toBeTruthy();
   expect(
-    screen.getByTestId(`record-history-entry-${renamed.id}-source`),
+    screen.getByTestId(`record-history-entry-${renamed.id}-name-source`),
   ).toHaveAccessibleName(`Open the suggestion: Name, ${time}`);
 });
 
@@ -141,7 +142,7 @@ it('should open the analysis proposal behind a change', async () => {
   const view = await renderHistory(async () => page([renamed]));
 
   await fireEvent.press(
-    await screen.findByTestId(`record-history-entry-${renamed.id}-source`),
+    await screen.findByTestId(`record-history-entry-${renamed.id}-name-source`),
   );
 
   expect(view.router.push).toHaveBeenCalledWith(
@@ -156,7 +157,7 @@ it('should open the message that requested an edit, and offer nothing for a voic
 
   await fireEvent.press(
     await screen.findByTestId(
-      `record-history-entry-${taggedByMessage.id}-source`,
+      `record-history-entry-${taggedByMessage.id}-tags-source`,
     ),
   );
 
@@ -165,7 +166,9 @@ it('should open the message that requested an edit, and offer nothing for a voic
   );
   expect(entryText(taggedByMessage)).toContain('Edited by voice or message');
   expect(
-    screen.queryByTestId(`record-history-entry-${describedByVoice.id}-source`),
+    screen.queryByTestId(
+      `record-history-entry-${describedByVoice.id}-description-source`,
+    ),
   ).toBeNull();
 });
 
@@ -280,13 +283,16 @@ it('should retry a history that could not be read', async () => {
 });
 
 it('should show the history of the routed record in Traditional Chinese', async () => {
-  jest.mocked(getItemAsync).mockResolvedValueOnce('zh-Hant');
   jest
     .mocked(useLocalSearchParams)
     .mockReturnValue({ recordId: collectionRecord.id });
-  const view = await renderMobile(<RecordHistoryRoute />, {
-    get: async () => page([describedByVoice, tagged], 'older'),
-  });
+  const view = await renderMobile(
+    <RecordHistoryRoute />,
+    {
+      get: async () => page([describedByVoice, tagged], 'older'),
+    },
+    savedLanguage('zh-Hant'),
+  );
 
   await waitFor(() =>
     expect(entryText(describedByVoice)).toContain('描述 · 已略過'),

@@ -2,14 +2,13 @@ import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
-import { getItemAsync } from 'expo-secure-store';
 import { Linking } from 'react-native';
 
 import { knowledgeDetailSchema, knowledgePageSchema } from '@antica/contracts';
 
 import KnowledgeRoute from '../../../app/(private)/(tabs)/knowledge';
 import KnowledgeDetailRoute from '../../../app/(private)/knowledge/[entryId]';
-import { renderMobile } from '../../../mobile.spec.fixtures';
+import { renderMobile, savedLanguage } from '../../../mobile.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({
@@ -19,10 +18,6 @@ jest.mock('expo-router', () => ({
 jest.mock('expo-crypto', () => ({
   randomUUID:
     jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID,
-}));
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
 }));
 
 const entryId = '00000000-0000-4000-8000-000000000061';
@@ -150,30 +145,33 @@ it('should retry a failed knowledge list request', async () => {
 });
 
 it.each([
-  { locale: 'en', metadata: 'K-1 · Draft · Object type, Other' },
-  { locale: 'zh-Hant', metadata: 'K-1 · 草稿 · 器類, 其他' },
+  { locale: 'en' as const, metadata: 'K-1 · Draft · Object type, Other' },
+  { locale: 'zh-Hant' as const, metadata: 'K-1 · 草稿 · 器類, 其他' },
 ])(
   'should localize knowledge categories without changing authored content in $locale',
   async ({ locale, metadata }) => {
-    jest.mocked(getItemAsync).mockResolvedValueOnce(locale);
-    await renderMobile(<KnowledgeRoute />, {
-      get: async () =>
-        knowledgePageSchema.parse({
-          items: [
-            {
-              id: entryId,
-              displayCode: 'K-1',
-              revision: 3,
-              titleZhHant: 'Collector-authored glaze study',
-              kinds: ['object_type', 'other'],
-              status: 'draft',
-              summaryZhHant: 'Original field notes',
-              citationCount: 1,
-            },
-          ],
-          nextCursor: null,
-        }),
-    });
+    await renderMobile(
+      <KnowledgeRoute />,
+      {
+        get: async () =>
+          knowledgePageSchema.parse({
+            items: [
+              {
+                id: entryId,
+                displayCode: 'K-1',
+                revision: 3,
+                titleZhHant: 'Collector-authored glaze study',
+                kinds: ['object_type', 'other'],
+                status: 'draft',
+                summaryZhHant: 'Original field notes',
+                citationCount: 1,
+              },
+            ],
+            nextCursor: null,
+          }),
+      },
+      savedLanguage(locale),
+    );
 
     await waitFor(() => expect(screen.getByText(metadata)).toBeTruthy());
     expect(screen.getByText('Collector-authored glaze study')).toBeTruthy();
@@ -184,13 +182,13 @@ it.each([
 
 it.each([
   {
-    locale: 'en',
+    locale: 'en' as const,
     scope: 'No scope information has been recorded for this entry.',
     methods: 'No inspection methods have been recorded for this entry.',
     name: 'Name',
   },
   {
-    locale: 'zh-Hant',
+    locale: 'zh-Hant' as const,
     scope: '這則知識尚未記錄適用範圍。',
     methods: '這則知識尚未記錄檢查方法。',
     name: '名稱',
@@ -198,14 +196,17 @@ it.each([
 ])(
   'should explain empty saved knowledge sections without implying loading in $locale',
   async ({ locale, scope, methods, name }) => {
-    jest.mocked(getItemAsync).mockResolvedValueOnce(locale);
     jest.mocked(useLocalSearchParams).mockReturnValue({ entryId });
-    await renderMobile(<KnowledgeDetailRoute />, {
-      get: async () => ({
-        ...entry,
-        entry: { ...entry.entry, status: 'saved' },
-      }),
-    });
+    await renderMobile(
+      <KnowledgeDetailRoute />,
+      {
+        get: async () => ({
+          ...entry,
+          entry: { ...entry.entry, status: 'saved' },
+        }),
+      },
+      savedLanguage(locale),
+    );
 
     await waitFor(() => expect(screen.getByText(scope)).toBeTruthy());
     expect(screen.getByText(methods)).toBeTruthy();

@@ -1,5 +1,5 @@
-import { useLocale } from '../../../../i18n/LocaleProvider';
 import { useAuth } from '../../../../providers/AuthProvider';
+import { useLocale } from '../../../../providers/LocaleProvider';
 
 import { EditCard } from '../components/EditCard';
 import { useEditCard } from '../hooks/useEditCard';

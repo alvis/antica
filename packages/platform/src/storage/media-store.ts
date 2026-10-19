@@ -27,16 +27,43 @@ export interface MultipartTransfer {
   }[];
 }
 
+/** a provider-held part that a resumed multipart upload must not resend */
+export interface UploadedPart {
+  readonly partNumber: number;
+  readonly etag: string;
+}
+
+/** a resumed multipart upload, or the provider no longer holding it */
+export type MultipartResume =
+  | { readonly state: 'expired' }
+  | (MultipartTransfer & {
+      readonly state: 'active';
+      readonly uploadedParts: readonly UploadedPart[];
+    });
+
 /** private object storage, with immutable originals and traceable derivatives */
 export interface MediaStore {
   signUpload(input: OriginalObject): Promise<SignedTransfer>;
   startMultipart?(input: OriginalObject): Promise<MultipartTransfer>;
   completeMultipart?(
     input: OriginalObject,
-    uploadId: string,
+    upload: {
+      readonly uploadId: string;
+      readonly layout: ReadonlyArray<{ readonly partNumber: number }>;
+    },
     parts: readonly { readonly partNumber: number; readonly etag: string }[],
   ): Promise<void>;
+  resumeMultipart?(
+    input: OriginalObject,
+    uploadId: string,
+    layout: ReadonlyArray<{
+      readonly partNumber: number;
+      readonly offset: number;
+      readonly byteLength: number;
+    }>,
+  ): Promise<MultipartResume>;
   abortMultipart?(input: OriginalObject, uploadId: string): Promise<void>;
+  /** rejects with OriginalVerificationError for absence or mismatch; propagates availability failures */
   verifyOriginal(input: OriginalObject): Promise<void>;
   signRead(key: string): Promise<SignedTransfer>;
   read(

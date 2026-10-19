@@ -1,4 +1,4 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 import { randomUUID } from 'expo-crypto';
 
@@ -9,26 +9,31 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Linking, Text, View } from 'react-native';
 
 import {
-  analysisAcceptedSchema,
   cursorPageSchema,
   evidenceCreationSchema,
-  mediaDetailSchema,
   observationSchema,
-  recordDetailSchema,
-  recordPatchSchema,
   referencePageSchema,
-  requestAnalysisSchema,
 } from '@antica/contracts';
-import { ActionButton, TextField, styles } from '@antica/ui';
+import { ActionButton, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { useLocale } from '../../../i18n/LocaleProvider';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
+
+import { analysisRunQuery } from '../../analysis/api/analysis-run-query';
+import { useStartAnalysis } from '../../analysis/hooks/useStartAnalysis';
+import { RecordUploadsContainer } from '../../capture/containers/RecordUploadsContainer';
+import { useUnfinishedUploads } from '../../capture/hooks/useUnfinishedUploads';
 
 import { recordQuery } from '../api/record-query';
+import { RecordAnalysisStatus } from '../components/RecordAnalysisStatus';
+import { RecordEditNotice } from '../components/RecordEditNotice';
+import { RecordFieldSummary } from '../components/RecordFieldSummary';
+import { useRecordFieldLabels } from '../hooks/useRecordFieldLabels';
 import { RecordMessagesEntryContainer } from '../messages/containers/RecordMessagesEntryContainer';
+import { recordAnalysisState } from '../record-analysis-state';
 
 import type { FC } from 'react';
 
@@ -38,6 +43,16 @@ import type { MediaDetail } from '@antica/contracts';
 
 export type RecordContainerProps = { recordId: string };
 
+/**
+ * asset states whose bytes the server verified, the only ones counted as uploaded; completion
+ * checks the digest before it marks an asset uploaded, ahead of processing
+ */
+const verifiedStates: ReadonlySet<unknown> = new Set([
+  'uploaded',
+  'processing',
+  'ready',
+]);
+
 export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   const router = useRouter();
   const { observationId, checkId } = useLocalSearchParams<{
@@ -46,7 +61,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   }>();
   const { api } = useAuth();
   const { t } = useLocale();
-  const queryClient = useQueryClient();
   const scrollViewRef = useRef<ScrollView>(null);
   const observationsSectionLayout = useRef<{
     recordId: string;
@@ -54,12 +68,21 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   } | null>(null);
   const observationLayouts = useRef(new Map<string, number>());
   const scrolledObservation = useRef<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const record = useQuery(recordQuery(api, recordId));
+  const fieldLabels = useRecordFieldLabels({
+    knowledgeIds: [
+      ...(record.data?.categoryIds ?? []),
+      ...(record.data?.materialIds ?? []),
+    ],
+    mediaIds: record.data?.mediaIds ?? [],
+  });
+  const latestRunId = record.data?.latestRunId;
+  const latestRun = useQuery({
+    ...analysisRunQuery(api, latestRunId ?? ''),
+    enabled: Boolean(latestRunId),
+  });
+  const analysis = useStartAnalysis(api, t);
   const observations = useQuery({
     queryKey: ['observations', recordId],
     queryFn: async ({ signal }) =>
@@ -78,13 +101,12 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
         signal,
       ),
   });
-  const media = useQueries({
-    queries: (record.data?.mediaIds ?? []).map((id) => ({
-      queryKey: ['media', id],
-      queryFn: async ({ signal }: { signal: AbortSignal }) =>
-        api.get(`/v1/media/${id}`, mediaDetailSchema, signal),
-    })),
-  });
+  // the labels hook reads the record's media once for both uses
+  const media = fieldLabels.mediaQueries;
+  // a file that failed on the server can be sent again while this device keeps its copy
+  const retriable = useUnfinishedUploads().some(
+    (group) => group.recordId === recordId,
+  );
 
   const scrollToReferencedObservation = useCallback((): void => {
     if (!observationId) {
@@ -112,54 +134,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
   useEffect(() => {
     scrollToReferencedObservation();
   }, [scrollToReferencedObservation]);
-
-  const analyze = async (): Promise<void> => {
-    if (!record.data || busy) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const request = requestAnalysisSchema.parse({
-        expectedRecordRevision: record.data.recordRevision,
-      });
-      const accepted = await api.post(
-        `/v1/records/${recordId}/analyses`,
-        analysisAcceptedSchema,
-        { body: request, idempotencyKey: randomUUID() },
-      );
-      router.push(`/analysis/${accepted.runId}`);
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveEdit = async (): Promise<void> => {
-    if (!record.data || busy) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const request = recordPatchSchema.parse({
-        expectedRevision: record.data.recordRevision,
-        fields: { name: name.trim() || null, description },
-      });
-      await api.patch(`/v1/records/${recordId}`, recordDetailSchema, {
-        body: request,
-        idempotencyKey: randomUUID(),
-      });
-      await queryClient.invalidateQueries({ queryKey: ['record', recordId] });
-      await queryClient.invalidateQueries({ queryKey: ['records'] });
-      setEditing(false);
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const searchImage = async (detail: MediaDetail): Promise<void> => {
     const view = detail.asset.views[0];
@@ -225,35 +199,25 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
         {record.data && (
           <>
             <View style={styles.card}>
-              <Text style={styles.body}>
-                {record.data.analysisFreshness === 'outdated'
-                  ? t('newEvidence')
-                  : record.data.analysisFreshness === 'unanalyzed'
-                    ? t('notAnalyzed')
-                    : t('saved')}
-              </Text>
-              <Text style={styles.secondary}>
-                {t('location')}: {record.data.location.detail || t('unknown')}
-              </Text>
-              <Text style={styles.body}>
-                {record.data.description || t('empty')}
-              </Text>
-              <ActionButton
-                label={
-                  record.data.latestRunId ? t('analyzeAgain') : t('analyze')
+              <RecordEditNotice recordId={recordId} />
+              <RecordAnalysisStatus
+                state={recordAnalysisState(
+                  record.data,
+                  latestRun.data?.status,
+                  latestRun.isError,
+                )}
+                canAnalyse={record.data.mediaIds.length > 0}
+                starting={analysis.starting}
+                onAnalyse={() => void analysis.start(record.data)}
+                onRetryRun={() => void latestRun.refetch()}
+                retryingRun={latestRun.isFetching}
+                error={analysis.error}
+                onOpenRun={
+                  record.data.latestRunId
+                    ? () => router.push(`/analysis/${record.data.latestRunId}`)
+                    : undefined
                 }
-                onPress={() => void analyze()}
-                disabled={busy || record.data.mediaIds.length === 0}
               />
-              {record.data.latestRunId && (
-                <ActionButton
-                  label={t('results')}
-                  onPress={() =>
-                    router.push(`/analysis/${record.data.latestRunId}`)
-                  }
-                  secondary
-                />
-              )}
               <ActionButton
                 label={t('addEvidence')}
                 onPress={() => router.push(`/capture?recordId=${recordId}`)}
@@ -265,11 +229,34 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                 label={t('viewChangeHistory')}
                 onPress={() => router.push(`/collection/${recordId}/history`)}
               />
+              <ActionButton
+                secondary
+                testID="record-edit"
+                label={t('editDetails')}
+                onPress={() =>
+                  router.push(
+                    `/collection/${encodeURIComponent(recordId)}/edit`,
+                  )
+                }
+              />
             </View>
             <RecordMessagesEntryContainer recordId={recordId} />
+            <RecordFieldSummary
+              record={record.data}
+              labels={fieldLabels.labels}
+            />
+            <RecordUploadsContainer recordId={recordId} />
             <View style={styles.card}>
               <Text style={styles.heading}>
                 {t('photo')} / {t('video')}
+              </Text>
+              <Text testID="record-media-count" style={styles.secondary}>
+                {t('mediaCount', {
+                  // a file awaiting its upload, or one that failed, is never counted as saved
+                  count: media.filter((item) =>
+                    verifiedStates.has(item.data?.asset.state),
+                  ).length,
+                })}
               </Text>
               {media.map((item, index) => {
                 const detail = item.data;
@@ -285,12 +272,25 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                         accessibilityLabel={detail.asset.originalFileName}
                       />
                     )}
-                    <Text style={styles.secondary}>
+                    <Text
+                      testID={`record-media-${record.data.mediaIds[index]}-${detail ? detail.asset.state : 'loading'}`}
+                      style={styles.secondary}>
                       {detail?.asset.originalFileName ?? t('loading')} ·{' '}
                       {detail
-                        ? localizeStatus(detail.asset.state, t)
+                        ? detail.asset.state === 'failed'
+                          ? t('uploadNotUploaded')
+                          : localizeStatus(detail.asset.state, t)
                         : t('loading')}
                     </Text>
+                    {detail?.asset.state === 'failed' && retriable && (
+                      <ActionButton
+                        testID={`record-media-${detail.asset.id}-retry`}
+                        label={t('retryUpload')}
+                        onPress={() =>
+                          router.push(`/capture?recordId=${recordId}&resume=1`)
+                        }
+                      />
+                    )}
                     {detail && (
                       <ActionButton
                         label={t('view')}
@@ -310,39 +310,6 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                   </View>
                 );
               })}
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.heading}>{t('description')}</Text>
-              {editing ? (
-                <>
-                  <TextField
-                    label={t('name')}
-                    value={name}
-                    onChangeText={setName}
-                  />
-                  <TextField
-                    label={t('description')}
-                    value={description}
-                    onChangeText={setDescription}
-                    multiline
-                  />
-                  <ActionButton
-                    label={t('save')}
-                    onPress={() => void saveEdit()}
-                    disabled={busy}
-                  />
-                </>
-              ) : (
-                <ActionButton
-                  label={t('edit')}
-                  onPress={() => {
-                    setName(record.data.name ?? '');
-                    setDescription(record.data.description);
-                    setEditing(true);
-                  }}
-                  secondary
-                />
-              )}
             </View>
             <View
               style={styles.card}
@@ -364,7 +331,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                     accessibilityRole={referenced ? 'text' : undefined}
                     accessibilityLabel={
                       referenced
-                        ? `${t('referencedObservation')}: ${item.text}`
+                        ? t('referencedObservationText', { text: item.text })
                         : undefined
                     }
                     accessibilityState={
@@ -407,7 +374,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
               {record.data.checkIds.map((id) => (
                 <ActionButton
                   key={id}
-                  label={`${t('checks')} ${id.slice(0, 8)}`}
+                  label={t('checkWithId', { id: id.slice(0, 8) })}
                   onPress={() => router.push(`/checks/${id}`)}
                   secondary
                 />

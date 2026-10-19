@@ -116,9 +116,12 @@ it('should preview the newest message on the record screen', async () => {
           : emptyList,
   });
 
-  expect(
-    await screen.findByTestId('record-messages-entry'),
-  ).toHaveAccessibleName('Open messages: The glaze looks even.');
+  // the entry shows its empty prompt until the newest message has loaded
+  await waitFor(() =>
+    expect(screen.getByTestId('record-messages-entry')).toHaveAccessibleName(
+      'Open messages: The glaze looks even.',
+    ),
+  );
 });
 
 it('should show the newest page first and load older messages on request and on scroll-up', async () => {
@@ -158,6 +161,11 @@ it('should show the newest page first and load older messages on request and on 
   releaseMiddle();
   expect(await screen.findByText('What is the glaze?')).toBeTruthy();
 
+  // dragging back through the thread closes the keyboard over the composer (I17)
+  expect(screen.getByTestId('record-messages-thread')).toHaveProp(
+    'keyboardDismissMode',
+    'on-drag',
+  );
   await fireEvent(screen.getByTestId('record-messages-thread'), 'onEndReached');
   expect(await screen.findByText('Welcome back.')).toBeTruthy();
   expect(screen.queryByTestId('record-messages-load-earlier')).toBeNull();
