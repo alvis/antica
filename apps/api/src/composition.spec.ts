@@ -32,8 +32,15 @@ const development = {
 };
 
 describe('fn:readImageConfiguration', () => {
-  it('should require explicit retrieval selection and prohibit local retrieval in production', () => {
-    expect(readImageConfiguration({})).toMatchObject({ success: false });
+  it('should disable unspecified retrieval and prohibit local retrieval in production', () => {
+    expect(readImageConfiguration({})).toMatchObject({
+      success: true,
+      data: { ANTICA_IMAGE_SEARCH_DRIVER: 'disabled' },
+    });
+    expect(readImageConfiguration({ NODE_ENV: 'production' })).toMatchObject({
+      success: true,
+      data: { ANTICA_IMAGE_SEARCH_DRIVER: 'disabled' },
+    });
     expect(
       readImageConfiguration({ ANTICA_IMAGE_SEARCH_DRIVER: 'local' }),
     ).toMatchObject({ success: true });

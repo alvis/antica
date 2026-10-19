@@ -4,6 +4,52 @@ import { createConfiguredImageRetrieval } from './config.js';
 import { developmentImageIndex } from './image.js';
 
 describe('fn:createConfiguredImageRetrieval', () => {
+  it('should reject disabled image operations without contacting a provider', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected network'));
+    const result = createConfiguredImageRetrieval({ driver: 'disabled' });
+    if (!result.success) {
+      throw new Error('Disabled capability must compose');
+    }
+    expect(result.data.writer).toBeNull();
+    expect(
+      await result.data.port.search(
+        {
+          mode: 'search',
+          queryAnchorId: 'anchor',
+          scope: 'my_collection',
+          includeWholeImage: false,
+          filters: {},
+        },
+        result.data.index,
+      ),
+    ).toMatchObject({
+      success: false,
+      error: { code: 'PROVIDER_UNAVAILABLE' },
+    });
+    expect(
+      await result.data.port.compare(
+        {
+          mode: 'compare',
+          queryAnchorId: 'anchor',
+          selected: {
+            kind: 'collection',
+            recordId: 'record',
+            originalAssetId: 'asset',
+          },
+          selectedCanonicalViewId: null,
+          selectedRegion: null,
+        },
+        result.data.index,
+      ),
+    ).toMatchObject({
+      success: false,
+      error: { code: 'PROVIDER_UNAVAILABLE' },
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('should allow the development index locally and reject a different local descriptor space', async () => {
     const readQuery = vi.fn(async () => {
       throw new Error('Unexpected read');

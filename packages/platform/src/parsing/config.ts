@@ -83,11 +83,6 @@ export function createConfiguredKnowledgeAdapters(
       'LlamaCloud requires a credential, index ID, and durable index writer.',
     );
   }
-  if (params.production && !params.web.apiKey?.trim()) {
-    return unavailable(
-      'Public web research requires the Exa credential in production.',
-    );
-  }
 
   return {
     success: true,
@@ -140,6 +135,25 @@ export interface KnowledgeConfiguration {
 export function readKnowledgeConfiguration(
   env: Readonly<Record<string, string | undefined>>,
 ): OperationResult<KnowledgeConfiguration> {
+  // PostgreSQL discovery is independent of optional source providers.
+  if (
+    env.ANTICA_PARSING_DRIVER === undefined &&
+    env.ANTICA_TEXT_SEARCH_DRIVER === undefined
+  ) {
+    return {
+      success: true,
+      data: {
+        production: env.NODE_ENV === 'production',
+        parsingDriver: 'llama',
+        textDriver: 'llama',
+        parserVersion: '',
+        indexId: '',
+        sourceDirectoryId: '',
+        textIndex: developmentTextIndex,
+        exaApiKey: env.EXA_API_KEY,
+      },
+    };
+  }
   const driver = z.enum(['local', 'llama']);
   const parsing = driver.safeParse(env.ANTICA_PARSING_DRIVER);
   const text = driver.safeParse(env.ANTICA_TEXT_SEARCH_DRIVER);
@@ -199,11 +213,6 @@ export function readKnowledgeConfiguration(
   ) {
     return unavailable(
       'LlamaCloud requires index/source-directory IDs and an explicit text embedding model, dimensions, and index version.',
-    );
-  }
-  if (production && !env.EXA_API_KEY?.trim()) {
-    return unavailable(
-      'EXA_API_KEY is required for public web research in production.',
     );
   }
 

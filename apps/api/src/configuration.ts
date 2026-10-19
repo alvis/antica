@@ -20,7 +20,9 @@ export interface ApplicationSettings {
 
 const imageConfigurationSchema = z
   .object({
-    ANTICA_IMAGE_SEARCH_DRIVER: z.enum(['local', 'voyage-qdrant']),
+    ANTICA_IMAGE_SEARCH_DRIVER: z
+      .enum(['disabled', 'local', 'voyage-qdrant'])
+      .default('disabled'),
     VOYAGE_API_KEY: z.string().min(1).optional(),
     QDRANT_URL: z.url().optional(),
     QDRANT_API_KEY: z.string().min(1).optional(),

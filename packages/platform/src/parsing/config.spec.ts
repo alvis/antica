@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { createLlamaTextRetrieval } from '../search/llama.js';
+
+import { createExaWebResearch } from '../search/web.js';
 
 import {
   createConfiguredKnowledgeAdapters,
   readKnowledgeConfiguration,
 } from './config.js';
+
+import { createLlamaSourceParser } from './llama.js';
 
 const live = {
   NODE_ENV: 'production',
@@ -20,6 +26,58 @@ const live = {
 };
 
 describe('fn:readKnowledgeConfiguration', () => {
+  it('should start production knowledge browsing without cloud credentials and fail optional capabilities explicitly', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new Error('Unexpected network request');
+    });
+    vi.stubGlobal('fetch', fetch);
+    const result = readKnowledgeConfiguration({ NODE_ENV: 'production' });
+    if (!result.success) {
+      throw new Error('Expected standalone knowledge configuration');
+    }
+    expect(result.data).toMatchObject({
+      production: true,
+      parsingDriver: 'llama',
+      textDriver: 'llama',
+      parserVersion: '',
+      indexId: '',
+    });
+    const parser = createLlamaSourceParser({
+      ...localParsing,
+      apiKey: result.data.llamaApiKey,
+      parserVersion: result.data.parserVersion ?? '',
+    });
+    const text = createLlamaTextRetrieval({
+      ...liveText,
+      apiKey: result.data.llamaApiKey,
+      indexId: result.data.indexId ?? '',
+      index: result.data.textIndex,
+    });
+    const web = createExaWebResearch({ apiKey: result.data.exaApiKey });
+    const unavailable = {
+      success: false,
+      error: expect.objectContaining({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: false,
+      }),
+    };
+    expect(
+      await parser.submit({
+        sourceVersionId: 'version',
+        parseRunId: 'run',
+        originalAssetId: 'asset',
+      }),
+    ).toMatchObject({
+      success: false,
+      error: { code: 'SOURCE_UNAVAILABLE', retryable: false },
+    });
+    expect(await text.snapshot('瓷器', result.data.textIndex)).toMatchObject(
+      unavailable,
+    );
+    expect(await web.search('瓷器')).toMatchObject(unavailable);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('should retain explicit independent live drivers and embedding space', () => {
     expect(readKnowledgeConfiguration(live)).toEqual({
       success: true,
@@ -55,7 +113,6 @@ describe('fn:readKnowledgeConfiguration', () => {
     { LLAMA_TEXT_DIMENSIONS: '0' },
     { LLAMA_TEXT_DIMENSIONS: '8.5' },
     { ANTICA_TEXT_INDEX_VERSION: '' },
-    { EXA_API_KEY: '' },
   ])('should fail incomplete or unsafe live configuration %#', (override) => {
     expect(readKnowledgeConfiguration({ ...live, ...override })).toMatchObject({
       success: false,
@@ -167,7 +224,6 @@ describe('fn:createConfiguredKnowledgeAdapters', () => {
     { parsing: { ...liveParsing, parserVersion: 'latest' } },
     { text: { ...liveText, apiKey: '' } },
     { text: { ...liveText, indexId: '' } },
-    { web: {} },
   ])('should reject unavailable production adapters %#', (override) => {
     const result = createConfiguredKnowledgeAdapters({
       production: true,
@@ -179,6 +235,26 @@ describe('fn:createConfiguredKnowledgeAdapters', () => {
     });
 
     expect(result).toMatchObject({
+      success: false,
+      error: { code: 'PROVIDER_UNAVAILABLE', retryable: false },
+    });
+  });
+
+  it('should leave optional web research unavailable without blocking configured live source adapters', async () => {
+    expect(
+      readKnowledgeConfiguration({ ...live, EXA_API_KEY: '' }),
+    ).toMatchObject({ success: true });
+    const result = createConfiguredKnowledgeAdapters({
+      production: true,
+      parsing: liveParsing,
+      text: liveText,
+      web: {},
+      textIndexWriter: writer,
+    });
+    if (!result.success) {
+      throw new Error('Expected configured source adapters');
+    }
+    expect(await result.data.web.search('瓷器')).toMatchObject({
       success: false,
       error: { code: 'PROVIDER_UNAVAILABLE', retryable: false },
     });
