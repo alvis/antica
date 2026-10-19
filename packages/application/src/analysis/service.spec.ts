@@ -1,21 +1,31 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { recordFieldsOf } from '../record/fields.js';
+import { createEditDraftService } from '../voice/edit.js';
 
 import { createAnalysisService } from './service.js';
 
 import type {
   ActionState,
   AnalysisOutput,
+  EditDraftDetail,
+  ProposedChange,
+  RecordPatch,
   MediaAsset,
   ModelSelection,
   RecordDetail,
   ReferenceLink,
 } from '@antica/contracts';
-import type { EvidenceAnchor, Observation, RecordCheck } from '@antica/domain';
+import type {
+  EvidenceAnchor,
+  Observation,
+  RecordCheck,
+  RecordVersions,
+} from '@antica/domain';
 
 import type {
   AnalysisRunRecord,
+  EditDraftRunRecord,
   CommandReceipt,
   OperationResult,
   TransactionPort,
@@ -225,6 +235,7 @@ function fixture(
     readonly record?: RecordDetail | null;
     readonly run?: AnalysisRunRecord | null;
     readonly snapshotRun?: AnalysisRunRecord | null;
+    readonly drafts?: readonly EditDraftRunRecord[];
     readonly actionState?: ActionState | null;
     readonly proposalStates?: ReadonlyArray<{
       readonly proposalId: string;
@@ -261,6 +272,9 @@ function fixture(
     record: 'record' in options ? (options.record ?? null) : record,
     run: 'run' in options ? (options.run ?? null) : null,
   };
+  const drafts = new Map(
+    options.drafts?.map((draft) => [draft.detail.editDraftId, draft]),
+  );
   const receipts = new Map<string, CommandReceipt>();
   const created: AnalysisRunRecord[] = [];
   const queued: string[] = [];
@@ -282,15 +296,15 @@ function fixture(
     ),
   };
   const patch = vi.fn(
-    async (_id: string, _input: unknown, _versions: unknown) => {
+    async (_id: string, input: RecordPatch, versions: RecordVersions) => {
       if ('patch' in options) {
         return options.patch ?? null;
       }
       const changed = current.record
         ? {
             ...current.record,
-            name: 'Blue vase',
-            recordRevision: current.record.recordRevision + 1,
+            ...input.fields,
+            ...versions,
           }
         : null;
       current.record = changed;
@@ -328,6 +342,26 @@ function fixture(
           insert: async (receipt: CommandReceipt) => {
             receipts.set(`${receipt.operation}:${receipt.requestKey}`, receipt);
           },
+        },
+        editDrafts: {
+          get: async (id: string) => drafts.get(id) ?? null,
+          markApplied: async (
+            id: string,
+            _revision: number,
+            selectedProposalIds: readonly string[],
+          ) => {
+            const draft = drafts.get(id)!;
+            const detail: EditDraftDetail = {
+              ...draft.detail,
+              revision: draft.detail.revision + 1,
+              status: 'applied',
+              appliedProposalIds: [...selectedProposalIds],
+            };
+            drafts.set(id, { ...draft, detail });
+
+            return detail;
+          },
+          appendAdoption: async () => undefined,
         },
         media: { get: async (id: string) => options.media?.get(id) ?? null },
         evidence: {
@@ -414,6 +448,7 @@ function fixture(
 
   return {
     service,
+    transaction,
     current,
     receipts,
     created,
@@ -760,6 +795,104 @@ describe('fn:createAnalysisService', () => {
     );
     expect(ports.receipts.get('analysis.apply:apply-1')).toMatchObject({
       status: 200,
+    });
+  });
+
+  it('should keep other edit cards and analysis proposals applicable after confirming an edit card', async () => {
+    const changes: ProposedChange[] = [
+      {
+        id: observationId,
+        field: 'description',
+        before: '',
+        proposed: 'Blue glaze',
+        findingIds: [],
+      },
+      {
+        id: checkId,
+        field: 'tags',
+        before: [],
+        proposed: ['blue'],
+        findingIds: [],
+      },
+    ];
+    const editingSelection = { ...selection, role: 'recordEditing' } as const;
+    const drafts: EditDraftRunRecord[] = changes.map((change) => ({
+      request: {
+        requestKey: change.id,
+        recordId,
+        expectedRecordRevision: 1,
+        transcriptionIds: [],
+        observationIds: [],
+        instructionZhHant: '整理藏品',
+      },
+      modelSelection: editingSelection,
+      detail: {
+        editDraftId: change.id,
+        jobId,
+        revision: 2,
+        status: 'ready',
+        snapshot: {
+          recordId,
+          versions: record,
+          fields: recordFieldsOf(record),
+          transcriptionVersions: [],
+          observationIds: [],
+          sourceText: [],
+          createdAt: now,
+        },
+        result: {
+          editDraftId: change.id,
+          recordId,
+          baseVersions: record,
+          sourceTranscriptionIds: [],
+          sourceObservationIds: [],
+          replyZhHant: '請確認',
+          suggestedDescriptionZhHant: '',
+          proposedChanges: [change],
+        },
+        invocation: null,
+        appliedProposalIds: [],
+        skippedProposalIds: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    }));
+    const ports = fixture({ run: completedRun(), drafts });
+    const edits = createEditDraftService(
+      ports.transaction,
+      editingSelection,
+      { now: () => now },
+      ports.ids,
+    );
+
+    for (const [index, change] of changes.entries()) {
+      expect(
+        await edits.apply(ownerId, change.id, {
+          requestKey: `edit-${index}`,
+          expectedDraftRevision: 2,
+          expectedRecordRevision: index + 1,
+          selectedProposalIds: [change.id],
+        }),
+      ).toMatchObject({
+        success: true,
+        data: { record: { recordRevision: index + 2 } },
+      });
+    }
+    expect(
+      await ports.service.apply(ownerId, runId, 'apply-analysis', {
+        expectedRecordRevision: 3,
+        selectedProposalIds: [proposalId],
+      }),
+    ).toMatchObject({
+      success: true,
+      data: {
+        name: 'Blue vase',
+        description: 'Blue glaze',
+        tags: ['blue'],
+        recordRevision: 4,
+        analysisInputVersion: 2,
+        evidenceVersion: 3,
+      },
     });
   });
 
@@ -1294,7 +1427,12 @@ describe('fn:createAnalysisService adoption guardrails', () => {
   it('should reject an adopted field changed since the analysis even when the revision matches', async () => {
     const ports = fixture({
       run: threeFieldRun(),
-      record: { ...record, recordRevision: 4, description: 'Collector edit' },
+      record: {
+        ...record,
+        recordRevision: 4,
+        analysisInputVersion: 5,
+        description: 'Collector edit',
+      },
       proposalStates: threeFieldStates,
     });
 
@@ -1321,6 +1459,7 @@ describe('fn:createAnalysisService adoption guardrails', () => {
       record: {
         ...record,
         recordRevision: 4,
+        analysisInputVersion: 5,
         description: 'Collector edit',
         tags: ['collector'],
       },
@@ -1337,7 +1476,7 @@ describe('fn:createAnalysisService adoption guardrails', () => {
     expect(ports.patch).toHaveBeenCalledWith(
       recordId,
       { expectedRevision: 4, fields: { name: 'Blue vase' } },
-      { recordRevision: 5, analysisInputVersion: 2, evidenceVersion: 3 },
+      { recordRevision: 5, analysisInputVersion: 5, evidenceVersion: 3 },
     );
     expect(ports.adoptions).toEqual([
       { proposalId, status: 'accepted' },

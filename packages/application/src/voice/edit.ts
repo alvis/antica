@@ -514,7 +514,7 @@ async function writeSelected(
     },
     {
       recordRevision: record.recordRevision + 1,
-      analysisInputVersion: record.analysisInputVersion + 1,
+      analysisInputVersion: record.analysisInputVersion,
       evidenceVersion: record.evidenceVersion,
     },
   );
