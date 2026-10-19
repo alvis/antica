@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#cli-coverage/wire": "./test/cli-coverage/wire.mts",
+    "#cli-coverage/global-setup": "./test/cli-coverage-global-setup.mts"
+  },
   "scripts": {
     "build": "run build",
     "lint": "run lint --",

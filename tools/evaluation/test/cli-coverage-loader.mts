@@ -1,9 +1,10 @@
-import { decodeOwnerWire, encodeOwnerWire } from './cli-coverage/wire.mjs';
+// runs in Node's module-hooks thread, where tsx does not apply, so imports use #cli-coverage/*
+import { decodeOwnerWire, encodeOwnerWire } from '#cli-coverage/wire';
 import {
   invocationSchema,
   readOwnerSnapshot,
   readInstrumentationSettings,
-} from './cli-coverage-global-setup.mjs';
+} from '#cli-coverage/global-setup';
 import { createInstrumenter } from 'istanbul-lib-instrument';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
