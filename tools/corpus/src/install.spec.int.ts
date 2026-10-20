@@ -64,7 +64,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
       '--owner-id',
       randomUUID(),
       '--release',
-      '1.0.0',
+      '1.0.1',
       '--request-key',
       randomUUID(),
     ]);
@@ -122,7 +122,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
       '--owner-id',
       randomUUID(),
       '--release',
-      '1.0.0',
+      '1.0.1',
       '--request-key',
       randomUUID(),
     ]);
@@ -139,7 +139,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
       '--owner-id',
       randomUUID(),
       '--release',
-      '1.0.0',
+      '1.0.1',
       '--request-key',
       randomUUID(),
     ]);
@@ -177,7 +177,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
         '--owner-id',
         randomUUID(),
         '--release',
-        '1.0.0',
+        '1.0.1',
         '--request-key',
         randomUUID(),
       ]);
@@ -229,7 +229,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
       '--owner-id',
       randomUUID(),
       '--release',
-      '1.0.0',
+      '1.0.1',
       '--request-key',
       randomUUID(),
     ]);
@@ -305,7 +305,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
       '--owner-id',
       randomUUID(),
       '--release',
-      '1.0.0',
+      '1.0.1',
       '--request-key',
       randomUUID(),
     ]);
@@ -346,7 +346,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
         '--owner-id',
         request.ownerId,
         '--release',
-        '1.0.1',
+        '1.0.2',
         '--request-key',
         randomUUID(),
         '--dir',
@@ -414,7 +414,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
         requestKey: randomUUID(),
         release: {
           ...upgrade.release,
-          version: '1.0.2',
+          version: '1.0.3',
           manifestHash: sha256(upgrade.release.manifestHash),
         },
       };
@@ -764,7 +764,7 @@ describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
       '--owner-id',
       randomUUID(),
       '--release',
-      '1.0.0',
+      '1.0.1',
       '--request-key',
       randomUUID(),
     ]);
@@ -838,7 +838,7 @@ async function countRows(
 }
 
 /**
- * Builds a validated 1.0.1 release by editing two upstream titles and rehashing every member.
+ * builds a subsequent release by editing upstream titles and rehashing every member
  * @param changedContentIds content identities requiring an upstream change
  * @returns disposable directory owned by the calling test
  */
@@ -851,7 +851,7 @@ function createUpgradeDirectory(
     directory,
     { recursive: true },
   );
-  const releasePath = join(directory, 'releases/1.0.0.json');
+  const releasePath = join(directory, 'releases/1.0.1.json');
   const release = corpusFileSchema.parse(
     JSON.parse(readFileSync(releasePath, 'utf8')),
   );
@@ -881,7 +881,7 @@ function createUpgradeDirectory(
   const { manifestHash: _oldHash, ...manifest } = release;
   const next = {
     ...manifest,
-    version: '1.0.1',
+    version: '1.0.2',
     files: release.files.map((member) => ({
       ...member,
       sha256: sha256(readFileSync(join(directory, member.path), 'utf8')),
@@ -889,7 +889,7 @@ function createUpgradeDirectory(
   };
   rmSync(releasePath);
   writeFileSync(
-    join(directory, 'releases/1.0.1.json'),
+    join(directory, 'releases/1.0.2.json'),
     `${canonicalJson({ ...next, manifestHash: sha256(canonicalJson(next)) })}\n`,
   );
 

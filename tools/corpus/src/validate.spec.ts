@@ -1155,6 +1155,20 @@ describe('fn:validateCorpusDocuments', () => {
     expect(validateCorpusDocuments(documents).issues).toEqual([]);
   });
 
+  it('should accept an editorial display title alongside an unmarked literal alias', () => {
+    const documents = change(entryPath, (file) => {
+      if (file.kind === 'entry') {
+        file.titles = file.titles.map((title) =>
+          title.language === 'zh-Hant'
+            ? { ...title, text: '斗彩團花對杯', editorial: true }
+            : title,
+        );
+        file.aliases.push({ language: 'zh-Hant', text: '對杯', kind: 'alias' });
+      }
+    });
+    expect(validateCorpusDocuments(documents).issues).toEqual([]);
+  });
+
   it('should accept a localized entry alias', () => {
     const documents = change(entryPath, (file) => {
       if (file.kind === 'entry') {

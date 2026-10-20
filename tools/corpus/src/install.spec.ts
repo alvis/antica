@@ -21,7 +21,7 @@ const requestArguments = [
   '--owner-id',
   'installer-test-owner',
   '--release',
-  '1.0.0',
+  '1.0.1',
   '--request-key',
   randomUUID(),
 ];
@@ -29,9 +29,9 @@ const requestArguments = [
 describe('fn:loadCorpusInstallRequest', () => {
   it.each([
     [],
-    ['--release', '1.0.0', '--request-key', randomUUID()],
+    ['--release', '1.0.1', '--request-key', randomUUID()],
     ['--owner-id', 'owner', '--request-key', randomUUID()],
-    ['--owner-id', 'owner', '--release', '1.0.0'],
+    ['--owner-id', 'owner', '--release', '1.0.1'],
     ['--unknown'],
     ['--owner-id'],
   ])('should reject incomplete or unsupported arguments %j', (...args) => {
@@ -46,10 +46,10 @@ describe('fn:loadCorpusInstallRequest', () => {
     expect(request).toMatchObject({
       ownerId: 'installer-test-owner',
       dryRun: true,
-      release: { version: '1.0.0' },
+      release: { version: '1.0.1' },
     });
     expect(request.entries).toHaveLength(56);
-    expect(request.sources).toHaveLength(66);
+    expect(request.sources).toHaveLength(67);
     expect(request.topics).toHaveLength(65);
   });
 

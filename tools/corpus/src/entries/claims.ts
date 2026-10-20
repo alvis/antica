@@ -1,5 +1,6 @@
 import { sha256 } from '../canonical.js';
 import { unique } from '../context.js';
+import { inventorySourceId } from '../inventory.js';
 
 import type { CorpusEntry } from '@antica/contracts';
 
@@ -52,7 +53,8 @@ export function validateClaim(
       );
       if (
         claim.supportState === 'cited' &&
-        citation.value.relation === 'supports'
+        citation.value.relation === 'supports' &&
+        citation.source.id !== inventorySourceId
       ) {
         providers.add(citation.source.provider);
       }

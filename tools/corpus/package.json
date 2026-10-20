@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "inventory": "tsx --eval 'import { writeCorpusInventory } from \"./src/inventory-command.ts\"; writeCorpusInventory(process.argv[1]);' --",
     "build": "run build",
     "lint": "run lint --",
     "test": "run test --",

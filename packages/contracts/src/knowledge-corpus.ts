@@ -149,7 +149,9 @@ export const corpusEntrySchema = z.strictObject({
   contentSchemaVersion: z.literal(2),
   entryType: z.enum(['concept', 'method', 'object_example']),
   category: categorySchema,
-  titles: z.array(labelSchema).min(1),
+  titles: z
+    .array(labelSchema.extend({ editorial: z.literal(true).optional() }))
+    .min(1),
   aliases: z.array(labelSchema),
   topics: z.array(
     z.strictObject({

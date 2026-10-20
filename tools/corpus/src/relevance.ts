@@ -77,7 +77,7 @@ export async function runRelevanceCommand(
       '--owner-id',
       ownerId,
       '--release',
-      '1.0.0',
+      '1.0.1',
       '--request-key',
       randomUUID(),
     ]);

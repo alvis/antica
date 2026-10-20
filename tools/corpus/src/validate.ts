@@ -3,6 +3,7 @@ import { corpusFileSchema } from '@antica/contracts';
 import { canonicalJson } from './canonical.js';
 import { CorpusContext, indexFile } from './context.js';
 import { validateEntries, validateQueries } from './entries.js';
+import { validateCorpusInventory } from './inventory.js';
 import { validateManifest } from './manifest.js';
 import { validateSources } from './sources.js';
 import { validateTaxonomy } from './taxonomy.js';
@@ -60,6 +61,7 @@ export function validateCorpusDocuments(
     validateManifest(context, options.release);
     validateTaxonomy(context);
     validateSources(context);
+    validateCorpusInventory(context);
     validateEntries(context, options.minimumProviders ?? 2);
     validateQueries(context);
   }
