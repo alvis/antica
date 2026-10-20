@@ -29,7 +29,7 @@ export const KnowledgeContainer: FC = () => {
   const taxonomy = useKnowledgeTopics(state.topicId, state.filtersOpen);
 
   return (
-    <Screen title={t('knowledge')} action={<SettingsAction />}>
+    <Screen title={t('tabKnowledge')} action={<SettingsAction />}>
       <View testID="knowledge-search">
         <TextField
           label={t('search')}

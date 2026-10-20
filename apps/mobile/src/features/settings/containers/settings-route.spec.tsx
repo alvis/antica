@@ -91,7 +91,7 @@ describe('rc:SettingsRoute', () => {
   it('should show Traditional Chinese as the language of a new installation on an English phone', async () => {
     await renderSettings(memoryPreferences(null));
 
-    expect(screen.getByRole('header', { name: '設定' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: '我' })).toBeTruthy();
     expect(screen.getByText('語言 · 繁體中文')).toBeTruthy();
     expect(
       screen.getByText('只更改此裝置的介面語言，不會翻譯藏品內容或重新分析。'),
@@ -102,7 +102,7 @@ describe('rc:SettingsRoute', () => {
   it('should show the saved English choice in English', async () => {
     await renderSettings(savedPreferences('en'));
 
-    expect(screen.getByRole('header', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Me' })).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Language, English' }),
     ).toBeTruthy();
@@ -153,7 +153,7 @@ describe('Settings sign-out', () => {
     expect(authClient.signOut).toHaveBeenCalledTimes(1);
     expect(client.getQueryData(['records'])).toBeUndefined();
     expect(preferences.write).not.toHaveBeenCalled();
-    expect(screen.getByRole('header', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Me' })).toBeTruthy();
   });
 
   it('should leave the device signed out and clear private data when the server cannot end the session', async () => {
@@ -195,7 +195,7 @@ describe('Settings recovery', () => {
     );
     await fireEvent.press(screen.getByRole('button', { name: '重試' }));
 
-    expect(screen.getByRole('header', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Me' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 

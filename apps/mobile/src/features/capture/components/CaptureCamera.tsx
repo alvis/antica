@@ -1,6 +1,6 @@
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, styles } from '@antica/ui';
+import { colors, styles, theme } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -31,13 +31,15 @@ export type CaptureCameraProps = {
   onReview: () => void;
   onSwitch: () => void;
   onClose: () => void;
+  /** the assistant pill at the right end of the header, in its on-photo variant */
+  askAction?: ReactNode;
 };
 
 /** smallest touch target, in dp */
 const target = 48;
 
 const layout = StyleSheet.create({
-  frame: { flex: 1, backgroundColor: colors.jade },
+  frame: { flex: 1, backgroundColor: theme.color.camera.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -54,7 +56,13 @@ const layout = StyleSheet.create({
     paddingHorizontal: 8,
   },
   headerText: { color: colors.card, fontSize: 18, fontWeight: '700' },
-  title: { color: colors.card, fontSize: 20, fontWeight: '700' },
+  title: {
+    flex: 1,
+    textAlign: 'center',
+    color: colors.card,
+    fontSize: 20,
+    fontWeight: '700',
+  },
   viewfinder: { flex: 1, backgroundColor: '#000' },
   recordChip: {
     position: 'absolute',
@@ -121,16 +129,17 @@ const layout = StyleSheet.create({
 });
 
 /**
- * renders the camera header: close, title and the flash switch
+ * renders the camera header: close, title, the flash switch and the assistant pill
  * @param props flash state and handlers
  * @param props.flash whether the flash fires
  * @param props.onFlash toggles the flash
  * @param props.onClose leaves the camera
+ * @param props.askAction the assistant pill, at the right end
  * @returns the header row
  */
 const CameraHeader: FC<
-  Pick<CaptureCameraProps, 'flash' | 'onFlash' | 'onClose'>
-> = ({ flash, onFlash, onClose }) => {
+  Pick<CaptureCameraProps, 'flash' | 'onFlash' | 'onClose' | 'askAction'>
+> = ({ flash, onFlash, onClose, askAction }) => {
   const { t } = useLocale();
 
   return (
@@ -160,6 +169,7 @@ const CameraHeader: FC<
           {t('cameraFlash')}
         </Text>
       </Pressable>
+      {askAction}
     </View>
   );
 };

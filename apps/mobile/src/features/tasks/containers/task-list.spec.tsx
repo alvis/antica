@@ -1,7 +1,7 @@
 import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
-import TasksRoute from '../../../app/(private)/(tabs)/tasks';
+import TasksRoute from '../../../app/(private)/(tabs)/today';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));

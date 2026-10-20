@@ -35,6 +35,10 @@ const meta = {
     },
     disabled: { control: 'boolean', description: 'Prevents interaction' },
     secondary: { control: 'boolean', description: 'Uses the outlined style' },
+    loading: {
+      control: 'boolean',
+      description: 'Shows progress and blocks presses',
+    },
   },
   parameters: {
     docs: {
@@ -91,6 +95,12 @@ export const Disabled: Story = {
     await interactions.expectCallCount(args.onPress, 0);
     await interactions.expectVisibleText('Pressed 0 times');
   },
+};
+
+export const Loading: Story = {
+  args: { loading: true, onPress: fn<ActionButtonProps['onPress']>() },
+  render: (args) => <ActionDemo {...args} />,
+  play: Disabled.play,
 };
 
 const demoStyle = { gap: 12, padding: 24 };

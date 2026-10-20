@@ -14,7 +14,7 @@ import {
   observationSchema,
   referencePageSchema,
 } from '@antica/contracts';
-import { ActionButton, styles } from '@antica/ui';
+import { ActionButton, colors, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
@@ -193,6 +193,12 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
     <Screen
       title={record.data?.name ?? record.data?.code ?? t('collection')}
       subtitle={record.data?.code}
+      askContext={{
+        kind: 'record',
+        recordId,
+        name: record.data?.name ?? undefined,
+        code: record.data?.code,
+      }}
       scrollRef={scrollViewRef}>
       <QueryState
         loading={record.isPending}
@@ -358,7 +364,7 @@ export const RecordContainer: FC<RecordContainerProps> = ({ recordId }) => {
                       referenced
                         ? [
                             styles.card,
-                            { borderColor: '#173D35', borderWidth: 2 },
+                            { borderColor: colors.jade, borderWidth: 2 },
                           ]
                         : undefined
                     }>

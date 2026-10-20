@@ -50,7 +50,14 @@ export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
   const subject = title?.text ?? t('knowledge');
 
   return (
-    <Screen title={subject} scrollable={false}>
+    <Screen
+      title={subject}
+      askContext={
+        title
+          ? { kind: 'knowledge', entryId, title: title.text }
+          : { kind: 'none' }
+      }
+      scrollable={false}>
       <QueryState
         loading={detail.isPending}
         error={detail.error}

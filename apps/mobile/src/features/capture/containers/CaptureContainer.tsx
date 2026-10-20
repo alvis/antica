@@ -187,7 +187,12 @@ export const CaptureContainer: FC = () => {
   return (
     <Screen
       title={t('addItem')}
-      subtitle={draft.record ? draft.record.code : t('privateCollection')}>
+      subtitle={draft.record ? draft.record.code : t('privateCollection')}
+      askContext={{
+        kind: 'capture',
+        check:
+          actionLink.action?.instruction ?? `${t('addItem')} · ${step} / 6`,
+      }}>
       <Text style={styles.secondary}>{step} / 6</Text>
       {actionLink.linked && (
         <CaptureActionLink

@@ -2,6 +2,7 @@ import { expect, it, jest } from '@jest/globals';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { analysisRunDetailSchema } from '@antica/contracts';
+import { colors, theme } from '@antica/ui';
 
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
 import { runId } from '../../../saved-analysis.spec.fixtures';
@@ -106,8 +107,10 @@ it('should open capture pre-linked to a photo action, its run, and its check (C0
   const capture = screen.getByTestId(`analysis-action-capture-${actionId}`);
   const describe = screen.getByTestId(`analysis-action-describe-${actionId}`);
   // the photo answer leads for a photo action
-  expect(capture).toHaveStyle({ backgroundColor: '#173D35' });
-  expect(describe).toHaveStyle({ borderColor: '#173D35' });
+  expect(capture).toHaveStyle({ backgroundColor: colors.jade });
+  expect(describe).toHaveStyle({
+    borderColor: theme.state.button.secondary.default.border.color,
+  });
   await fireEvent.press(capture);
   await fireEvent.press(describe);
   await fireEvent.press(
@@ -133,7 +136,7 @@ it('should keep an action without a check actionable through unlinked capture (P
   expect(screen.queryByTestId(`analysis-action-check-${actionId}`)).toBeNull();
   const describe = screen.getByTestId(`analysis-action-describe-${actionId}`);
   // words lead for a describe action
-  expect(describe).toHaveStyle({ backgroundColor: '#173D35' });
+  expect(describe).toHaveStyle({ backgroundColor: colors.jade });
   await fireEvent.press(describe);
   await fireEvent.press(
     screen.getByTestId(`analysis-action-capture-${actionId}`),

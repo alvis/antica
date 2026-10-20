@@ -118,7 +118,7 @@ describe('Settings before sign-in', () => {
     await view;
 
     await waitFor(() =>
-      expect(screen.getByRole('header', { name: 'Settings' })).toBeTruthy(),
+      expect(screen.getByRole('header', { name: 'Me' })).toBeTruthy(),
     );
     expect(view.getPathname()).toBe('/settings');
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();

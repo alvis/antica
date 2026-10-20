@@ -37,7 +37,10 @@ export const RecordHistoryContainer: FC<RecordHistoryContainerProps> = ({
   const entries = history.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <Screen title={t('changeHistory')} scrollable={false}>
+    <Screen
+      title={t('changeHistory')}
+      askContext={{ kind: 'record', recordId }}
+      scrollable={false}>
       <QueryState
         loading={history.isPending}
         // a failed older page keeps the entries already shown

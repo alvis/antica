@@ -60,6 +60,8 @@ export interface MessageComposerOptions {
   /** the record as the screen currently shows it */
   record: RecordDetail | undefined;
   t: (key: MessageKey) => string;
+  /** unsent words the composer starts with; the collector still presses Send */
+  initialText?: string;
 }
 
 /**
@@ -108,9 +110,9 @@ function nextPost(
 export function useMessageComposer(
   options: MessageComposerOptions,
 ): MessageComposer {
-  const { api, recordId, record, t } = options;
+  const { api, recordId, record, t, initialText } = options;
   const queryClient = useQueryClient();
-  const draft = useComposerDraft(t);
+  const draft = useComposerDraft(t, initialText);
   const knowledge = useKnowledgeAttachments(draft.busy);
   const voice = useVoiceMessage({
     api,

@@ -93,6 +93,25 @@ export const SingleLine: Story = {
   },
 };
 
+export const Invalid: Story = {
+  args: {
+    error: 'Name needs review',
+    onChangeText: fn<TextFieldProps['onChangeText']>(),
+  },
+  render: (args) => <FieldDemo {...args} />,
+  play: async (context) => {
+    await SingleLine.play?.(context);
+    const {
+      interactions: suppliedInteractions,
+    }: LoadedInteractions<FieldInteractions> = context.loaded;
+    const interactions =
+      suppliedInteractions ??
+      createDomFieldInteractions(context.canvasElement, context.args.label);
+
+    await interactions.expectVisibleText('Name needs review');
+  },
+};
+
 export const Multiline: Story = {
   args: {
     multiline: true,

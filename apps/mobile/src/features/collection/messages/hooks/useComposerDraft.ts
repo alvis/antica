@@ -26,12 +26,16 @@ interface ComposerDraft {
 /**
  * Retains network retries while treating restored history as a fresh collector draft.
  * @param t translations for the source reattachment hint
+ * @param initialText unsent words to start from, such as a question picked in the ask sheet
  * @returns draft state and explicit lifecycle actions
  */
 export function useComposerDraft(
   t: (key: MessageKey) => string,
+  initialText = '',
 ): ComposerDraft {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() =>
+    initialText.slice(0, recordMessageBodyMaxLength),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [restored, setRestored] = useState(false);

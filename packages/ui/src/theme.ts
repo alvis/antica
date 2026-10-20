@@ -1,82 +1,129 @@
 import { StyleSheet } from 'react-native';
 
-/** color tokens shared by collection components */
-export const colors = {
-  canvas: '#F6F3EB',
-  card: '#FFFEFA',
-  jade: '#173D35',
-  text: '#263D35',
-  muted: '#62695F',
-  border: '#D8DBCE',
-  error: '#9A3831',
-  warning: '#8C6125',
+import { componentStates } from './theme-states.js';
+import {
+  border,
+  color,
+  elevation,
+  focus,
+  font,
+  motion,
+  radius,
+  size,
+  space,
+  type,
+} from './tokens.js';
+
+/** the approved 宣紙墨綠 theme: foundation tokens plus each component's states */
+export const theme = {
+  color,
+  font,
+  type,
+  space,
+  radius,
+  border,
+  elevation,
+  size,
+  motion,
+  focus,
+  state: componentStates,
 } as const;
 
-/** shared native styles for collection controls and content */
+/** the theme's shape, for consumers that receive it as a value */
+export type Theme = typeof theme;
+
+/**
+ * earlier colour names mapped onto the theme, so screens not yet rebuilt take on 宣紙墨綠
+ */
+export const colors = {
+  canvas: color.bg.page,
+  card: color.bg.surface,
+  jade: color.action.primary,
+  text: color.text.primary,
+  muted: color.text.secondary,
+  border: color.border.subtle,
+  error: color.status.danger,
+  warning: color.status.warning,
+} as const;
+
+const { button, textInput } = componentStates;
+
+/** shared native styles for screens that have not moved to the primitives yet */
 export const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: color.bg.page },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
+    paddingHorizontal: space.page,
+    paddingTop: space[8],
     paddingBottom: 120,
-    gap: 24,
+    gap: space.section,
   },
   card: {
-    backgroundColor: colors.card,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    gap: 12,
+    backgroundColor: color.bg.surface,
+    borderRadius: radius.card,
+    padding: space.card,
+    gap: space.stack,
+    ...elevation.card,
   },
-  title: { color: colors.jade, fontSize: 28, fontWeight: '700' },
-  heading: { color: colors.jade, fontSize: 22, fontWeight: '700' },
-  body: { color: colors.text, fontSize: 16, lineHeight: 24 },
-  secondary: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-  error: { color: colors.error, fontSize: 16, lineHeight: 24 },
-  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  title: { ...type.display, color: color.text.primary },
+  heading: { ...type.section, color: color.text.primary },
+  body: { ...type.body, color: color.text.primary },
+  secondary: { ...type.body2, color: color.text.secondary },
+  error: { ...type.body, color: color.status.danger },
+  row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: space[8],
+  },
   field: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text,
+    minHeight: textInput.height,
+    borderWidth: border.input.width,
+    borderColor: border.input.color,
+    borderRadius: textInput.radius,
+    backgroundColor: textInput.default.bg,
+    paddingHorizontal: textInput.paddingH,
+    paddingVertical: space[12],
+    color: textInput.default.fg,
+    fontFamily: font.family.sans,
     fontSize: 16,
   },
-  label: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  label: { ...type.label, color: color.text.secondary },
   button: {
-    minHeight: 48,
-    backgroundColor: colors.jade,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: button.height,
+    backgroundColor: button.primary.default.bg,
+    borderRadius: button.radius,
+    paddingHorizontal: button.paddingH,
+    paddingVertical: space[12],
+    flexDirection: 'row',
+    gap: space[8],
     justifyContent: 'center',
     alignItems: 'center',
   },
   buttonText: {
-    color: colors.card,
-    fontSize: 16,
-    fontWeight: '700',
+    ...type.button,
+    color: button.primary.default.fg,
     textAlign: 'center',
   },
   secondaryButton: {
-    minHeight: 48,
-    borderColor: colors.jade,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: button.height,
+    backgroundColor: button.secondary.default.bg,
+    borderColor: button.secondary.default.border.color,
+    borderWidth: button.secondary.default.border.width,
+    borderRadius: button.radius,
+    paddingHorizontal: button.paddingH,
+    paddingVertical: space[12],
+    flexDirection: 'row',
+    gap: space[8],
     justifyContent: 'center',
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: colors.jade,
-    fontSize: 16,
-    fontWeight: '700',
+    ...type.button,
+    color: button.secondary.default.fg,
     textAlign: 'center',
   },
-  divider: { height: 1, backgroundColor: colors.border },
+  divider: {
+    height: border.hairline.width,
+    backgroundColor: color.border.subtle,
+  },
 });

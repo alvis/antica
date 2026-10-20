@@ -14,6 +14,11 @@ import {
 
 import type { FC } from 'react';
 
+import type {
+  InterfaceLanguageState,
+  LocaleState,
+} from '../../../providers/LocaleProvider';
+
 const layout = StyleSheet.create({
   languageRow: {
     minHeight: 48,
@@ -26,19 +31,57 @@ const layout = StyleSheet.create({
 });
 
 /**
- * shows the device's interface language and the existing account action; it is reachable only
- * after sign-in, from the gear in each main tab
+ * names the saved interface language, or Follow system with the language it resolved to
+ * @param language the saved and resolved interface language
+ * @param language.saved the saved preference
+ * @param language.resolved the locale in effect
+ * @param t translator for the Follow system label
+ * @returns the label shown on the language row
+ */
+function describeLanguageChoice(
+  { saved, resolved }: Pick<InterfaceLanguageState, 'saved' | 'resolved'>,
+  t: LocaleState['t'],
+): string {
+  return saved.interfaceLanguage === 'system'
+    ? `${t('followSystem')} · ${localeAutonyms[resolved.locale]}`
+    : localeAutonyms[saved.interfaceLanguage];
+}
+
+/**
+ * the row that opens research notes, which v5 keeps under 我 instead of a tab
+ * @returns a card with one chevron row
+ */
+const ResearchLink: FC = () => {
+  const router = useRouter();
+  const { t } = useLocale();
+
+  return (
+    <View style={styles.card}>
+      <Pressable
+        testID="settings-research"
+        accessibilityRole="button"
+        accessibilityLabel={t('researchRecords')}
+        onPress={() => router.push('/research')}
+        style={layout.languageRow}>
+        <Text style={styles.heading}>{t('researchRecords')}</Text>
+        <Text style={layout.chevron}>›</Text>
+      </Pressable>
+    </View>
+  );
+};
+
+/**
+ * shows the device's interface language, research notes and the account action; it is the 我 tab
+ * and is also reachable after sign-in from the gear in the other main tabs
  * @returns the Settings home
  */
 export const SettingsContainer: FC = () => {
   const router = useRouter();
   const { phone, signOut } = useAuth();
   const { t } = useLocale();
-  const { saved, resolved, status, retryRead } = useInterfaceLanguage();
-  const choice =
-    saved.interfaceLanguage === 'system'
-      ? `${t('followSystem')} · ${localeAutonyms[resolved.locale]}`
-      : localeAutonyms[saved.interfaceLanguage];
+  const language = useInterfaceLanguage();
+  const { status, retryRead } = language;
+  const choice = describeLanguageChoice(language, t);
 
   // the language preference lives on the device and survives sign-out; the session provider
   // clears private data, and signs out locally even when the server cannot be reached
@@ -52,7 +95,7 @@ export const SettingsContainer: FC = () => {
   };
 
   return (
-    <Screen title={t('settings')}>
+    <Screen title={t('tabMe')}>
       <View style={styles.card}>
         <Pressable
           testID="settings-language"
@@ -79,6 +122,7 @@ export const SettingsContainer: FC = () => {
           </>
         )}
       </View>
+      <ResearchLink />
       <View style={styles.card}>
         <Text style={styles.heading}>{t('session')}</Text>
         <Text style={styles.body}>

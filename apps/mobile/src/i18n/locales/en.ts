@@ -604,4 +604,67 @@ export const en = {
   retryUpload: 'Retry upload',
   mediaCount_one: '{{count}} photo or video uploaded',
   mediaCount_other: '{{count}} photos and videos uploaded',
+  tabToday: 'Today',
+  tabCollection: 'Collection',
+  tabKnowledge: 'Knowledge',
+  tabMe: 'Me',
+  researchRecords: 'Research notes',
+  askAssistant: 'Ask',
+  askClose: 'Close',
+  askAboutScreen: 'About this screen',
+  askAboutRecord: 'About this item',
+  askAboutSuggestion: 'About this suggestion',
+  askAboutEntry: 'About this entry',
+  askAboutCapture: 'About the shot list',
+  askAttachedNone: 'Nothing attached',
+  askAttachedRecord: 'Attached: item {{id}}',
+  askAttachedSuggestion_one:
+    'Attached: the {{field}} suggestion and {{count}} piece of evidence',
+  askAttachedSuggestion_other:
+    'Attached: the {{field}} suggestion and {{count}} pieces of evidence',
+  askAttachedEntry: 'Attached: entry {{id}}',
+  askAttachedCapture: 'Current: {{check}}',
+  askIntro:
+    'What would you like to know about this screen? I answer only from saved museum sources, cite every sentence, and never change your data.',
+  askSuggested: 'You could ask',
+  askMessageHint:
+    "Opens this item's conversation with the question filled in; nothing is sent until you press Send.",
+  askHelpTag: 'How-to · not collection knowledge',
+  askSearching: 'Searching saved sources…',
+  askSourcesLine: 'Based on: {{sources}}',
+  askNoSources:
+    "Nothing in the saved sources answers this, and I won't fill the gap myself.",
+  askSearchFailed: 'The knowledge base could not be searched. Try again.',
+  askNeverWrites:
+    "I don't write to your records. Changes only come as edit cards or as suggestions you tick in the analysis results, and each one needs your confirmation.",
+  askRecordSimilar: 'How does this item compare with museum records?',
+  askRecordMissingPhotos: 'Which photos are still missing to judge the date?',
+  askRecordWrite: 'Write the date into the record for me',
+  askSuggestionWhy: 'Why change {{field}}?',
+  askSuggestionEvidence: 'Is the evidence for this suggestion enough?',
+  askSuggestionApply: 'Just apply this suggestion for me',
+  askEntryRelated: 'Which other museum records relate to this?',
+  askEntryAuthenticate: 'Can this entry authenticate my item?',
+  askEntryAuthenticateAnswer:
+    'No. An entry gathers what museums say about their own objects; it does not authenticate yours, and the judgement stays with you. To compare, cite this entry in the item’s conversation.',
+  askCaptureBase: 'What should a base photo show?',
+  askCaptureBaseQuery: 'base',
+  askCaptureScale: 'Should I include a ruler?',
+  askCaptureScaleAnswer:
+    'Yes. Put a ruler beside the object and shoot from straight above, so sizes are measured rather than estimated.',
+  askCaptureVideo: 'Burst or video?',
+  askCaptureVideoAnswer:
+    'Use photos or bursts for details; to show the overall shape, circle the object in a 10-second video.',
+  askGeneralRu: 'What physical features mark Ru ware?',
+  askGeneralRuQuery: 'Ru ware',
+  askGeneralHuanghuali:
+    'Does “huanghuali” in a museum record identify the wood?',
+  askGeneralHuanghualiQuery: 'huanghuali',
+  askGeneralWrites: 'Will you change my records?',
+  askLoginCode: "What if the WhatsApp code doesn't arrive?",
+  askLoginCodeAnswer:
+    'Check that WhatsApp is signed in with the same number, then request a new code after a short wait.',
+  askLoginApproved: 'Why only approved numbers?',
+  askLoginApprovedAnswer:
+    'antica is a private catalogue for you alone. Only pre-approved numbers can sign in, and nothing is published.',
 } as const satisfies Dictionary;

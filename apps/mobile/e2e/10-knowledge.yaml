@@ -42,7 +42,8 @@ appId: ${APP_ID}
             id: collection-add-item
           timeout: 60000
       - runFlow: support/dismiss-dev-logbox.yaml
-      - tapOn: ${KNOWLEDGE_TAB}
+      - tapOn:
+          id: tab-knowledge
       - extendedWaitUntil:
           visible:
             id: knowledge-category-${CATEGORY_ID}
@@ -86,6 +87,11 @@ appId: ${APP_ID}
       - tapOn:
           id: knowledge-category-${CATEGORY_ID}
       - tapOn: ${HIDE_FILTERS}
+      - scrollUntilVisible:
+          element:
+            id: knowledge-search
+          direction: UP
+          timeout: 30000
       - tapOn:
           id: knowledge-search
           point: 80%,75%
@@ -103,6 +109,11 @@ appId: ${APP_ID}
             id: knowledge-search
           direction: UP
           timeout: 60000
+      - scrollUntilVisible:
+          element:
+            id: knowledge-search
+          direction: UP
+          timeout: 30000
       - tapOn:
           id: knowledge-search
           point: 80%,75%

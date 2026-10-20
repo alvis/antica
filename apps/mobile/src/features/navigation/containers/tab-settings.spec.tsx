@@ -3,8 +3,8 @@ import { fireEvent, screen } from '@testing-library/react-native';
 
 import CollectionRoute from '../../../app/(private)/(tabs)/collection';
 import KnowledgeRoute from '../../../app/(private)/(tabs)/knowledge';
-import ResearchRoute from '../../../app/(private)/(tabs)/research';
-import TasksRoute from '../../../app/(private)/(tabs)/tasks';
+import MeRoute from '../../../app/(private)/(tabs)/me';
+import TodayRoute from '../../../app/(private)/(tabs)/today';
 import { renderMobile, savedLanguage } from '../../../mobile.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
@@ -18,9 +18,8 @@ jest.mock(
 
 it.each([
   { tab: 'Collection', route: <CollectionRoute /> },
-  { tab: 'Tasks', route: <TasksRoute /> },
+  { tab: 'Today', route: <TodayRoute /> },
   { tab: 'Knowledge', route: <KnowledgeRoute /> },
-  { tab: 'Research', route: <ResearchRoute /> },
 ])(
   'should open Settings from the $tab tab header gear in each language',
   async ({ route }) => {
@@ -42,3 +41,11 @@ it.each([
     expect(traditional.router.push).toHaveBeenCalledWith('/settings');
   },
 );
+
+it('should open research notes from the Me tab, now that research is not a tab', async () => {
+  const me = await renderMobile(<MeRoute />, { get: async () => ({}) });
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Research notes' }));
+
+  expect(me.router.push).toHaveBeenCalledWith('/research');
+});

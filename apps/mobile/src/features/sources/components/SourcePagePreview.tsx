@@ -2,7 +2,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useState } from 'react';
 import { Image, Platform, Pressable, Text, View } from 'react-native';
 
-import { ActionButton, styles } from '@antica/ui';
+import { ActionButton, colors, styles } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -149,7 +149,7 @@ export const SourcePagePreview: FC<SourcePagePreviewProps> = ({
               width: crop.width * displayWidth,
               height: crop.height * displayHeight,
               borderWidth: 3,
-              borderColor: '#173D35',
+              borderColor: colors.jade,
             }}
           />
         )}
