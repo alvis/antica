@@ -8,6 +8,7 @@ import { createCorpusConnection } from '../../../packages/platform/src/database/
 import { createCorpusInstallRepository } from '../../../packages/platform/src/database/repositories/corpus-install.js';
 
 import { readCorpusDirectory } from './cli.js';
+import { selectCorpusReleaseDocuments } from './release-selection.js';
 import { validateCorpusDocuments } from './validate.js';
 
 import type { CorpusInstallRequest } from '../../../packages/application/src/knowledge/corpus-install.js';
@@ -64,7 +65,7 @@ export function loadCorpusInstallRequest(
       .join('\n');
     throw new Error(`Corpus validation failed: ${diagnostics}`);
   }
-  const files = documents
+  const files = selectCorpusReleaseDocuments(documents, values.release)
     .filter((document) => document.path.endsWith('.json'))
     .map((document) => corpusFileSchema.parse(JSON.parse(document.text)));
   const release = files.find(

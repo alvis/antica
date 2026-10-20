@@ -10,6 +10,9 @@ import type {
   StructuredSourceSnapshot,
 } from '@antica/contracts';
 
+/** source-page fallback key outside the namespaced corpus content-ID space */
+export const corpusSourcePageLocatorKey = 'source-page';
+
 type Citation = KnowledgeContentEnvelopeV2['citations'][number];
 type Image = KnowledgeContentEnvelopeV2['images'][number];
 /** owner-scoped immutable evidence identities and envelope conversion */
@@ -82,7 +85,10 @@ function sourceSnapshot(source: CorpusSource): StructuredSourceSnapshot {
   return {
     ...identity,
     sourceHash: canonicalHash(identity),
-    sourcePageUrl: source.locators[0]!.url,
+    sourcePageUrl:
+      source.locators[0]?.kind === 'page'
+        ? source.sourcePageUrl
+        : (source.locators[0]?.url ?? source.sourcePageUrl),
     retrievedAt: source.retrievedAt,
     payload: source.payload,
     observedRights: [
@@ -107,14 +113,25 @@ function convertCitation(
     (item) => item.id === citation.locatorId,
   )!;
   const location =
-    locator.kind === 'web'
+    locator.kind === 'page'
       ? {
-          kind: locator.kind,
-          url: locator.url,
-          retrievedAt: locator.retrievedAt,
+          kind: 'web' as const,
+          url: source.sourcePageUrl,
+          retrievedAt: source.retrievedAt,
+          section:
+            locator.pageIndex === undefined
+              ? `Printed page ${locator.printedPageLabel}; scan index unverified`
+              : `Printed page ${locator.printedPageLabel ?? 'unlabelled'}; scan index ${locator.pageIndex}`,
           excerpt: locator.excerpt,
         }
-      : locator;
+      : locator.kind === 'web'
+        ? {
+            kind: locator.kind,
+            url: locator.url,
+            retrievedAt: locator.retrievedAt,
+            excerpt: locator.excerpt,
+          }
+        : locator;
 
   return {
     id: ids.childId(source, citation.id),
@@ -132,7 +149,10 @@ function convertCitation(
       id: ids.sourceId(source),
       versionId: ids.versionId(source),
       title: source.title,
-      canonicalUrl: source.locators[0]!.url,
+      canonicalUrl:
+        source.locators[0]?.kind === 'page'
+          ? source.sourcePageUrl
+          : (source.locators[0]?.url ?? source.sourcePageUrl),
       languages: source.languages,
       contributors: source.contributors,
       structuredSnapshot: ids.snapshot(source),
@@ -151,14 +171,25 @@ function convertImage(
   image: CorpusSource['images'][number],
   ids: Omit<CorpusContent, 'entry'>,
 ): Image {
-  const { id, remoteUrl, rights, locatorId, ...metadata } = image;
+  const {
+    id,
+    remoteUrl,
+    rights,
+    locatorId,
+    showable: _showable,
+    role: _role,
+    ...metadata
+  } = image;
 
   return {
     ...metadata,
     id: ids.childId(source, id),
     imageUrl: remoteUrl,
     sourceVersionId: ids.versionId(source),
-    locatorId: ids.childId(source, locatorId ?? source.locators[0]!.id),
+    locatorId: ids.childId(
+      source,
+      locatorId ?? source.locators[0]?.id ?? corpusSourcePageLocatorKey,
+    ),
     ...(rights ? { observedRights: rights } : {}),
   };
 }

@@ -3,29 +3,31 @@ import { corpusFileSchema } from '@antica/contracts';
 import { canonicalJson } from './canonical.js';
 import { CorpusContext, indexFile } from './context.js';
 import { validateEntries, validateQueries } from './entries.js';
+import { validateGuides } from './guides.js';
 import { validateCorpusInventory } from './inventory.js';
 import { validateManifest } from './manifest.js';
+import { selectCorpusReleaseDocuments } from './release-selection.js';
 import { validateSources } from './sources.js';
 import { validateTaxonomy } from './taxonomy.js';
 
-/** Exact UTF-8 content and a path relative to the corpus directory. */
+/** exact UTF-8 content and a path relative to the corpus directory */
 export interface CorpusDocument {
   path: string;
   text: string;
 }
-/** Release selection and supporting-provider diversity policy. */
+/** release selection and supporting-provider diversity policy */
 export interface CorpusValidationOptions {
   release?: string;
   minimumProviders?: number;
 }
-/** A stable failure code with a human-readable file and JSON location. */
+/** A stable failure code with a human-readable file and JSON location */
 export interface CorpusIssue {
   file: string;
   path: string;
   code: string;
   message: string;
 }
-/** Validation diagnostics and measured corpus inventory. */
+/** validation diagnostics and measured corpus inventory */
 export interface CorpusValidationResult {
   issues: CorpusIssue[];
   counts: {
@@ -39,7 +41,7 @@ export interface CorpusValidationResult {
 }
 
 /**
- * Validates a complete offline release and returns file-local diagnostics.
+ * validates a complete offline release and returns file-local diagnostics
  * @param documents all corpus files, including README and release manifest
  * @param options selected version and minimum independent supporting providers
  * @returns deterministic issues and inventory counts
@@ -48,8 +50,12 @@ export function validateCorpusDocuments(
   documents: readonly CorpusDocument[],
   options: CorpusValidationOptions = {},
 ): CorpusValidationResult {
-  const context = new CorpusContext(documents);
-  for (const document of [...documents].sort((left, right) =>
+  const selectedDocuments = selectCorpusReleaseDocuments(
+    documents,
+    options.release,
+  );
+  const context = new CorpusContext(selectedDocuments);
+  for (const document of [...selectedDocuments].sort((left, right) =>
     left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
   )) {
     if (!document.path.endsWith('.json')) {
@@ -64,6 +70,7 @@ export function validateCorpusDocuments(
     validateCorpusInventory(context);
     validateEntries(context, options.minimumProviders ?? 2);
     validateQueries(context);
+    validateGuides(context);
   }
 
   return {
@@ -88,7 +95,7 @@ export function validateCorpusDocuments(
 }
 
 /**
- * Parses one strict JSON file before indexing any references.
+ * parses one strict JSON file before indexing any references
  * @param context indexed corpus and diagnostic collector
  * @param document exact JSON bytes and corpus-relative path
  */

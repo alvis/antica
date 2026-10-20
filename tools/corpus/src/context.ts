@@ -1,5 +1,6 @@
 import type {
   CorpusEntry,
+  CorpusExaminationGuide,
   CorpusFile,
   CorpusQueries,
   CorpusRelease,
@@ -9,7 +10,7 @@ import type {
 
 import type { CorpusDocument, CorpusIssue } from './validate.js';
 
-/** A typed corpus record with a diagnostic location. */
+/** A typed corpus record with a diagnostic location */
 export interface Located<T> {
   file: string;
   path: string;
@@ -23,12 +24,13 @@ export interface SourceChild<T> extends Located<T> {
   source: CorpusSource;
 }
 
-/** Indexed references and the deterministic diagnostic collector. */
+/** indexed references and the deterministic diagnostic collector */
 export class CorpusContext {
   public readonly issues: CorpusIssue[] = [];
   public readonly identities = new Set<string>();
   public readonly topics = new Map<string, Located<Topic>>();
   public readonly sources = new Map<string, Located<CorpusSource>>();
+  public readonly guides = new Map<string, Located<CorpusExaminationGuide>>();
   public readonly entries = new Map<string, Located<CorpusEntry>>();
   public readonly citations = new Map<string, SourceChild<Citation>>();
   public readonly locators = new Map<string, SourceChild<Locator>>();
@@ -46,7 +48,7 @@ export class CorpusContext {
   }
 
   /**
-   * Records a failed invariant at its owning file and JSON path.
+   * records a failed invariant at its owning file and JSON path
    * @param condition whether the required invariant holds
    * @param location owning file and JSON path for diagnostics
    * @param problem stable failure code and human-readable explanation
@@ -66,7 +68,7 @@ export class CorpusContext {
   }
 
   /**
-   * Registers a globally unique content identity.
+   * registers a globally unique content identity
    * @param id stable namespaced content identity
    * @param location owning file and JSON path for diagnostics
    */
@@ -80,7 +82,7 @@ export class CorpusContext {
 }
 
 /**
- * Indexes validated files and their globally named records.
+ * indexes validated files and their globally named records
  * @param context reference graph under construction
  * @param record parsed file and its location
  */
@@ -115,6 +117,9 @@ export function indexFile(
         path: '$',
       });
       break;
+    case 'examination_guide':
+      addRecord(context, context.guides, { ...record, value: file });
+      break;
     case 'release':
       context.releases.push({ ...record, value: file });
       break;
@@ -131,7 +136,7 @@ export function indexFile(
 }
 
 /**
- * Registers an identified node and retains its file location.
+ * registers an identified node and retains its file location
  * @param context indexed corpus and diagnostic collector
  * @param index record lookup receiving this identity
  * @param record typed evidence and its owning diagnostic location
@@ -146,7 +151,7 @@ function addRecord<T extends { id: string }>(
 }
 
 /**
- * Registers source-owned locators, citations and images.
+ * registers source-owned locators, citations and images
  * @param context indexed corpus and diagnostic collector
  * @param source immutable provider snapshot and associated evidence
  * @param file owning corpus document path
@@ -173,7 +178,7 @@ function indexSourceChildren(
 }
 
 /**
- * Rejects repeated references or local identities with one diagnostic.
+ * rejects repeated references or local identities with one diagnostic
  * @param context indexed corpus and diagnostic collector
  * @param values references or local identities being checked
  * @param location owning file and JSON path for diagnostics

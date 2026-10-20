@@ -26,6 +26,11 @@ import { createKnowledgeV2Repository } from '../../../packages/platform/src/data
 import { canonicalJson, sha256 } from './canonical.js';
 import { createCorpusFixture } from './fixtures/corpus.js';
 import {
+  createGuideCorpusFixture,
+  createGuideFixture,
+  writeGuideCorpusFixture,
+} from './fixtures/guides.js';
+import {
   loadCorpusInstallRequest,
   runCorpusInstallCommand,
 } from './install.js';
@@ -57,6 +62,250 @@ const it = test.extend<{ connection: DatabaseConnection }>({
 });
 
 describe('fn:installCorpusRelease', { timeout: 120_000 }, () => {
+  it('should install and retry a source-page-only guide image without inventing evidence or uploaded assets', async ({
+    connection,
+  }) => {
+    const fixture = createGuideFixture();
+    fixture.source.locators = [];
+    fixture.source.citations = [];
+    delete fixture.source.images[0]!.locatorId;
+    const check = fixture.guide.checks[0]!;
+    check.statements = check.statements.map((statement) => ({
+      ...statement,
+      supportState: 'needs_source',
+      citationIds: [],
+    }));
+    check.gap = {
+      fields: ['what', 'why', 'howToSee', 'typical', 'warningSigns'],
+      need: 'Locate supporting text; the captured photograph alone is not a citation.',
+    };
+    const directory = writeGuideCorpusFixture(
+      createGuideCorpusFixture(fixture),
+    );
+    try {
+      const loaded = loadCorpusInstallRequest([
+        '--owner-id',
+        randomUUID(),
+        '--request-key',
+        randomUUID(),
+        '--dir',
+        directory,
+        '--release',
+        '1.1.0',
+      ]);
+      const request = {
+        ...loaded,
+        release: { ...loaded.release, corpusId: `antica:test:${randomUUID()}` },
+      };
+
+      const plan = await installCorpusRelease(
+        request,
+        createCorpusInstallRepository(connection.db),
+      );
+      const content = createCorpusContent(request.ownerId, request.sources);
+      const sourceId = content.sourceId(fixture.source);
+      const sourceVersionId = content.versionId(fixture.source);
+      const image = await connection.db.referenceImages.findUniqueOrThrow({
+        where: {
+          id: content.childId(fixture.source, fixture.source.images[0]!.id),
+        },
+      });
+      expect(image).toMatchObject({
+        sourceVersionId,
+        externalImageUrl: fixture.source.images[0]!.remoteUrl,
+        sourcePageUrl: fixture.source.sourcePageUrl,
+        figureRegionId: null,
+        storedDerivativeId: null,
+      });
+      expect(
+        await connection.db.sources.findUniqueOrThrow({
+          where: { id: sourceId },
+        }),
+      ).toMatchObject({
+        canonicalUrl: fixture.source.sourcePageUrl,
+      });
+      expect(content.snapshot(fixture.source)).toMatchObject({
+        sourcePageUrl: fixture.source.sourcePageUrl,
+        retrievedAt: fixture.source.retrievedAt,
+      });
+      expect(
+        await connection.db.sourceLocators.findMany({
+          where: { sourceVersionId },
+        }),
+      ).toEqual([
+        expect.objectContaining({
+          id: image.locatorId,
+          sourceId,
+          sourceVersionId,
+          kind: 'web',
+          url: fixture.source.sourcePageUrl,
+          retrievedAt: new Date(fixture.source.retrievedAt),
+          pageId: null,
+          pageIndex: null,
+          printedPageLabel: null,
+          canonicalViewId: null,
+        }),
+      ]);
+      expect(
+        await connection.db.citations.count({
+          where: { sourceLocators: { sourceId } },
+        }),
+      ).toBe(0);
+      expect(
+        await connection.db.sourcePages.count({ where: { sourceVersionId } }),
+      ).toBe(0);
+      expect(
+        await connection.db.mediaAssets.count({
+          where: { ownerId: request.ownerId },
+        }),
+      ).toBe(0);
+      expect(plan.items.map((item) => item.contentId).sort()).toEqual(
+        request.entries.map((entry) => entry.id).sort(),
+      );
+      expect(
+        await connection.db.knowledgeEntries.count({
+          where: { ownerId: request.ownerId },
+        }),
+      ).toBe(request.entries.length);
+      expect(
+        await connection.db.knowledgeEntries.findUnique({
+          where: { id: corpusId(request.ownerId, fixture.guide.id) },
+        }),
+      ).toBeNull();
+      const beforeRetry = await countRows(connection.db, request.ownerId);
+
+      const repeated = await installCorpusRelease(
+        request,
+        createCorpusInstallRepository(connection.db),
+      );
+
+      expect(repeated).toMatchObject({
+        installId: plan.installId,
+        completed: true,
+      });
+      expect(await countRows(connection.db, request.ownerId)).toEqual(
+        beforeRetry,
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('should install synthetic guide page evidence without creating a guide draft or uploaded page', async ({
+    connection,
+  }) => {
+    const fixture = createGuideFixture();
+    fixture.source.locators = [
+      {
+        kind: 'page',
+        id: fixture.source.locators[0]!.id,
+        pageId: 'antica:page:printed-xvii',
+        printedPageLabel: 'xvii',
+        excerpt: fixture.source.citations[0]!.quote,
+      },
+    ];
+    const directory = writeGuideCorpusFixture(
+      createGuideCorpusFixture(fixture),
+    );
+    try {
+      const args = [
+        '--owner-id',
+        randomUUID(),
+        '--request-key',
+        randomUUID(),
+        '--dir',
+        directory,
+      ];
+      const legacy = loadCorpusInstallRequest([...args, '--release', '1.0.0']);
+      const current = loadCorpusInstallRequest([...args, '--release', '1.1.0']);
+      const corpusIdentity = `antica:test:${randomUUID()}`;
+      const legacyRequest = {
+        ...legacy,
+        release: { ...legacy.release, corpusId: corpusIdentity },
+      };
+      const currentRequest = {
+        ...current,
+        requestKey: randomUUID(),
+        release: { ...current.release, corpusId: corpusIdentity },
+      };
+      const content = createCorpusContent(current.ownerId, current.sources);
+      const sourceId = content.sourceId(fixture.source);
+
+      await installCorpusRelease(
+        legacyRequest,
+        createCorpusInstallRepository(connection.db),
+      );
+      expect(
+        await connection.db.sources.findUnique({ where: { id: sourceId } }),
+      ).toBeNull();
+      const plan = await installCorpusRelease(
+        currentRequest,
+        createCorpusInstallRepository(connection.db),
+      );
+      expect(plan.items.map((item) => item.contentId).sort()).toEqual(
+        current.entries.map((entry) => entry.id).sort(),
+      );
+      expect(
+        await connection.db.knowledgeEntries.count({
+          where: { ownerId: current.ownerId },
+        }),
+      ).toBe(current.entries.length);
+      expect(
+        await connection.db.knowledgeEntries.findUnique({
+          where: { id: corpusId(current.ownerId, fixture.guide.id) },
+        }),
+      ).toBeNull();
+      expect(
+        await connection.db.sourceLocators.findUniqueOrThrow({
+          where: {
+            id: content.childId(fixture.source, fixture.source.locators[0]!.id),
+          },
+        }),
+      ).toMatchObject({
+        kind: 'web',
+        sourceId,
+        url: fixture.source.sourcePageUrl,
+        printedPageLabel: 'xvii',
+        pageIndex: null,
+        pageId: null,
+        excerptAsRetrieved: fixture.source.citations[0]!.quote,
+      });
+      expect(
+        await connection.db.sourcePages.count({
+          where: { sourceVersionId: content.versionId(fixture.source) },
+        }),
+      ).toBe(0);
+      expect(
+        await connection.db.citations.findUniqueOrThrow({
+          where: {
+            id: content.childId(
+              fixture.source,
+              fixture.source.citations[0]!.id,
+            ),
+          },
+        }),
+      ).toMatchObject({
+        locatorId: content.childId(
+          fixture.source,
+          fixture.source.locators[0]!.id,
+        ),
+        availability: 'link_only',
+        verification: 'located',
+        relation: 'supports',
+      });
+      const beforeRetry = await countRows(connection.db, current.ownerId);
+      await installCorpusRelease(
+        currentRequest,
+        createCorpusInstallRepository(connection.db),
+      );
+      expect(await countRows(connection.db, current.ownerId)).toEqual(
+        beforeRetry,
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('should install the real corpus exclusively as owner drafts and retry without adding rows', async ({
     connection,
   }) => {

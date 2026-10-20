@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { nullableJson } from '../json.js';
 
+import { corpusSourcePageLocatorKey } from './corpus-content.js';
 import { createStructuredSourceVersion } from './structured-sources.js';
 
 import type { CorpusSource } from '@antica/contracts';
@@ -70,7 +71,10 @@ async function writeBibliography(
   const sourceId = content.sourceId(source);
   const bibliography = {
     title: source.title,
-    canonicalUrl: source.locators[0]!.url,
+    canonicalUrl:
+      source.locators[0]?.kind === 'page'
+        ? source.sourcePageUrl
+        : (source.locators[0]?.url ?? source.sourcePageUrl),
     rightsStatement: source.rights?.statement ?? null,
   };
   await tx.sources.upsert({
@@ -125,9 +129,14 @@ async function writeEvidence(
       id: content.childId(source, locator.id),
       sourceId,
       sourceVersionId,
-      kind: locator.kind,
-      url: locator.url,
-      retrievedAt: locator.retrievedAt,
+      // corpus pages are external captures, not uploaded page assets
+      kind: locator.kind === 'page' ? 'web' : locator.kind,
+      url: locator.kind === 'page' ? source.sourcePageUrl : locator.url,
+      retrievedAt:
+        locator.kind === 'page' ? source.retrievedAt : locator.retrievedAt,
+      pageIndex: locator.kind === 'page' ? locator.pageIndex : undefined,
+      printedPageLabel:
+        locator.kind === 'page' ? locator.printedPageLabel : undefined,
       excerptAsRetrieved: locator.excerpt,
       ...(locator.kind === 'structured'
         ? {
@@ -163,13 +172,27 @@ async function writeImages(
   const { tx, content } = context;
   const sourceVersionId = content.versionId(source);
   if (source.images.length) {
+    if (source.locators.length === 0) {
+      await tx.sourceLocators.create({
+        data: {
+          id: content.childId(source, corpusSourcePageLocatorKey),
+          sourceId: content.sourceId(source),
+          sourceVersionId,
+          kind: 'web',
+          url: source.sourcePageUrl,
+          retrievedAt: source.retrievedAt,
+        },
+      });
+    }
     await tx.referenceImages.createMany({
       data: source.images.map((image) => ({
         id: content.childId(source, image.id),
         sourceVersionId,
         locatorId: content.childId(
           source,
-          image.locatorId ?? source.locators[0]!.id,
+          image.locatorId ??
+            source.locators[0]?.id ??
+            corpusSourcePageLocatorKey,
         ),
         externalImageUrl: image.remoteUrl,
         sourcePageUrl: image.sourcePageUrl,
