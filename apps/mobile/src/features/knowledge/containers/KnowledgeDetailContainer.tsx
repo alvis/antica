@@ -1,204 +1,137 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocalSearchParams } from 'expo-router';
+import { useRef, useState } from 'react';
+import { FlatList } from 'react-native';
 
-import { randomUUID } from 'expo-crypto';
-
-import { useRouter } from 'expo-router';
-
-import { useState } from 'react';
-
-import { Linking, Text, View } from 'react-native';
-
-import {
-  knowledgeDetailSchema,
-  knowledgeUpdateSchema,
-} from '@antica/contracts';
-import { ActionButton, TextField, styles } from '@antica/ui';
+import { styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { localizeStatus } from '../../../i18n/messages';
-import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
-import type { FC } from 'react';
+import { CitationPanel } from '../components/CitationPanel';
+import { KnowledgeEditor } from '../components/KnowledgeEditor';
+import { KnowledgeReading } from '../components/KnowledgeReading';
+import { RemoteImageReference } from '../components/RemoteImageReference';
+import { useKnowledgeEntry } from '../hooks/useKnowledgeEntry';
 
+import type { FC, ReactElement } from 'react';
+import type { ViewToken, View } from 'react-native';
+
+import type {
+  KnowledgeContentEnvelopeV2,
+  KnowledgeEntryDetailV2,
+} from '@antica/contracts';
+
+/** entry identity comes from the thin route */
 export type KnowledgeDetailContainerProps = { entryId: string };
 
+/**
+ * presents immutable evidence before offering an explicit editor and save
+ * @param root0 component properties
+ * @param root0.entryId entryId property
+ * @returns rendered knowledge content
+ */
 export const KnowledgeDetailContainer: FC<KnowledgeDetailContainerProps> = ({
   entryId,
 }) => {
-  const router = useRouter();
-  const { api } = useAuth();
-  const { t } = useLocale();
-  const queryClient = useQueryClient();
-  const [title, setTitle] = useState<string | null>(null);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const detail = useQuery({
-    queryKey: ['knowledge-detail', entryId],
-    queryFn: async ({ signal }) =>
-      api.get(`/v1/knowledge/${entryId}`, knowledgeDetailSchema, signal),
-  });
-
-  const data = detail.data;
-
-  // the save button renders only with loaded data and is disabled while busy
-  const save = async (
-    entry: NonNullable<typeof data>['entry'],
-  ): Promise<void> => {
-    setBusy(true);
-    setError('');
-    try {
-      const request = knowledgeUpdateSchema.parse({
-        requestKey: randomUUID(),
-        expectedRevision: entry.revision,
-        status: 'saved',
-        content: {
-          ...entry.content,
-          titleZhHant: title ?? entry.content.titleZhHant,
-          summary: {
-            ...entry.content.summary,
-            textZhHant: summary ?? entry.content.summary.textZhHant,
-          },
-        },
-        methodWrites: [],
-        linkedMethodIds: entry.methodIds,
-        originResearchId: null,
-      });
-      await api.patch(`/v1/knowledge/${entryId}`, knowledgeDetailSchema, {
-        body: request,
-        idempotencyKey: request.requestKey,
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ['knowledge-detail', entryId],
-      });
-      setTitle(null);
-      setSummary(null);
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  const { locale, t } = useLocale();
+  const state = useKnowledgeEntry(
+    entryId,
+    view === 'working' ? 'working' : 'saved',
+  );
+  const { detail } = state;
+  const [original, setOriginal] = useState(false);
+  const [citation, setCitation] = useState<
+    KnowledgeContentEnvelopeV2['citations'][number] | null
+  >(null);
+  const focus = useRef<View | null>(null);
+  const entry = detail.data;
+  const title =
+    entry?.content.titles.find((item) => item.language === locale) ??
+    entry?.content.titles[0];
+  const subject = title?.text ?? t('knowledge');
 
   return (
-    <Screen
-      title={data?.entry.content.titleZhHant ?? t('knowledgeDraft')}
-      subtitle={data ? localizeStatus(data.entry.status, t) : undefined}>
+    <Screen title={subject} scrollable={false}>
       <QueryState
         loading={detail.isPending}
         error={detail.error}
-        retry={() => void detail.refetch()}>
-        {data && (
-          <>
-            <View style={styles.card}>
-              <Text style={styles.heading}>{t('knowledgeDraft')}</Text>
-              <TextField
-                label={t('name')}
-                value={title ?? data.entry.content.titleZhHant}
-                onChangeText={setTitle}
-              />
-              <TextField
-                label={t('summary')}
-                value={summary ?? data.entry.content.summary.textZhHant}
-                onChangeText={setSummary}
-                multiline
-              />
-              <Text style={styles.secondary}>
-                {data.entry.content.summary.support === 'needs_source'
-                  ? t('sourceNeedsReview')
-                  : t('citationCount', {
-                      count: data.entry.content.summary.citationIds.length,
-                    })}
-              </Text>
-              <ActionButton
-                label={t('save')}
-                onPress={() => void save(data.entry)}
-                disabled={busy}
-              />
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.heading}>{t('history')}</Text>
-              {data.entry.content.history.map((item, index) => (
-                <Text key={index} style={styles.body}>
-                  {item.textZhHant}{' '}
-                  {item.support === 'needs_source'
-                    ? `(${t('sourceNeedsReview')})`
-                    : ''}
-                </Text>
-              ))}
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.heading}>{t('scope')}</Text>
-              {data.entry.content.applicability.map((item, index) => (
-                <Text key={index} style={styles.body}>
-                  {item.scope}: {item.limits.textZhHant}
-                </Text>
-              ))}
-              {data.entry.content.applicability.length === 0 && (
-                <Text style={styles.secondary}>{t('noScopeInfo')}</Text>
-              )}
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.heading}>{t('methods')}</Text>
-              {data.methodVersions.map((method) => (
-                <Text key={method.id} style={styles.body}>
-                  {method.definition.titleZhHant}:{' '}
-                  {method.definition.steps
-                    .map((step) => step.actionZhHant)
-                    .join(' · ')}
-                </Text>
-              ))}
-              {data.methodVersions.length === 0 && (
-                <Text style={styles.secondary}>{t('noMethodInfo')}</Text>
-              )}
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.heading}>{t('examples')}</Text>
-              {data.referenceImages.map((image) => (
-                <ActionButton
-                  key={image.id}
-                  label={
-                    image.originalCaption?.textAsPrinted ?? t('viewSource')
-                  }
-                  onPress={() =>
-                    image.locator.kind === 'page'
-                      ? router.push(
-                          `/sources/${image.locator.sourceId}?versionId=${image.locator.sourceVersionId}&pageId=${image.locator.pageId}`,
-                        )
-                      : void Linking.openURL(image.locator.url).catch((cause) =>
-                          setError((cause as Error).message),
-                        )
-                  }
-                  secondary
+        retry={() => {
+          void detail.refetch();
+        }}>
+        {entry && (
+          <KnowledgeGallery
+            entry={entry}
+            caption={subject}
+            header={
+              <>
+                <KnowledgeReading
+                  entry={entry}
+                  original={original}
+                  setOriginal={setOriginal}
+                  onCitation={(selected, trigger) => {
+                    focus.current = trigger;
+                    setCitation(selected);
+                  }}
                 />
-              ))}
-              {data.citations.map((citation) => (
-                <ActionButton
-                  key={citation.id}
-                  label={t('viewSourceWithId', { id: citation.id.slice(0, 8) })}
-                  onPress={() =>
-                    citation.locator.kind === 'page'
-                      ? router.push(
-                          `/sources/${citation.locator.sourceId}?versionId=${citation.locator.sourceVersionId}&pageId=${citation.locator.pageId}`,
-                        )
-                      : void Linking.openURL(citation.locator.url).catch(
-                          (cause) => setError((cause as Error).message),
-                        )
-                  }
-                  secondary
-                />
-              ))}
-            </View>
-          </>
+                <KnowledgeEditor {...state} entry={entry} />
+              </>
+            }
+          />
         )}
       </QueryState>
-      {Boolean(error) && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      )}
+      <CitationPanel
+        citation={citation}
+        restoreFocus={focus.current}
+        onClose={() => setCitation(null)}
+      />
     </Screen>
+  );
+};
+
+/**
+ * defers transient image reads until the scrolling gallery exposes each item
+ * @param props immutable images and reading header
+ * @param props.entry current revision
+ * @param props.caption subject of the image
+ * @param props.header evidence before the gallery
+ * @returns a viewport-aware scrolling reading surface
+ */
+const KnowledgeGallery: FC<{
+  entry: KnowledgeEntryDetailV2;
+  caption: string;
+  header: ReactElement;
+}> = ({ entry, caption, header }) => {
+  const [visibleImages, setVisibleImages] = useState<string[]>([]);
+  const onVisible = useRef(
+    ({
+      viewableItems,
+    }: {
+      viewableItems: Array<
+        ViewToken<KnowledgeContentEnvelopeV2['images'][number]>
+      >;
+    }): void => setVisibleImages(viewableItems.map((item) => item.item.id)),
+  );
+
+  return (
+    <FlatList
+      testID="knowledge-detail"
+      data={entry.content.images}
+      keyExtractor={(image) => image.id}
+      contentContainerStyle={styles.content}
+      initialNumToRender={1}
+      windowSize={3}
+      maxToRenderPerBatch={2}
+      onViewableItemsChanged={onVisible.current}
+      ListHeaderComponent={header}
+      renderItem={({ item }) => (
+        <RemoteImageReference
+          image={item}
+          caption={caption}
+          nearViewport={visibleImages.includes(item.id)}
+        />
+      )}
+    />
   );
 };

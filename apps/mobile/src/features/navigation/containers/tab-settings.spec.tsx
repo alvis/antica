@@ -25,7 +25,7 @@ it.each([
   'should open Settings from the $tab tab header gear in each language',
   async ({ route }) => {
     const english = await renderMobile(route, {
-      get: async () => ({ items: [], nextCursor: null }),
+      get: async () => ({ items: [], hits: [], total: 0, nextCursor: null }),
     });
     await fireEvent.press(screen.getByRole('button', { name: 'Settings' }));
     expect(english.router.push).toHaveBeenCalledWith('/settings');
@@ -33,7 +33,9 @@ it.each([
 
     const traditional = await renderMobile(
       route,
-      { get: async () => ({ items: [], nextCursor: null }) },
+      {
+        get: async () => ({ items: [], hits: [], total: 0, nextCursor: null }),
+      },
       savedLanguage('zh-Hant'),
     );
     await fireEvent.press(screen.getByRole('button', { name: '設定' }));
