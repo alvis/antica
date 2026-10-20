@@ -13,6 +13,7 @@ import {
 } from '../../../mobile.spec.fixtures';
 import { createReferencedRun } from '../../../saved-analysis.spec.fixtures';
 
+import { analysisJob } from '../../collection/containers/record.spec.fixtures';
 import { media } from '../../media/containers/media.spec.fixtures';
 
 import { LanguageSettingsContainer } from './LanguageSettingsContainer';
@@ -22,6 +23,7 @@ jest.mock(
   'expo-router',
   () =>
     ({
+      useFocusEffect: jest.fn<typeof import('expo-router').useFocusEffect>(),
       useRouter: jest.fn<typeof import('expo-router').useRouter>(),
       useLocalSearchParams: jest.fn<
         typeof import('expo-router').useLocalSearchParams
@@ -120,7 +122,9 @@ it('should change only app-owned copy, leaving stored content untouched without 
             ? storedRun
             : path === `/v1/media/${media.asset.id}`
               ? media
-              : { items: [], nextCursor: null },
+              : path.startsWith('/v1/jobs/')
+                ? analysisJob(path)
+                : { items: [], nextCursor: null },
     },
     savedLanguage('zh-Hant'),
   );
@@ -129,7 +133,7 @@ it('should change only app-owned copy, leaving stored content untouched without 
   for (const text of storedText) {
     expect(stored(text)).not.toHaveLength(0);
   }
-  expect(screen.getByText('詳細位置')).toBeTruthy();
+  expect(screen.getAllByText('位置')).not.toHaveLength(0);
   const readsBefore = view.reads.mock.calls.length;
   const cachedBefore = view.client
     .getQueryCache()
@@ -142,7 +146,7 @@ it('should change only app-owned copy, leaving stored content untouched without 
 
   expect(screen.getByRole('header', { name: 'Language / 語言' })).toBeTruthy();
   // the stored location detail keeps its value beside a translated label
-  expect(screen.getByText('Detailed location')).toBeTruthy();
+  expect(screen.getAllByText('Location')).not.toHaveLength(0);
   expect(screen.getByTestId('record-field-location-detail')).toHaveTextContent(
     '書房櫃第二層',
   );

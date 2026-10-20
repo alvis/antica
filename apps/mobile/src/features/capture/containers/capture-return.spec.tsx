@@ -30,6 +30,20 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
+jest.mock('../../today/hooks/useTodayInbox', () => ({
+  // 藏品 heads its list with 今天's counts; the inbox's own reads are covered by the today specs
+  useTodayInbox: () => ({
+    items: [],
+    records: [],
+    recordCount: 0,
+    analysed: null,
+    loading: false,
+    error: null,
+    settling: false,
+    partialError: null,
+    retry: () => undefined,
+  }),
+}));
 jest.mock('../../../adapters/media-upload', () => ({
   uploadMedia: jest.fn(async () => '00000000-0000-4000-8000-000000000077'),
 }));
@@ -39,6 +53,7 @@ jest.mock('expo-crypto', () => ({
 }));
 jest.mock('expo-file-system', () => ({ File: jest.fn() }));
 jest.mock('expo-router', () => ({
+  useFocusEffect: jest.fn(),
   useRouter: jest.fn(),
   useLocalSearchParams: () => ({
     recordId: '00000000-0000-4000-8000-000000000001',
@@ -114,6 +129,8 @@ it('should refresh the mounted record and collection screens before returning fr
   await waitFor(() =>
     expect(screen.getByRole('header', { name: original.name! })).toBeTruthy(),
   );
+  // 補充證據 lives under 查驗 while that segment is a placeholder
+  await fireEvent.press(screen.getByTestId('record-segment-checks'));
   await fireEvent.press(screen.getByRole('button', { name: 'Add evidence' }));
   await showSurface(view.client, 'capture');
   await waitFor(() =>
@@ -206,6 +223,8 @@ it('should refresh mounted observations immediately after confirming original wo
   await waitFor(() =>
     expect(screen.getByRole('header', { name: original.name! })).toBeTruthy(),
   );
+  // 補充證據 lives under 查驗 while that segment is a placeholder
+  await fireEvent.press(screen.getByTestId('record-segment-checks'));
   await fireEvent.press(screen.getByRole('button', { name: 'Add evidence' }));
   await showSurface(view.client, 'capture');
   await waitFor(() =>

@@ -115,7 +115,15 @@ appId: ${APP_ID}
           timeout: 90000
       - assertNotVisible:
           id: record-message-card-.*
+      # The answer can cite several claims; open the attached one, centred in the thread, since a
+      # match at the thread's top edge sits clipped under the header and a tap there misses it.
+      - scrollUntilVisible:
+          element:
+            id: record-message-knowledge-citation-.*-${CLAIM_KEY}-.*
+          direction: UP
+          centerElement: true
+          timeout: 30000
       - tapOn:
-          id: record-message-knowledge-citation-.*
+          id: record-message-knowledge-citation-.*-${CLAIM_KEY}-.*
       - assertVisible:
           id: knowledge-citation-panel-.*

@@ -1,11 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 
 import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { relatedKnowledgePageSchema } from '@antica/contracts';
-import { ActionButton, styles } from '@antica/ui';
+import { ActionButton, styles, theme } from '@antica/ui';
 
+import { SectionHeader } from '../../../components/SectionHeader';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -15,6 +15,10 @@ import {
 } from '../../collection/messages/hooks/useKnowledgeAttachments';
 
 import { RelatedKnowledgeCard } from '../components/RelatedKnowledgeCard';
+import { RelatedKnowledgeStripCard } from '../components/RelatedKnowledgeStripCard';
+import { knowledgeDetailQuery } from '../hooks/useKnowledgeEntry';
+import { distinctCardImages } from '../hooks/useKnowledgePreview';
+import { useRelatedKnowledge } from '../hooks/useRelatedKnowledge';
 
 import type { UseQueryResult } from '@tanstack/react-query';
 
@@ -36,6 +40,13 @@ export type RelatedKnowledgeContainerProps = {
 const layout = StyleSheet.create({
   tray: { maxHeight: 220 },
   content: { gap: 8 },
+  section: { gap: theme.space[12] },
+  inset: { paddingHorizontal: theme.space.page, gap: 8 },
+  strip: {
+    gap: theme.space[12],
+    paddingHorizontal: theme.space.page,
+    paddingBottom: theme.space[4],
+  },
 });
 
 /**
@@ -43,7 +54,7 @@ const layout = StyleSheet.create({
  * @param props record context and optional composer selection
  * @param props.recordId owner-scoped record identity
  * @param props.recordRevision record revision on screen
- * @param props.onAttach collector selection action; absent on the record surface
+ * @param props.onAttach collector selection action; absent on the record hub, which shows a strip
  * @param props.attachments current visible composer references
  * @param props.busy locks selection during a send
  * @returns local related-knowledge section or scrollable candidate tray
@@ -56,63 +67,95 @@ export const RelatedKnowledgeContainer: FC<RelatedKnowledgeContainerProps> = ({
   busy,
 }) => {
   const related = useRelatedKnowledge(recordId, recordRevision);
-  const content = (
-    <RelatedKnowledgeContent
-      related={related}
-      onAttach={onAttach}
-      attachments={attachments}
-      busy={busy}
-    />
-  );
 
   return onAttach ? (
     <ScrollView
       testID="record-messages-related"
       style={layout.tray}
       keyboardShouldPersistTaps="handled">
-      {content}
+      <RelatedKnowledgeContent
+        related={related}
+        onAttach={onAttach}
+        attachments={attachments}
+        busy={busy}
+      />
     </ScrollView>
   ) : (
-    <View testID="record-related-knowledge">{content}</View>
+    <RelatedKnowledgeStrip related={related} />
   );
 };
 
 /**
- * Reads the owner-scoped current candidates for a visible record revision.
- * @param recordId record identity
- * @param recordRevision optional shown revision
- * @returns section-local query state
+ * the record hub's 相關知識: a section header with the library link over a strip of entry cards
+ * that bleeds to the screen edges
+ * @param props query state
+ * @param props.related local query state
+ * @returns the section
  */
-function useRelatedKnowledge(
-  recordId: string,
-  recordRevision: number | undefined,
-): UseQueryResult<RelatedKnowledgePage, Error> {
+const RelatedKnowledgeStrip: FC<{
+  related: UseQueryResult<RelatedKnowledgePage, Error>;
+}> = ({ related }) => {
+  const { t, locale } = useLocale();
   const { api, userId } = useAuth();
-  const { locale } = useLocale();
-
-  return useQuery({
-    queryKey: [
-      'record-related-knowledge',
-      userId,
-      recordId,
-      recordRevision,
-      locale,
-    ],
-    queryFn: async ({ signal }) => {
-      const parameters = new URLSearchParams({ locale, limit: '3' });
-      if (recordRevision !== undefined) {
-        parameters.set('recordRevision', String(recordRevision));
-      }
-
-      return api.get(
-        `/v1/records/${encodeURIComponent(recordId)}/related-knowledge?${parameters}`,
-        relatedKnowledgePageSchema,
-        signal,
-      );
-    },
-    retry: false,
+  const router = useRouter();
+  const cards = related.data?.cards ?? [];
+  // the strip reads every card's pinned revision so it can give each a different photo
+  const entries = useQueries({
+    queries: cards.map((card) =>
+      knowledgeDetailQuery({
+        api,
+        userId,
+        locale,
+        entryId: card.entryId,
+        view: 'revision',
+        revision: card.revision,
+      }),
+    ),
   });
-}
+  const images = distinctCardImages(
+    entries.map((entry) => {
+      const content = entry.data?.content;
+
+      return content?.images;
+    }),
+  );
+
+  return (
+    <View testID="record-related-knowledge" style={layout.section}>
+      <View style={layout.inset}>
+        <SectionHeader
+          title={t('knowledgeRelated')}
+          links={[
+            {
+              label: t('knowledgeLibrary'),
+              onPress: () => router.push('/knowledge'),
+            },
+          ]}
+        />
+        <RelatedKnowledgeStatus related={related} />
+      </View>
+      {cards.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={layout.strip}>
+          {cards.map((card, index) => (
+            <RelatedKnowledgeStripCard
+              key={card.entryId}
+              card={card}
+              image={images[index]}
+              onOpen={() =>
+                router.push(
+                  `/knowledge/${card.entryId}?view=revision&revision=${card.revision}`,
+                )
+              }
+            />
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+};
 
 /**
  * Renders local discovery state and explicit selection controls.

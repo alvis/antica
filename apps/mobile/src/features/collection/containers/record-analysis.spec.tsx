@@ -8,6 +8,7 @@ import { newRunId, openRecord } from './record-analysis.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({
+  useFocusEffect: jest.fn(),
   useRouter: jest.fn(),
   useLocalSearchParams: jest.fn(),
 }));
@@ -28,22 +29,15 @@ it('should show a just-saved record as saved and not yet analysed with an Analys
       screen.getByTestId('record-analysis-status-unanalysed'),
     ).toBeTruthy(),
   );
-  expect(screen.getByTestId('record-saved-badge')).toHaveTextContent('✓ Saved');
-  expect(screen.getByTestId('record-analysis-badge')).toHaveTextContent(
-    'Not analyzed',
-  );
   expect(
     screen.getByText('Saved. You can start an analysis at any time.'),
   ).toBeTruthy();
-  expect(
-    screen.getByRole('text', { name: 'Saved, Not analyzed' }),
-  ).toBeTruthy();
+  expect(screen.getByTestId('record-analyse')).toHaveTextContent(
+    'Start analysis',
+  );
   expect(screen.getByTestId('record-analyse')).toHaveProp(
     'accessibilityState',
-    {
-      busy: false,
-      disabled: false,
-    },
+    { disabled: false },
   );
   expect(screen.queryByTestId('record-open-run')).toBeNull();
 });
@@ -66,12 +60,8 @@ it('should start one analysis for repeated presses and open its run', async () =
   });
   expect(screen.getByTestId('record-analyse')).toHaveProp(
     'accessibilityState',
-    {
-      busy: true,
-      disabled: true,
-    },
+    { busy: true, disabled: true },
   );
-  expect(screen.getByTestId('record-analyse-spinner')).toBeTruthy();
   await act(async () => accepted.resolve({ runId: newRunId, jobId: newRunId }));
 
   expect(view.commands).toHaveBeenCalledTimes(1);
@@ -91,7 +81,9 @@ it('should offer no analysis for a record without evidence', async () => {
   });
 
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Analyze' })).toBeDisabled(),
+    expect(
+      screen.getByRole('button', { name: 'Start analysis' }),
+    ).toBeDisabled(),
   );
 });
 
@@ -107,23 +99,28 @@ it.each([
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId('record-analysis-badge')).toHaveTextContent(
+      expect(screen.getByTestId('record-analysis-running')).toHaveTextContent(
         badge,
       ),
     );
+    expect(screen.getByTestId('record-analysis-running')).toHaveProp(
+      'accessibilityState',
+      { busy: true, disabled: true },
+    );
     expect(screen.getByTestId('record-analysis-status-running')).toBeTruthy();
     expect(screen.queryByTestId('record-analyse')).toBeNull();
-    await fireEvent.press(screen.getByTestId('record-open-run'));
+    // the run stays one tap away under 建議
+    await fireEvent.press(screen.getByRole('link', { name: 'Suggestions' }));
     expect(view.router.push).toHaveBeenCalledWith(`/analysis/${runId}`);
   },
 );
 
 it.each([
-  { status: 'completed' as const, state: 'analysed', badge: 'Analyzed' },
-  { status: 'partial' as const, state: 'partial', badge: 'Partly analyzed' },
+  { status: 'completed' as const, state: 'analysed' },
+  { status: 'partial' as const, state: 'partial' },
 ])(
   'should show a $status run of the current input as $state without a new start',
-  async ({ status, state, badge }) => {
+  async ({ status, state }) => {
     await openRecord(
       { latestRunId: runId, analysisFreshness: 'current' },
       status,
@@ -134,11 +131,12 @@ it.each([
         screen.getByTestId(`record-analysis-status-${state}`),
       ).toBeTruthy(),
     );
-    expect(screen.getByTestId('record-analysis-badge')).toHaveTextContent(
-      badge,
-    );
+    // the line under the run's link says when it finished
+    await waitFor(() => expect(screen.getByText(/^Analysed /)).toBeTruthy());
     expect(screen.queryByTestId('record-analyse')).toBeNull();
-    expect(screen.getByTestId('record-open-run')).toBeTruthy();
+    expect(screen.getByTestId('record-open-run')).toHaveTextContent(
+      'View analysis',
+    );
   },
 );
 
@@ -164,9 +162,6 @@ it('should show new evidence after a run as not yet analysed and never start one
 
   await waitFor(() =>
     expect(screen.getByTestId('record-analysis-status-outdated')).toBeTruthy(),
-  );
-  expect(screen.getByTestId('record-analysis-badge')).toHaveTextContent(
-    'New evidence not analyzed',
   );
   expect(
     screen.getByText(

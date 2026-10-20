@@ -6,6 +6,24 @@ import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
+jest.mock('../../today/hooks/useTodayInbox', () => ({
+  // 藏品 shares 今天's counts; the inbox's own reads are covered by the today specs
+  useTodayInbox: () => ({
+    items: [
+      { kind: 'analysis', recordId: 'record-a' },
+      { kind: 'editCard', recordId: 'record-a' },
+      { kind: 'retake', recordId: 'record-b' },
+    ],
+    records: [],
+    recordCount: 9,
+    analysed: null,
+    loading: false,
+    error: null,
+    settling: false,
+    partialError: null,
+    retry: () => undefined,
+  }),
+}));
 
 const thumbnail = 'https://media.example/cover.jpg?signature=collector-read';
 const pictured = {
@@ -91,12 +109,14 @@ it('should offer capture when the collection is empty', async () => {
   expect(view.router.push).toHaveBeenCalledWith('/capture');
 });
 
-it('should offer search from the top bar', async () => {
+it('should head the collection with 今天 counts and offer search from the top bar', async () => {
   await renderMobile(<CollectionRoute />, {
     get: async () => ({ items: [pictured], nextCursor: null }),
   });
 
+  // nine records, two of them with something waiting (record-a counts once)
+  expect(await screen.findByText('9 items · 2 waiting for you')).toBeTruthy();
   expect(
-    await screen.findByRole('button', { name: 'Search the collection' }),
+    screen.getByRole('button', { name: 'Search the collection' }),
   ).toBeTruthy();
 });

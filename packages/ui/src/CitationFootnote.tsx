@@ -11,10 +11,17 @@ export type CitationFootnoteProps = {
   /** spoken name of the source, such as the museum and its record */
   label: string;
   onPress: () => void;
+  /** flows inside a line of text: the chip keeps the line's height and reaches 48 dp by hit slop */
+  inline?: boolean;
   testID?: string;
 };
 
 const chip = theme.state.citation.chip;
+
+// the slop that grows the inline chip's target to the 48 dp minimum
+const inlineSlop = (theme.size.hitMin - chip.size) / 2;
+// half the chip less the height of a 15 to 18 sp glyph's centre above the baseline (about 0.36 em)
+const inlineDrop = 5;
 
 const layout = StyleSheet.create({
   hit: {
@@ -22,6 +29,11 @@ const layout = StyleSheet.create({
     minWidth: theme.size.hitMin,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // an inline view sits on the text's baseline; the drop centres the chip on body and reading text
+  inline: {
+    marginHorizontal: theme.space[4],
+    transform: [{ translateY: inlineDrop }],
   },
   chip: {
     minWidth: chip.size,
@@ -34,10 +46,9 @@ const layout = StyleSheet.create({
   },
   number: {
     color: chip.fg,
-    fontFamily: theme.font.family.sans,
+    ...theme.font.face('sans', '700'),
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: '700',
   },
 });
 
@@ -47,6 +58,7 @@ const layout = StyleSheet.create({
  * @param root0.number position of the source in the list of sources
  * @param root0.label spoken name of the source
  * @param root0.onPress opens the source
+ * @param root0.inline whether the footnote flows inside a line of text
  * @param root0.testID stable automation identifier
  * @returns the pressable footnote number
  */
@@ -54,6 +66,7 @@ export const CitationFootnote: FC<CitationFootnoteProps> = ({
   number,
   label,
   onPress,
+  inline = false,
   testID,
 }) => (
   <Pressable
@@ -61,7 +74,8 @@ export const CitationFootnote: FC<CitationFootnoteProps> = ({
     accessibilityRole="link"
     accessibilityLabel={`${number} ${label}`}
     onPress={onPress}
-    style={layout.hit}>
+    hitSlop={inline ? inlineSlop : undefined}
+    style={inline ? layout.inline : layout.hit}>
     <View style={layout.chip}>
       <Text style={layout.number}>{number}</Text>
     </View>

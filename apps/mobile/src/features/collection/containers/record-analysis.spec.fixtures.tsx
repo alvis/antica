@@ -2,13 +2,13 @@ import { jest } from '@jest/globals';
 
 import { useLocalSearchParams } from 'expo-router';
 
-import { analysisRunDetailSchema } from '@antica/contracts';
-
 import RecordRoute from '../../../app/(private)/collection/[recordId]';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
-import { run, runId } from '../../../saved-analysis.spec.fixtures';
+import { runId } from '../../../saved-analysis.spec.fixtures';
 
 import { media } from '../../media/containers/media.spec.fixtures';
+
+import { hubReads, settledRun } from './record.spec.fixtures';
 
 import type { RecordDetail } from '@antica/contracts';
 
@@ -18,7 +18,7 @@ export const mediaId = media.asset.id;
 export const newRunId = '00000000-0000-4000-8000-000000000052';
 
 /**
- * opens a saved record whose latest run, if any, has the given status
+ * opens a saved record whose latest run, if any, has the given status and nothing left to decide
  * @param record record fields replacing the saved record's
  * @param runStatus status of the latest run
  * @returns the mobile harness
@@ -38,10 +38,10 @@ export async function openRecord(
       path === `/v1/records/${collectionRecord.id}`
         ? saved
         : path === `/v1/analyses/${runId}`
-          ? analysisRunDetailSchema.parse({ ...run, status: runStatus })
+          ? settledRun(runId, runStatus)
           : path === `/v1/media/${mediaId}`
             ? media
-            : { items: [], nextCursor: null },
+            : hubReads(path),
     post: async () => ({ runId: newRunId, jobId: newRunId }),
   });
 }

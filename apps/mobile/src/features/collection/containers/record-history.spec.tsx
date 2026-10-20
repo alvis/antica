@@ -295,7 +295,7 @@ it('should show the history of the routed record in Traditional Chinese', async 
   );
 
   await waitFor(() =>
-    expect(entryText(describedByVoice)).toContain('描述 · 已略過'),
+    expect(entryText(describedByVoice)).toContain('描述·已略過'),
   );
   expect(entryText(describedByVoice)).toContain('透過語音或訊息編輯');
   expect(entryText(tagged)).toContain('vase、porcelain');

@@ -43,3 +43,27 @@ export const OpensSource: Story = {
     await expect(args.onPress).toHaveBeenCalledTimes(1);
   },
 };
+
+/** the footnote flowing after a quote's last character, as 今日知識 shows it */
+export const InlineAfterQuote: Story = {
+  args: {
+    number: 4,
+    inline: true,
+    onPress: fn<CitationFootnoteProps['onPress']>(),
+  },
+  render: (args) => (
+    <View style={{ padding: 16 }}>
+      <Text style={styles.body}>
+        「此壺器形為本土發展，似由附有小雞首的壺形器演變而來。」
+        <CitationFootnote {...args} />
+      </Text>
+    </View>
+  ),
+  play: async ({ args, canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole('link', { name: /^4 克里夫蘭/ }),
+    );
+
+    await expect(args.onPress).toHaveBeenCalledTimes(1);
+  },
+};

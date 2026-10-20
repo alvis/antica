@@ -120,6 +120,34 @@ export function recordMessagePreviewQuery(
 }
 
 /**
+ * how many of the newest messages 今天 and the record hub read to find edit cards that still wait;
+ * a thread holds one edit card per collector request, so an undecided card older than the last 20
+ * messages is left out of the 今天 card and the hub's 有建議 badge until it is opened in 對話
+ */
+const inboxMessageLimit = 20;
+
+/**
+ * describes the newest messages of the record's conversation, where 今天 looks for undecided edit cards
+ * @param api authenticated API transport
+ * @param recordId record the conversation belongs to
+ * @returns query options for the newest page
+ */
+export function recordMessageInboxQuery(
+  api: ApiTransport,
+  recordId: string,
+): UseQueryOptions<RecordMessagePage> {
+  return {
+    queryKey: [...recordMessagesKey(recordId), 'inbox'],
+    queryFn: async ({ signal }) =>
+      api.get(
+        `${messagesPath(recordId)}?limit=${inboxMessageLimit}`,
+        recordMessagePageSchema,
+        signal,
+      ),
+  };
+}
+
+/**
  * posts a collector message, retrying with the same key, with growing pauses, while the server reports that key in flight
  * @param api authenticated API transport
  * @param recordId record the message is about

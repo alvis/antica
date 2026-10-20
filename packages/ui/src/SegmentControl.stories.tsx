@@ -16,7 +16,7 @@ const options = [
   { value: 'data', label: '資料' },
   { value: 'exam', label: '查驗', badge: 3 },
   { value: 'suggestions', label: '建議', badge: 6 },
-  { value: 'messages', label: '對話' },
+  { value: 'messages', label: '對話', navigates: true },
   { value: 'history', label: '紀錄', disabled: true },
 ] as const;
 
@@ -68,5 +68,16 @@ export const RecordHub: Story = {
       'aria-selected',
       'true',
     );
+  },
+};
+
+export const NavigatingSegment: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByRole('link', { name: '對話' }));
+
+    await expect(args.onChange).toHaveBeenCalledWith('messages');
+    await expect(canvas.queryByRole('tab', { name: '對話' })).toBeNull();
   },
 };

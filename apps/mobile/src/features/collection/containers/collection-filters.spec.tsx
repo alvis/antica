@@ -6,6 +6,24 @@ import { renderMobile, savedLanguage } from '../../../mobile.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
+jest.mock('../../today/hooks/useTodayInbox', () => ({
+  // 藏品 shares 今天's counts; the inbox's own reads are covered by the today specs
+  useTodayInbox: () => ({
+    items: [
+      { kind: 'analysis', recordId: 'record-a' },
+      { kind: 'editCard', recordId: 'record-a' },
+      { kind: 'retake', recordId: 'record-b' },
+    ],
+    records: [],
+    recordCount: 9,
+    analysed: null,
+    loading: false,
+    error: null,
+    settling: false,
+    partialError: null,
+    retry: () => undefined,
+  }),
+}));
 
 const categoryId = '00000000-0000-4000-8000-000000000041';
 const materialId = '00000000-0000-4000-8000-000000000042';

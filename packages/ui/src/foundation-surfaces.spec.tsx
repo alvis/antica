@@ -89,6 +89,59 @@ describe('rc:ThumbnailStrip', () => {
     await view.rerender(<ThumbnailStrip items={[]} onSelect={onSelect} />);
     expect(screen.queryByRole('button')).toBeNull();
   });
+
+  it('should count photos past its limit and end with a labelled, iconed action', async () => {
+    const items = ['front', 'side', 'base', 'mark', 'rim', 'foot'].map(
+      (id) => ({
+        id,
+        uri: `https://example.test/${id}.jpg`,
+        label: `${id} view`,
+        testID: `thumb-${id}`,
+      }),
+    );
+    await render(
+      <ThumbnailStrip
+        items={items}
+        selectedId="side"
+        limit={4}
+        onSelect={jest.fn()}
+        action={{
+          label: 'Find similar',
+          icon: 'imageSearch',
+          testID: 'find-similar',
+          onPress: jest.fn(),
+        }}
+      />,
+    );
+
+    expect(screen.getAllByRole('button', { name: / view$/ })).toHaveLength(4);
+    expect(screen.getByTestId('thumb-side')).toBeSelected();
+    expect(screen.queryByTestId('thumb-rim')).toBeNull();
+    expect(screen.getByText('+2')).toBeTruthy();
+    // the icon is decorative; the action is announced by its label alone
+    expect(screen.getByTestId('find-similar')).toHaveAccessibleName(
+      'Find similar',
+    );
+    expect(screen.getByTestId('find-similar')).toHaveTextContent(
+      'Find similar',
+    );
+  });
+
+  it('should keep the paper mat for a photo that has no read yet', async () => {
+    await render(
+      <ThumbnailStrip
+        items={[{ id: 'front', label: 'Front view', testID: 'thumb-front' }]}
+        onSelect={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('thumb-front')).toHaveTextContent('');
+    expect(
+      screen
+        .getByTestId('thumb-front')
+        .children.filter((child) => typeof child !== 'string'),
+    ).toHaveLength(0);
+  });
 });
 
 describe('rc:CitationFootnote', () => {
@@ -100,6 +153,28 @@ describe('rc:CitationFootnote', () => {
     const citation = screen.getByRole('link', { name: /Museum catalog/ });
 
     expect(citation).toHaveStyle({ minHeight: 48 });
+    await fireEvent.press(citation);
+
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+  it('should flow inside a line of text and still reach 48 dp through hit slop', async () => {
+    const onPress = jest.fn();
+    await render(
+      <Text>
+        A quoted claim
+        <CitationFootnote
+          number={4}
+          label="Museum catalog"
+          onPress={onPress}
+          inline
+        />
+      </Text>,
+    );
+    const citation = screen.getByRole('link', { name: '4 Museum catalog' });
+
+    // the 20 dp chip keeps the line height; 14 dp of slop on each side makes 48
+    expect(citation).not.toHaveStyle({ minHeight: 48 });
+    expect(citation).toHaveProp('hitSlop', 14);
     await fireEvent.press(citation);
 
     expect(onPress).toHaveBeenCalledTimes(1);

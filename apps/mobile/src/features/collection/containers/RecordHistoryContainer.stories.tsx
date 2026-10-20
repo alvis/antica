@@ -139,7 +139,7 @@ export const ChangesInTraditionalChinese = {
     </MobileStoryShell>
   ),
   play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, '名稱 · 已採納');
+    await findStoryText(canvasElement, '名稱·已採納');
     await findStoryText(canvasElement, '透過語音或訊息編輯');
   },
 } satisfies Story;

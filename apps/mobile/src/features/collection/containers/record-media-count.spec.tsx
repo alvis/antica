@@ -22,6 +22,7 @@ jest.mock('expo-file-system', () =>
   jest.requireActual('../../../adapters/file-system.spec.fixtures'),
 );
 jest.mock('expo-router', () => ({
+  useFocusEffect: jest.fn(),
   useRouter: jest.fn(),
   useLocalSearchParams: jest.fn(() => ({
     recordId: '00000000-0000-4000-8000-000000000001',
@@ -75,8 +76,9 @@ beforeEach(() => resetFakeDisk());
 it('should count only the files storage verified, and never a failed one as uploaded', async () => {
   const view = await openRecord();
 
-  expect(screen.getByTestId('record-media-count')).toHaveTextContent(
-    '3 photos and videos uploaded',
+  // the page indicator shows the position and says how many files storage verified
+  expect(screen.getByTestId('record-media-count')).toHaveAccessibleName(
+    /^3 photos and videos uploaded, /,
   );
   // without a copy on this device there is nothing to send again
   expect(

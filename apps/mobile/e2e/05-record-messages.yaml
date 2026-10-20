@@ -89,8 +89,25 @@ appId: ${APP_ID}
 
 # 3. Confirm the name, reject the period, then apply both decisions. The name
 #    is applied, the period stays locked as not applied, and no toggle remains.
+#    The related-knowledge tray covers the thread's lower part, where the
+#    hierarchy still lists the card's controls as visible, so the name is
+#    centred and the period and apply controls are tapped with the thread
+#    dragged to its end, where the card's foot sits above the tray.
+- scrollUntilVisible:
+    element:
+      id: 'record-message-card-confirm-name-.*'
+    direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: 'record-message-card-confirm-name-.*'
+- repeat:
+    times: 3
+    commands:
+      - swipe:
+          start: 50%, 52%
+          end: 50%, 24%
+- waitForAnimationToEnd
 - tapOn:
     id: 'record-message-card-reject-period-.*'
 - tapOn:

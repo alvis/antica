@@ -1,12 +1,12 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 
-import { mediaDetailSchema } from '@antica/contracts';
-
 import { useKnowledgeTitles } from '../../../hooks/useKnowledgeTitles';
 import { useAuth } from '../../../providers/AuthProvider';
 import { shortId } from '../../../utils/short-id';
 
 import { locationsQuery } from '../../capture/api/capture-queries';
+
+import { mediaQuery } from '../api/media-query';
 
 import type { UseQueryResult } from '@tanstack/react-query';
 
@@ -44,11 +44,7 @@ export function useRecordFieldLabels(ids: LabelledIds): RecordFieldLabels {
   const locations = useQuery(locationsQuery(api));
   const knowledge = useKnowledgeTitles(ids.knowledgeIds);
   const media = useQueries({
-    queries: ids.mediaIds.map((id) => ({
-      queryKey: ['media', id],
-      queryFn: async ({ signal }: { signal: AbortSignal }) =>
-        api.get(`/v1/media/${id}`, mediaDetailSchema, signal),
-    })),
+    queries: ids.mediaIds.map((id) => mediaQuery(api, id)),
   });
   const loadedMedia = media.flatMap((item) => (item.data ? [item.data] : []));
 

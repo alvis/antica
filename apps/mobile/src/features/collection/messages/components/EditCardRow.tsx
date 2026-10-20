@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import { colors, styles } from '@antica/ui';
 
 import { FieldValue } from '../../../../components/FieldValue';
+import { useKnowledgeTitles } from '../../../../hooks/useKnowledgeTitles';
 import { localizeProposalField } from '../../../../i18n/messages';
 import { useLocale } from '../../../../providers/LocaleProvider';
 
@@ -11,6 +12,8 @@ import { proposalFieldTestId } from '../../proposal-field-test-id';
 import type { FC } from 'react';
 
 import type { ProposedChange } from '@antica/contracts';
+
+import type { FieldDisplayValue } from '../../../../utils/field-value';
 
 import type { ProposalDecision } from '../hooks/useEditCardStates';
 
@@ -26,6 +29,27 @@ export type EditCardRowProps = {
   /** records the collector's choice; absent while the card is applying */
   onDecide?: (decision: ProposalDecision) => void;
 };
+
+/**
+ * the change's values as the row shows them: a material change names knowledge entries, shown by
+ * their titles rather than identifiers
+ * @param change proposed field change
+ * @returns the previous and proposed values
+ */
+function useShownValues(change: ProposedChange): {
+  before: FieldDisplayValue;
+  proposed: FieldDisplayValue;
+} {
+  const title = useKnowledgeTitles(
+    change.field === 'materialIds'
+      ? [...change.before, ...change.proposed]
+      : [],
+  );
+
+  return change.field === 'materialIds'
+    ? { before: change.before.map(title), proposed: change.proposed.map(title) }
+    : { before: change.before, proposed: change.proposed };
+}
 
 /**
  * renders one field's previous and proposed value with its confirm and reject choices
@@ -44,6 +68,7 @@ export const EditCardRow: FC<EditCardRowProps> = ({
 }) => {
   const { t } = useLocale();
   const field = localizeProposalField(change.field, t);
+  const shown = useShownValues(change);
   // automation identifiers name the field so flows can pick a row in any language
   const fieldId = proposalFieldTestId(change.field);
   const choices = [
@@ -71,8 +96,8 @@ export const EditCardRow: FC<EditCardRowProps> = ({
         paddingTop: 12,
       }}>
       <Text style={styles.label}>{field}</Text>
-      <FieldValue label={t('previous')} value={change.before} superseded />
-      <FieldValue label={t('proposed')} value={change.proposed} />
+      <FieldValue label={t('previous')} value={shown.before} superseded />
+      <FieldValue label={t('proposed')} value={shown.proposed} />
       {outcome === 'applied' ? (
         <Text
           testID={`record-message-card-applied-${fieldId}-${change.id}`}

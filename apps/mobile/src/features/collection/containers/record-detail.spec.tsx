@@ -33,6 +33,7 @@ import {
 } from '../record-edit.spec.fixtures';
 
 import {
+  hubReads,
   observationId,
   pageId,
   savedReferences,
@@ -52,6 +53,7 @@ jest.mock(
   'expo-router',
   () =>
     ({
+      useFocusEffect: jest.fn<typeof import('expo-router').useFocusEffect>(),
       useRouter: jest.fn<typeof import('expo-router').useRouter>(),
       useLocalSearchParams: jest.fn<
         typeof import('expo-router').useLocalSearchParams
@@ -123,7 +125,7 @@ const responses: Parameters<typeof renderMobile>[1] = {
         ? savedRun
         : path === `/v1/media/${media.asset.id}`
           ? media
-          : { items: [], nextCursor: null },
+          : hubReads(path),
 };
 
 /**
@@ -147,6 +149,26 @@ const InLocale: FC<InLocaleProps> = ({
 
   return currentLocale === locale ? <>{children}</> : null;
 };
+
+/** a rendered element as the host tree exposes it */
+interface HostNode {
+  readonly props: { readonly source?: unknown };
+  readonly children: ReadonlyArray<HostNode | string>;
+}
+
+/**
+ * collects the image sources drawn inside an element, such as a carousel page's signed photo
+ * @param node rendered element
+ * @returns every image source beneath it
+ */
+function imageSources(node: HostNode): unknown[] {
+  return [
+    ...(node.props.source === undefined ? [] : [node.props.source]),
+    ...node.children.flatMap((child) =>
+      typeof child === 'string' ? [] : imageSources(child),
+    ),
+  ];
+}
 
 /**
  * verifies authored name content remains associated with the selected field
@@ -172,7 +194,7 @@ function expectNameContent(
 it.each([
   {
     locale: 'en' as const,
-    results: 'View analysis',
+    results: /^Review 2 suggestions$/,
     name: 'Name',
     description: 'Description',
     previous: 'Previous',
@@ -182,7 +204,7 @@ it.each([
   },
   {
     locale: 'zh-Hant' as const,
-    results: '查看分析',
+    results: /^檢閱 2 項建議$/,
     name: '名稱',
     description: '描述',
     previous: '目前內容',
@@ -199,6 +221,7 @@ it.each([
       </InLocale>,
       responses,
     );
+    // the hub puts the waiting suggestions first; opening them writes nothing
     await fireEvent.press(
       await screen.findByRole('button', { name: labels.results }),
     );
@@ -258,16 +281,23 @@ it('should show a record, open capture, and open the manual editor', async () =>
     get: async (path) =>
       path === `/v1/records/${collectionRecord.id}`
         ? collectionRecord
-        : { items: [], nextCursor: null },
+        : hubReads(path),
   });
-  await waitFor(() => expect(screen.getAllByText('A-001')).toHaveLength(2));
-  expect(screen.getByRole('button', { name: 'Analyze' })).toBeDisabled();
-  expect(screen.getByText('Not analyzed')).toBeTruthy();
+  expect(await screen.findByRole('header', { name: 'A-001' })).toBeTruthy();
+  // without a photo there is nothing to analyse yet
+  expect(screen.getByRole('button', { name: 'Start analysis' })).toBeDisabled();
+  expect(screen.getByTestId('record-analysis-status-unanalysed')).toBeTruthy();
+  expect(
+    screen.getByText('Saved. You can start an analysis at any time.'),
+  ).toBeTruthy();
+  // capture lives under 查驗, as in the design, while that segment is a placeholder
+  await fireEvent.press(screen.getByTestId('record-segment-checks'));
   await fireEvent.press(screen.getByRole('button', { name: 'Add evidence' }));
   expect(view.router.push).toHaveBeenCalledWith(
     `/capture?recordId=${collectionRecord.id}`,
   );
-  await fireEvent.press(screen.getByRole('button', { name: 'Edit details' }));
+  await fireEvent.press(screen.getByTestId('record-segment-data'));
+  await fireEvent.press(screen.getByRole('button', { name: 'Edit' }));
   expect(view.router.push).toHaveBeenLastCalledWith(
     `/collection/${collectionRecord.id}/edit`,
   );
@@ -288,10 +318,10 @@ it('should show the key details first and every known detail on request, with la
             ? knowledgeDetail(materialId, 'Porcelain')
             : path.startsWith('/v1/media/')
               ? receipt
-              : { items: [], nextCursor: null },
+              : hubReads(path),
   });
 
-  const details = await screen.findByTestId('record-fields');
+  const details = await screen.findByTestId('record-collection-data');
   await waitFor(() =>
     expect(
       within(details).getByTestId('record-field-location-id'),
@@ -300,13 +330,15 @@ it('should show the key details first and every known detail on request, with la
   expect(
     within(details).getByTestId('record-field-location-detail'),
   ).toHaveTextContent('Second shelf');
-  expect(within(details).getByTestId('record-field-height')).toHaveTextContent(
-    '8.4 cm',
+  // the size tile leads with the diameter, the measure a round piece is known by
+  expect(screen.getByTestId('record-fact-size')).toHaveTextContent(
+    'SizeDiameter 160 mm',
   );
-  expect(within(details).getByText('Description and notes')).toBeTruthy();
+  expect(within(details).getByText('Notes')).toBeTruthy();
   // the rest waits behind the toggle (B06)
-  expect(within(details).queryByTestId('record-field-purchase')).toBeNull();
-  const toggle = within(details).getByTestId('record-fields-toggle');
+  expect(screen.queryByTestId('record-field-purchase')).toBeNull();
+  expect(screen.queryByTestId('record-field-height')).toBeNull();
+  const toggle = screen.getByTestId('record-fields-toggle');
   expect(toggle).toHaveTextContent('Show all details');
   expect(toggle).toHaveProp('accessibilityState', { expanded: false });
 
@@ -315,6 +347,9 @@ it('should show the key details first and every known detail on request, with la
   expect(
     within(details).getByTestId('record-field-purchase'),
   ).toHaveTextContent('1200 HKD');
+  expect(within(details).getByTestId('record-field-height')).toHaveTextContent(
+    '8.4 cm',
+  );
   await waitFor(() =>
     expect(
       within(details).getByTestId('record-field-material-ids'),
@@ -340,13 +375,21 @@ it('should leave unknown details out instead of filling them in', async () => {
             dimensions: {},
             location: { locationId: null, detail: '' },
           })
-        : { items: [], nextCursor: null },
+        : hubReads(path),
   });
 
-  const details = await screen.findByTestId('record-fields');
-  expect(within(details).getByText('Nothing here yet.')).toBeTruthy();
+  const facts = await screen.findByTestId('record-fields');
+  // each unknown fact reads as not filled in rather than guessed
+  for (const fact of ['period', 'material', 'size', 'tags']) {
+    expect(within(facts).getByTestId(`record-fact-${fact}`)).toHaveTextContent(
+      /Not filled in$/,
+    );
+  }
+  const details = screen.getByTestId('record-collection-data');
   expect(within(details).queryByTestId('record-field-location-id')).toBeNull();
-  expect(within(details).queryByTestId('record-fields-toggle')).toBeNull();
+  expect(within(details).queryByTestId('record-field-description')).toBeNull();
+  // with no other known detail there is nothing more to show
+  expect(screen.queryByTestId('record-fields-toggle')).toBeNull();
 });
 
 it('should tell the collector once that a save landed on a refreshed record', async () => {
@@ -357,7 +400,7 @@ it('should tell the collector once that a save landed on a refreshed record', as
     get: async (path) =>
       path === `/v1/records/${collectionRecord.id}`
         ? collectionRecord
-        : { items: [], nextCursor: null },
+        : hubReads(path),
   });
   setRecordEditNotice(view.client, collectionRecord.id, 'refreshed');
 
@@ -392,23 +435,22 @@ it('should start analysis explicitly and keep the check context on a signed phot
         ? record
         : path === `/v1/media/${photo.asset.id}`
           ? photo
-          : { items: [], nextCursor: null },
+          : hubReads(path),
     post: async () => ({ runId, jobId: runId }),
   });
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Analyze again' })).toBeEnabled(),
   );
   await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Find similar images' }),
-    ).toBeTruthy(),
+    expect(screen.getByRole('button', { name: 'Find similar' })).toBeTruthy(),
   );
-  expect(screen.getByLabelText('bowl.jpg')).toHaveProp('source', {
-    uri: media.reads[0].url,
-  });
-  expect(screen.getByText('New evidence not analyzed')).toBeTruthy();
-  await fireEvent.press(screen.getByRole('button', { name: 'View' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'View analysis' }));
+  const page = screen.getByTestId(`record-media-${photo.asset.id}-ready`);
+  expect(page).toHaveProp('accessibilityLabel', 'bowl, photo 1 of 1');
+  expect(imageSources(page)).toEqual([{ uri: media.reads[0].url }]);
+  expect(screen.getByTestId('record-analysis-status-outdated')).toBeTruthy();
+  await fireEvent.press(page);
+  await fireEvent.press(screen.getByRole('link', { name: 'Suggestions' }));
+  await fireEvent.press(screen.getByRole('tab', { name: 'Checks' }));
   await fireEvent.press(screen.getByRole('button', { name: /^Checks / }));
   expect(jest.mocked(view.router.push).mock.calls).toEqual([
     [`/media/${photo.asset.id}?checkId=${checkId}`],
@@ -435,7 +477,7 @@ it('should create a whole-photo evidence anchor before opening similar-image res
         ? { ...collectionRecord, mediaIds: [photo.asset.id] }
         : path === `/v1/media/${photo.asset.id}`
           ? photo
-          : { items: [], nextCursor: null },
+          : hubReads(path),
     post: async () => ({
       id: '00000000-0000-4000-8000-000000000053',
       kind: 'image',
@@ -448,13 +490,9 @@ it('should create a whole-photo evidence anchor before opening similar-image res
     }),
   });
   await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Find similar images' }),
-    ).toBeTruthy(),
+    expect(screen.getByRole('button', { name: 'Find similar' })).toBeTruthy(),
   );
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Find similar images' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Find similar' }));
   await waitFor(() => expect(view.commands).toHaveBeenCalledTimes(1));
   const request = view.commands.mock.calls[0][2];
   expect(request.body).toEqual({
@@ -484,24 +522,18 @@ it('should keep the collector on the record while image evidence processes or fa
         ? { ...collectionRecord, mediaIds: [photo.asset.id] }
         : path === `/v1/media/${photo.asset.id}`
           ? photo
-          : { items: [], nextCursor: null },
+          : hubReads(path),
   });
   await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Find similar images' }),
-    ).toBeTruthy(),
+    expect(screen.getByRole('button', { name: 'Find similar' })).toBeTruthy(),
   );
   view.commands.mockResolvedValueOnce({ kind: 'job' });
   view.commands.mockRejectedValueOnce(new Error('Offline'));
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Find similar images' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Find similar' }));
   await waitFor(() =>
     expect(screen.getByRole('alert')).toHaveTextContent('Processing'),
   );
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Find similar images' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Find similar' }));
   await waitFor(() =>
     expect(screen.getByRole('alert')).toHaveTextContent('Offline'),
   );
@@ -538,7 +570,9 @@ it('should reopen observations, video, and saved collection, page, and web refer
                 ],
                 nextCursor: null,
               }
-            : { items: savedReferences, nextCursor: null },
+            : path.endsWith('/references')
+              ? { items: savedReferences, nextCursor: null }
+              : hubReads(path),
   });
   await waitFor(() => expect(screen.getByText('Blue decoration')).toBeTruthy());
   expect(
@@ -556,13 +590,15 @@ it('should reopen observations, video, and saved collection, page, and web refer
       savedReferences.length,
     ),
   );
-  expect(screen.getByText('Blue glaze')).toBeTruthy();
-  expect(screen.getByText('✓ Saved')).toBeTruthy();
+  expect(screen.getByTestId('record-field-description')).toHaveTextContent(
+    'Blue glaze',
+  );
   expect(screen.getByText('collection')).toBeTruthy();
-  expect(
-    screen.queryByRole('button', { name: 'Find similar images' }),
-  ).toBeNull();
-  await fireEvent.press(screen.getByRole('button', { name: 'View' }));
+  // a video has no still to search with
+  expect(screen.queryByTestId('record-find-similar')).toBeNull();
+  await fireEvent.press(
+    screen.getByTestId(`record-media-${media.asset.id}-${media.asset.state}`),
+  );
   for (const button of screen.getAllByRole('button', { name: 'View source' })) {
     await fireEvent.press(button);
   }
@@ -584,13 +620,15 @@ it('should keep a failed analysis start beside its action', async () => {
         ? { ...collectionRecord, mediaIds: [photo.asset.id] }
         : path === `/v1/media/${photo.asset.id}`
           ? photo
-          : { items: [], nextCursor: null },
+          : hubReads(path),
   });
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Analyze' })).toBeEnabled(),
+    expect(
+      screen.getByRole('button', { name: 'Start analysis' }),
+    ).toBeEnabled(),
   );
   view.commands.mockRejectedValueOnce(new Error('Analysis unavailable'));
-  await fireEvent.press(screen.getByRole('button', { name: 'Analyze' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Start analysis' }));
   await waitFor(() =>
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Something went wrong.',
@@ -615,15 +653,13 @@ it('should retry a failed record read and restore its actions', async () => {
     get: async (path) =>
       path === `/v1/records/${collectionRecord.id}`
         ? readRecord()
-        : { items: [], nextCursor: null },
+        : hubReads(path),
   });
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy(),
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Edit details' })).toBeTruthy(),
-  );
+  await waitFor(() => expect(screen.getByTestId('record-edit')).toBeTruthy());
   expect(
     view.reads.mock.calls.filter(
       ([path]) => path === `/v1/records/${collectionRecord.id}`,
@@ -662,7 +698,7 @@ it('should report a saved web reference that cannot be opened', async () => {
               ],
               nextCursor: null,
             }
-          : { items: [], nextCursor: null },
+          : hubReads(path),
   });
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'View source' })).toBeTruthy(),
