@@ -1,4 +1,5 @@
 import { canonicalJson, sha256 } from './canonical.js';
+import { selectCorpusReleaseVersion } from './release-selection.js';
 
 import type { CorpusRelease } from '@antica/contracts';
 
@@ -10,16 +11,20 @@ interface ManifestMember extends Located<CorpusRelease['files'][number]> {
 }
 
 /**
- * Validates release selection and the self-excluding canonical digest.
+ * validates release selection and the self-excluding canonical digest
  * @param context indexed corpus with exact file bytes
- * @param version requested semantic version, or the sole manifest
+ * @param version requested semantic version, or the latest manifest
  */
 export function validateManifest(
   context: CorpusContext,
   version?: string,
 ): void {
+  const selectedVersion = selectCorpusReleaseVersion(
+    context.releases.map((release) => release.value.version),
+    version,
+  );
   const selected = context.releases.filter(
-    (release) => version === undefined || release.value.version === version,
+    (release) => release.value.version === selectedVersion,
   );
   context.check(
     selected.length === 1,
@@ -48,7 +53,7 @@ export function validateManifest(
 }
 
 /**
- * Verifies complete release membership and unique file identities.
+ * verifies complete release membership and unique file identities
  * @param context indexed corpus with exact file bytes
  * @param record selected manifest and its diagnostic location
  */
@@ -78,7 +83,7 @@ function validateMembers(
 }
 
 /**
- * Checks safe paths and exact-byte hashes without resolving external paths.
+ * checks safe paths and exact-byte hashes without resolving external paths
  * @param context indexed corpus with exact file bytes
  * @param record manifest member and accumulated uniqueness sets
  */

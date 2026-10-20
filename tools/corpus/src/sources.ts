@@ -18,7 +18,7 @@ interface RightsRecord {
 }
 
 /**
- * Validates immutable payloads, located quotations, rights observations and image sets.
+ * validates immutable payloads, located quotations, rights observations and image sets
  * @param context indexed corpus and diagnostic collector
  */
 export function validateSources(context: CorpusContext): void {
@@ -57,7 +57,7 @@ export function validateSources(context: CorpusContext): void {
 }
 
 /**
- * Validates the immutable field or captured web section behind a locator.
+ * validates the immutable field or captured web section behind a locator
  * @param context indexed corpus and diagnostic collector
  * @param record typed evidence and its owning diagnostic location
  */
@@ -66,6 +66,14 @@ function validateLocator(
   record: SourceChild<Locator>,
 ): void {
   const { value: locator, source } = record;
+  if (locator.kind === 'page') {
+    context.check(containsQuote(source.payload, locator.excerpt), record, {
+      code: 'page_capture',
+      message: 'Page excerpt must occur verbatim in the captured book payload',
+    });
+
+    return;
+  }
   if (locator.kind === 'web') {
     context.check(
       new URL(locator.url).pathname !== '/' &&
@@ -81,6 +89,19 @@ function validateLocator(
 
     return;
   }
+  validateStructuredLocator(context, { ...record, value: locator });
+}
+
+/**
+ * validates provider identity and the exact captured structured field
+ * @param context indexed corpus and diagnostic collector
+ * @param record structured locator and its source snapshot
+ */
+function validateStructuredLocator(
+  context: CorpusContext,
+  record: SourceChild<Extract<Locator, { kind: 'structured' }>>,
+): void {
+  const { value: locator, source } = record;
   context.check(
     locator.provider === source.provider &&
       locator.objectId === source.objectId,
@@ -120,7 +141,7 @@ function validateLocator(
 }
 
 /**
- * Checks evidence hashes for optional field-bound rights facts without gating on designation.
+ * checks evidence hashes for optional field-bound rights facts without gating on designation
  * @param context indexed corpus and diagnostic collector
  * @param record captured rights fact and owning snapshot
  */
@@ -142,7 +163,7 @@ function validateRights(context: CorpusContext, record: RightsRecord): void {
 }
 
 /**
- * Checks citation version identity, quotes and populated support.
+ * checks citation version identity, quotes and populated support
  * @param context indexed corpus and diagnostic collector
  * @param record typed evidence and its owning diagnostic location
  */
@@ -204,7 +225,7 @@ function validateCitations(
 }
 
 /**
- * Verifies optional source rights evidence without an eligibility allowlist.
+ * verifies optional source rights evidence without an eligibility allowlist
  * @param context indexed corpus and diagnostic collector
  * @param record typed evidence and its owning diagnostic location
  */
@@ -229,7 +250,7 @@ function validateSourceRights(
 }
 
 /**
- * Verifies exact captured image sets and attribution.
+ * verifies exact captured image sets and attribution
  * @param context indexed corpus and diagnostic collector
  * @param record typed evidence and its owning diagnostic location
  */

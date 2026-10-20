@@ -5,12 +5,20 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { corpusFileSchema } from '@antica/contracts';
+import {
+  corpusFileSchema,
+  knowledgeContentEnvelopeV2Schema,
+} from '@antica/contracts';
 
 import { createCorpusContent } from '../../../packages/platform/src/database/repositories/corpus-content.js';
 import { disposition } from '../../../packages/platform/src/database/repositories/corpus-plan.js';
 
 import { createCorpusFixture } from './fixtures/corpus.js';
+import {
+  createGuideCorpusFixture,
+  createGuideFixture,
+  writeGuideCorpusFixture,
+} from './fixtures/guides.js';
 
 import {
   loadCorpusInstallRequest,
@@ -27,6 +35,39 @@ const requestArguments = [
 ];
 
 describe('fn:loadCorpusInstallRequest', () => {
+  it('should install only selected release members and exclude guides from owner drafts', () => {
+    const fixture = createGuideFixture();
+    const directory = writeGuideCorpusFixture(
+      createGuideCorpusFixture(fixture),
+    );
+    try {
+      const args = [
+        '--owner-id',
+        'guide-owner',
+        '--request-key',
+        randomUUID(),
+        '--dir',
+        directory,
+      ];
+      const legacy = loadCorpusInstallRequest([...args, '--release', '1.0.0']);
+      const current = loadCorpusInstallRequest([...args, '--release', '1.1.0']);
+
+      expect(legacy.sources.map((source) => source.id)).not.toContain(
+        fixture.source.id,
+      );
+      expect(current.sources.map((source) => source.id)).toContain(
+        fixture.source.id,
+      );
+      expect(current.entries).toEqual(legacy.entries);
+      expect(current.entries.map((entry) => entry.id)).not.toContain(
+        fixture.guide.id,
+      );
+      expect(current.topics).toEqual(legacy.topics);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     [],
     ['--release', '1.0.1', '--request-key', randomUUID()],
@@ -117,6 +158,57 @@ describe('cmd:corpus:install', () => {
 });
 
 describe('fn:createCorpusContent', () => {
+  it('should convert printed book evidence to a valid web envelope without inventing uploaded assets', () => {
+    const fixture = createGuideFixture();
+    fixture.source.locators = [
+      {
+        kind: 'page',
+        id: fixture.source.locators[0]!.id,
+        pageId: 'antica:page:xvii',
+        printedPageLabel: 'xvii',
+        excerpt: fixture.source.citations[0]!.quote,
+      },
+    ];
+    const entry = createCorpusFixture()
+      .map((document) => corpusFileSchema.parse(JSON.parse(document.text)))
+      .find((file) => file.kind === 'entry')!;
+    const content = createCorpusContent('page-owner', [fixture.source]);
+    const result = content.entry({
+      ...entry,
+      externalObjectIds: [fixture.source.id],
+      imageIds: [fixture.source.images[0]!.id],
+      claims: entry.claims.map((claim) => ({
+        ...claim,
+        citationIds: [fixture.source.citations[0]!.id],
+      })),
+    });
+
+    expect(knowledgeContentEnvelopeV2Schema.safeParse(result).success).toBe(
+      true,
+    );
+    expect(result.citations).toEqual([
+      expect.objectContaining({
+        quote: fixture.source.citations[0]!.quote,
+        locator: expect.objectContaining({
+          kind: 'web',
+          url: fixture.source.sourcePageUrl,
+          section: 'Printed page xvii; scan index unverified',
+          retrievedAt: fixture.source.retrievedAt,
+        }),
+        source: expect.objectContaining({
+          canonicalUrl: fixture.source.sourcePageUrl,
+        }),
+      }),
+    ]);
+    expect(result.images).toEqual([
+      expect.objectContaining({
+        imageUrl: fixture.source.images[0]!.remoteUrl,
+      }),
+    ]);
+    expect(result.images[0]).not.toHaveProperty('showable');
+    expect(result.images[0]).not.toHaveProperty('role');
+  });
+
   it('should preserve unspecific image rights, default locators and ordered claims in v2 envelopes', () => {
     const files = createCorpusFixture().map((document) =>
       corpusFileSchema.parse(JSON.parse(document.text)),

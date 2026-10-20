@@ -15,13 +15,15 @@ const translationMarkupPatterns = [
   /^(?:-{3,}|={3,})$/m,
 ];
 
-interface ClaimRecord extends Located<CorpusEntry['claims'][number]> {
-  entry: CorpusEntry;
+interface ClaimRecord extends Located<
+  Omit<CorpusEntry['claims'][number], 'section'>
+> {
+  entry: Pick<CorpusEntry, 'externalObjectIds'>;
   providers: Set<string>;
 }
 
 /**
- * Checks each atomic claim against its evidence bindings and original text.
+ * checks each atomic claim against its evidence bindings and original text
  * @param context indexed corpus and diagnostic collector
  * @param record typed evidence and its owning diagnostic location
  */
@@ -30,7 +32,7 @@ export function validateClaim(
   record: ClaimRecord,
 ): void {
   const { value: claim, entry, providers } = record;
-  const location = (field: string): Located<CorpusEntry['claims'][number]> => ({
+  const location = (field: string): ClaimRecord => ({
     ...record,
     path: `${record.path}.${field}`,
   });
@@ -87,7 +89,7 @@ export function validateClaim(
 }
 
 /**
- * Checks original identity, stale translations, language tags and plain text.
+ * checks original identity, stale translations, language tags and plain text
  * @param context indexed corpus and diagnostic collector
  * @param record typed evidence and its owning diagnostic location
  */
@@ -130,7 +132,7 @@ function validateVariants(context: CorpusContext, record: ClaimRecord): void {
 }
 
 /**
- * Checks variant hashes, canonical language tags and plain translation text.
+ * checks variant hashes, canonical language tags and plain translation text
  * @param context indexed corpus and diagnostic collector
  * @param record typed claim and its owning diagnostic location
  */

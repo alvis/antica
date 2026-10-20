@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 import {
+  corpusGuideFieldSchema,
+  corpusGuideGroupSchema,
+} from './knowledge-corpus/guide-fields.js';
+import {
   knowledgeClaimV2Schema,
   knowledgeLanguageV2Schema,
   knowledgeLocatorV2Schema,
@@ -12,7 +16,14 @@ import {
   observedRightsSchema,
 } from './source-structured.js';
 
+export {
+  corpusGuideFieldSchema,
+  corpusGuideGroupSchema,
+} from './knowledge-corpus/guide-fields.js';
+export { filterGuideStatementsForRecord } from './knowledge-corpus/record-context.js';
+
 const maximumTextLength = 24_000;
+const maximumKeyLength = 200;
 const categoryRootCount = 4;
 const maximumRelevanceGrade = 3;
 
@@ -86,6 +97,23 @@ const locatorSchema = z.discriminatedUnion('kind', [
       retrievedAt: utcInstantSchema,
       section: textSchema,
     }),
+  knowledgeLocatorV2Schema.options[2]
+    .omit({ sourceId: true, sourceVersionId: true })
+    .extend({
+      id: contentIdSchema,
+      pageId: contentIdSchema,
+      pageIndex: z.int().nonnegative().optional(),
+    })
+    .refine(
+      (locator) =>
+        locator.pageIndex !== undefined ||
+        Boolean(locator.printedPageLabel?.trim()),
+      {
+        message:
+          'A page without a verified scan index requires its printed page label',
+        path: ['printedPageLabel'],
+      },
+    ),
 ]);
 const citationSchema = z.strictObject({
   id: contentIdSchema,
@@ -94,6 +122,8 @@ const citationSchema = z.strictObject({
   locatorId: contentIdSchema,
   relation: z.enum(['supports', 'background', 'comparison']),
   quote: textSchema,
+  attributedOpinion: z.boolean().optional(),
+  verdictLanguage: z.boolean().optional(),
 });
 const imageSchema = z.strictObject({
   id: contentIdSchema,
@@ -107,6 +137,8 @@ const imageSchema = z.strictObject({
   lastCheckedAt: utcInstantSchema.optional(),
   status: z.enum(['unchecked', 'available', 'unavailable', 'removed']),
   locatorId: contentIdSchema.optional(),
+  showable: z.boolean().optional(),
+  role: z.enum(['typical', 'warning']).optional(),
 });
 const claimSchema = knowledgeClaimV2Schema.extend({
   citationIds: z.array(contentIdSchema),
@@ -114,13 +146,13 @@ const claimSchema = knowledgeClaimV2Schema.extend({
   variants: knowledgeClaimV2Schema.shape.variants.and(z.array(variantSchema)),
 });
 
-/** Versioned taxonomy labels, hierarchy, and authority evidence. */
+/** versioned taxonomy labels, hierarchy, and authority evidence */
 export const corpusTaxonomySchema = z.strictObject({
   formatVersion: z.literal(1),
   kind: z.literal('taxonomy'),
   topics: z.array(topicSchema).min(categoryRootCount),
 });
-/** Immutable metadata snapshot; image records contain URLs only. */
+/** immutable metadata snapshot; image records contain URLs only */
 export const corpusSourceSchema = z.strictObject({
   formatVersion: z.literal(1),
   kind: z.literal('source'),
@@ -136,12 +168,16 @@ export const corpusSourceSchema = z.strictObject({
   providerSchemaVersion: textSchema,
   payload: canonicalJsonSchema,
   rights: rightsSchema.optional(),
+  licenceBasis: z
+    .enum(['public_domain', 'open_license', 'collector_authorization'])
+    .optional(),
+  authorizationNote: textSchema.optional(),
   fieldRights: z.array(rightsSchema),
   locators: z.array(locatorSchema),
   citations: z.array(citationSchema),
   images: z.array(imageSchema),
 });
-/** Curated content installed as an owner draft by the future installer. */
+/** curated content installed as an owner draft by the future installer */
 export const corpusEntrySchema = z.strictObject({
   formatVersion: z.literal(1),
   kind: z.literal('entry'),
@@ -165,7 +201,60 @@ export const corpusEntrySchema = z.strictObject({
   externalObjectIds: z.array(contentIdSchema),
   editorialReview: reviewSchema,
 });
-/** Exact-byte members and canonical self-excluding manifest digest. */
+/** preserves claim evidence and original bytes while assigning a guide field */
+export const corpusGuideStatementSchema = claimSchema
+  .omit({ section: true })
+  .extend({
+    field: corpusGuideFieldSchema,
+    attributedOpinion: z.boolean().optional(),
+    verdictLanguage: z.boolean().optional(),
+  });
+const guideCheckSchema = z.strictObject({
+  checkKey: z.string().min(1).max(maximumKeyLength),
+  group: corpusGuideGroupSchema,
+  ordinal: z.int().nonnegative(),
+  labels: z.array(labelSchema).min(2),
+  statements: z.array(corpusGuideStatementSchema).min(1),
+  imageIds: z.array(contentIdSchema),
+  relatedEntryIds: z.array(contentIdSchema),
+  capture: z
+    .strictObject({
+      view: z.enum([
+        'overall',
+        'base',
+        'interior',
+        'detail',
+        'mark',
+        'underside',
+        'joint',
+      ]),
+      light: z.enum(['diffuse', 'raking', 'transmitted', 'any']).optional(),
+      magnification: z.enum(['none', 'loupe_10x', 'microscope']).optional(),
+    })
+    .optional(),
+  gap: z
+    .strictObject({
+      fields: z.array(corpusGuideFieldSchema).min(1),
+      need: textSchema,
+      ownerSourceHint: textSchema.optional(),
+    })
+    .optional(),
+});
+/** reference guidance kept outside owner knowledge drafts and machine verdicts */
+export const corpusExaminationGuideSchema = z.strictObject({
+  formatVersion: z.literal(1),
+  kind: z.literal('examination_guide'),
+  id: contentIdSchema,
+  guideVersion: z.int().positive(),
+  category: categorySchema,
+  titles: z.array(labelSchema).min(2),
+  appliesToTopicIds: z.array(contentIdSchema).min(1),
+  framing: z.literal('observation_not_verdict'),
+  checks: z.array(guideCheckSchema).min(1),
+  externalObjectIds: z.array(contentIdSchema),
+  editorialReview: reviewSchema,
+});
+/** exact-byte members and canonical self-excluding manifest digest */
 export const corpusReleaseSchema = z.strictObject({
   formatVersion: z.literal(1),
   kind: z.literal('release'),
@@ -177,7 +266,7 @@ export const corpusReleaseSchema = z.strictObject({
   manifestHash: hashSchema,
   rightsNotices: z.array(rightsSchema),
 });
-/** Owner questions; provisional research judgments are distinct from owner gold. */
+/** owner questions; provisional research judgments are distinct from owner gold */
 export const corpusQueriesSchema = z.strictObject({
   formatVersion: z.literal(1),
   kind: z.literal('owner_queries'),
@@ -199,13 +288,14 @@ export const corpusQueriesSchema = z.strictObject({
     }),
   ),
 });
-/** Strict on-disk corpus contract, including graded owner queries. */
+/** strict on-disk corpus contract, including graded owner queries */
 export const corpusFileSchema = z.discriminatedUnion('kind', [
   corpusTaxonomySchema,
   corpusSourceSchema,
   corpusEntrySchema,
   corpusReleaseSchema,
   corpusQueriesSchema,
+  corpusExaminationGuideSchema,
 ]);
 
 export type CorpusFile = z.infer<typeof corpusFileSchema>;
@@ -214,3 +304,8 @@ export type CorpusSource = z.infer<typeof corpusSourceSchema>;
 export type CorpusEntry = z.infer<typeof corpusEntrySchema>;
 export type CorpusRelease = z.infer<typeof corpusReleaseSchema>;
 export type CorpusQueries = z.infer<typeof corpusQueriesSchema>;
+
+export type CorpusExaminationGuide = z.infer<
+  typeof corpusExaminationGuideSchema
+>;
+export type CorpusGuideStatement = z.infer<typeof corpusGuideStatementSchema>;
