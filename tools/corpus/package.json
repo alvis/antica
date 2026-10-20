@@ -1,0 +1,24 @@
+{
+  "name": "@antica/corpus",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "inventory": "tsx --eval 'import { writeCorpusInventory } from \"./src/inventory-command.ts\"; writeCorpusInventory(process.argv[1]);' --",
+    "build": "run build",
+    "lint": "run lint --",
+    "test": "run test --",
+    "test:coverage": "run test:coverage --",
+    "typecheck": "tsc6 --project tsconfig.json --noEmit",
+    "install:release": "tsx --eval 'import { runCorpusInstallCommand } from \"./src/install.ts\"; runCorpusInstallCommand(process.argv.slice(1)).then(code => { process.exitCode = code; });' --",
+    "validate": "tsx --eval 'import { runCorpusCommand } from \"./src/cli.ts\"; process.exitCode = runCorpusCommand(process.argv.slice(1));' --",
+    "relevance": "tsx --eval 'import { runRelevanceCommand } from \"./src/relevance.ts\"; runRelevanceCommand().then(code => { process.exitCode = code; });'"
+  },
+  "dependencies": {
+    "@antica/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "vitest": "4.1.11"
+  }
+}

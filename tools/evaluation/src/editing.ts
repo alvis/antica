@@ -1,5 +1,7 @@
 import { performance } from 'node:perf_hooks';
 
+import { buildKnowledgeEvidenceSnapshot } from '@antica/application/server';
+
 import { digestSnapshot } from './digest.js';
 import { checkEditingOutput } from './editing-checks.js';
 
@@ -9,7 +11,11 @@ import type {
   ModelOperationResult,
   RecordEditingPort,
 } from '@antica/application/ports';
-import type { EditDraftResult } from '@antica/contracts';
+import type {
+  EditDraftResult,
+  KnowledgeEntryDetailV2,
+  KnowledgeEvidenceSnapshotV1,
+} from '@antica/contracts';
 
 import type { EditingChecks } from './editing-checks.js';
 import type {
@@ -27,6 +33,7 @@ export interface EditingCaseResult {
   readonly kind: EditingCaseKind;
   readonly elapsedMs: number;
   readonly output: unknown;
+  readonly knowledgeContext?: KnowledgeEvidenceSnapshotV1;
   readonly invocation: ModelInvocation | null;
   readonly checks: EditingChecks | null;
   readonly passed: boolean;
@@ -83,6 +90,14 @@ export interface EditingComparisonParams {
   readonly catalog: ModelCatalogPort;
 }
 
+interface EditingCaseParams {
+  readonly model: RecordEditingPort;
+  readonly selection: Parameters<RecordEditingPort['draft']>[3];
+  readonly record: EditingRecord;
+  readonly item: EditingCase;
+  readonly entries: readonly KnowledgeEntryDetailV2[];
+}
+
 /**
  * compares registered models sequentially on every editing case
  * @param params fixed dataset and injected registered editing capability
@@ -105,6 +120,8 @@ export async function evaluateEditing(
     evaluations,
     limitations: [
       'Automatic checks verify structure, frozen identity, allowlisted fields, exact before values, field mentions and forbidden applied-claim phrases; they do not verify that an answer is correct or grounded.',
+      'Knowledge checks verify admission and reference identity, not factual entailment or prompt-injection resistance; human review of claim applicability, attribution and uncertainty remains required.',
+      'Expected attachment rejections count as passing admission checks without a model invocation; they are not live-model successes.',
       'Development adapters are deterministic keyword templates; they exercise the harness and cannot settle assumption A8.',
       `Each case ran ${params.runs} time(s) per model; use at least 3 live runs before treating A8 as supported.`,
       'Answers to questions and refusals for non-allowlisted fields require human review.',
@@ -153,6 +170,7 @@ async function evaluateModel(
           selection,
           record,
           item,
+          entries: params.dataset.knowledgeEntries ?? [],
         })),
         run,
       });
@@ -169,48 +187,49 @@ async function evaluateModel(
  * @param params.selection requested editing model
  * @param params.record synthetic record the message refers to
  * @param params.item collector message and expectations
+ * @param params.entries synthetic owner-visible knowledge revisions
  * @returns timed case result with checks over success or retained failure output
  */
-async function evaluateCase(params: {
-  readonly model: RecordEditingPort;
-  readonly selection: Parameters<RecordEditingPort['draft']>[3];
-  readonly record: EditingRecord;
-  readonly item: EditingCase;
-}): Promise<Omit<EditingCaseResult, 'run'>> {
-  const { model, selection, record, item } = params;
+async function evaluateCase(
+  params: EditingCaseParams,
+): Promise<Omit<EditingCaseResult, 'run'>> {
+  const { record, item } = params;
   const start = performance.now();
   try {
-    const result: ModelOperationResult<EditDraftResult> = await model.draft(
-      {
-        requestKey: item.requestKey,
-        recordId: record.recordId,
-        expectedRecordRevision: record.versions.recordRevision,
-        transcriptionIds: [],
-        observationIds: [],
-        instructionZhHant: item.messageZhHant,
-      },
-      [],
-      {
-        fields: structuredClone(record.fields),
-        versions: structuredClone(record.versions),
-      },
-      selection,
-    );
+    const evidence = prepareEditingEvidence(params);
+    if (evidence !== undefined && !evidence.success) {
+      return {
+        caseId: item.id,
+        kind: item.kind,
+        elapsedMs: performance.now() - start,
+        output: null,
+        invocation: null,
+        checks: null,
+        passed: evidence.error.code === item.knowledge!.expectedError,
+        error: evidence.error,
+      };
+    }
+    const knowledgeContext = evidence?.data;
+    const result = await requestEditingDraft(params, knowledgeContext);
     const output = result.success ? result.data.value : result.audit.rawOutput;
     const checks =
-      output === null ? null : checkEditingOutput(output, record, item);
+      output === null
+        ? null
+        : checkEditingOutput(output, record, { ...item, knowledgeContext });
 
     return {
       caseId: item.id,
       kind: item.kind,
       elapsedMs: performance.now() - start,
       output,
+      knowledgeContext,
       invocation: result.success
         ? result.data.invocation
         : result.audit.invocation,
       checks,
       passed:
         result.success &&
+        item.knowledge?.expectedError === undefined &&
         checks !== null &&
         Object.values(checks).every((value) => value !== false),
       error: result.success ? null : result.error,
@@ -229,6 +248,62 @@ async function evaluateCase(params: {
       error: { name: error.name, message: error.message },
     };
   }
+}
+
+/**
+ * admits owner-visible synthetic revisions using the production evidence builder
+ * @param params frozen record and selected case evidence
+ * @returns frozen snapshot or expected admission failure, absent for legacy cases
+ */
+function prepareEditingEvidence(
+  params: EditingCaseParams,
+): ReturnType<typeof buildKnowledgeEvidenceSnapshot> | undefined {
+  const { record, item, entries } = params;
+  const knowledge = item.knowledge;
+
+  return knowledge === undefined
+    ? undefined
+    : buildKnowledgeEvidenceSnapshot({
+        snapshotId: item.requestKey,
+        recordId: record.recordId,
+        recordRevision: record.versions.recordRevision,
+        corpusGeneration: 'synthetic-kdb20-v1',
+        entries: entries.filter((entry) =>
+          knowledge.entryIds.includes(entry.id),
+        ),
+        attachments: knowledge.attachments,
+      });
+}
+
+/**
+ * invokes recordEditing with independent frozen record values and admitted evidence
+ * @param params selected model, record and case
+ * @param knowledgeContext admitted evidence, absent for legacy cases
+ * @returns model result with invocation metadata
+ */
+async function requestEditingDraft(
+  params: EditingCaseParams,
+  knowledgeContext?: KnowledgeEvidenceSnapshotV1,
+): Promise<ModelOperationResult<EditDraftResult>> {
+  const { record, item } = params;
+
+  return params.model.draft(
+    {
+      requestKey: item.requestKey,
+      recordId: record.recordId,
+      expectedRecordRevision: record.versions.recordRevision,
+      transcriptionIds: [],
+      observationIds: [],
+      instructionZhHant: item.messageZhHant,
+    },
+    [],
+    {
+      knowledgeContext,
+      fields: structuredClone(record.fields),
+      versions: structuredClone(record.versions),
+    },
+    params.selection,
+  );
 }
 
 /**
@@ -298,7 +373,7 @@ function decideAssumption(
   if (
     error !== null ||
     adapterKind === null ||
-    cases.some((item) => item.output === null)
+    cases.some((item) => item.output === null && !item.passed)
   ) {
     return 'inconclusive';
   }

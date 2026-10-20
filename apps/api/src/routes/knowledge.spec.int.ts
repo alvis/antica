@@ -1164,6 +1164,54 @@ describe('Selected source page projection', () => {
 });
 
 describe('Persistent knowledge revisions', () => {
+  it('should retain pinned legacy method responses and missing revision failures without discovery', async ({
+    fixture,
+  }) => {
+    const ownerId = randomUUID();
+    const transaction = createTransactionPort(fixture.runtime.database.db);
+    const knowledge = createKnowledgeService(transaction, clock, ids);
+    const draft = value(await knowledge.create(ownerId, knowledgeInput()));
+    const app = new Hono<ApiEnv>();
+    app.use('*', async (context, next) => {
+      context.set('ownerId', ownerId);
+      await next();
+    });
+    app.route(
+      '/v1',
+      createKnowledgeRoutes(
+        createSourceService({ transaction, clock, ids }),
+        knowledge,
+      ),
+    );
+    const pinned = await app.request(
+      `/v1/knowledge/${draft.entry.id}?methodVersionId=${draft.methodVersions[0]!.id}`,
+    );
+    expect(pinned.status).toBe(200);
+    expect(await pinned.json()).toEqual(draft);
+    const persisted = value(
+      await knowledge.getV2(ownerId, draft.entry.id, {
+        view: 'revision',
+        revision: 1,
+      }),
+    );
+    expect(pinned.headers.get('etag')).toBe(`"1-${persisted.contentHash}"`);
+    const missing = await app.request(
+      `/v1/knowledge/${randomUUID()}?methodVersionId=${randomUUID()}`,
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('etag')).toBeNull();
+    expect(await missing.json()).toMatchObject({ code: 'NOT_FOUND' });
+    expect(
+      await knowledge.getV2(ownerId, draft.entry.id, {
+        view: 'revision',
+        revision: 999,
+      }),
+    ).toMatchObject({
+      success: false,
+      error: { code: 'NOT_FOUND' },
+    });
+  });
+
   it('should retain the original draft and method when the collector saves a new revision', async ({
     fixture,
   }) => {

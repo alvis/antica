@@ -10,6 +10,7 @@ export const jobKindSchema = z.enum([
   'research',
   'transcription',
   'recordEditing',
+  'knowledgeImport',
 ]);
 export type JobKind = z.infer<typeof jobKindSchema>;
 export const jobStateSchema = z.discriminatedUnion('kind', [

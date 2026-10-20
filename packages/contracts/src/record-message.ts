@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 import { proposedChangeSchema } from './analysis.js';
 import {
+  answerSegmentSchema,
+  knowledgeAttachmentSchema,
+  knowledgeEvidenceSnapshotV1Schema,
+} from './knowledge-evidence.js';
+import {
   MAX_PAGE_SIZE,
   cursorPageSchema,
   entityIdSchema,
@@ -24,6 +29,10 @@ export const recordMessageSchema = z.strictObject({
   id: entityIdSchema,
   recordId: entityIdSchema,
   author: recordMessageAuthorSchema,
+  knowledgeEvidence: z
+    .union([knowledgeEvidenceSnapshotV1Schema, z.tuple([])])
+    .optional(),
+  answerSegments: z.array(answerSegmentSchema).max(32).optional(),
   body: z.string().trim().min(1),
   editDraftId: entityIdSchema,
   createdAt: instantSchema,
@@ -37,6 +46,7 @@ export const recordMessagePostSchema = z
     body: z.string().trim().max(recordMessageBodyMaxLength),
     transcriptionIds: z.array(entityIdSchema),
     expectedRecordRevision: revisionSchema,
+    knowledgeAttachments: z.array(knowledgeAttachmentSchema).max(6).optional(),
   })
   .refine(
     ({ body, transcriptionIds }) => body !== '' || transcriptionIds.length > 0,
@@ -47,6 +57,12 @@ export type RecordMessagePost = z.infer<typeof recordMessagePostSchema>;
 /** the stored collector message and the edit draft its post started */
 export const recordMessagePostedSchema = editDraftAcceptedSchema
   .safeExtend({
+    knowledgeSnapshot: z
+      .strictObject({
+        snapshotId: entityIdSchema,
+        snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .optional(),
     message: recordMessageSchema.safeExtend({
       author: z.literal('collector'),
     }),

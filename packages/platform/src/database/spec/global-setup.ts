@@ -13,6 +13,9 @@ declare module 'vitest' {
 }
 
 const slotsByFile: Readonly<Record<string, readonly DatabaseSlot[]>> = {
+  'src/database/repositories/knowledge/search.spec.int.ts': [
+    { id: 'knowledge-search', migrate: true },
+  ],
   'src/database/repositories/runtime.spec.int.ts': [
     { id: 'runtime', migrate: true },
   ],

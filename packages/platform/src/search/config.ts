@@ -6,16 +6,17 @@ import {
 } from './qdrant.js';
 import { createVoyageImageEmbedding } from './voyage.js';
 
-import type { LocalImageRetrievalParams } from './image.js';
-import type {
-  QdrantImageRetrievalParams,
-  QdrantImageWriter,
-} from './qdrant.js';
 import type {
   ImageRetrievalPort,
   IndexIdentity,
   OperationResult,
 } from '@antica/application/ports';
+
+import type { LocalImageRetrievalParams } from './image.js';
+import type {
+  QdrantImageRetrievalParams,
+  QdrantImageWriter,
+} from './qdrant.js';
 
 /** keeps the local descriptor profile explicit and development-only */
 export interface LocalImageRetrievalConfig extends LocalImageRetrievalParams {
@@ -35,7 +36,9 @@ export interface CloudImageRetrievalConfig extends Omit<
 
 /** selects exactly one image adapter without fallback */
 export type ConfiguredImageRetrievalParams =
-  LocalImageRetrievalConfig | CloudImageRetrievalConfig;
+  | LocalImageRetrievalConfig
+  | CloudImageRetrievalConfig
+  | { readonly driver: 'disabled' };
 
 /** exposes the selected immutable index and optional cloud ingestion capability */
 export interface ConfiguredImageRetrieval {
@@ -52,6 +55,22 @@ export interface ConfiguredImageRetrieval {
 export function createConfiguredImageRetrieval(
   params: ConfiguredImageRetrievalParams,
 ): OperationResult<ConfiguredImageRetrieval> {
+  if (params.driver === 'disabled') {
+    return {
+      success: true,
+      data: {
+        port: {
+          search: async () => unavailableImages(),
+          compare: async () => ({
+            ...unavailableImages(),
+            audit: { invocation: null, rawOutput: null },
+          }),
+        },
+        index: developmentImageIndex,
+        writer: null,
+      },
+    };
+  }
   if (params.driver === 'local') {
     if (
       params.production ||
@@ -111,6 +130,25 @@ export function createConfiguredImageRetrieval(
       port: createQdrantImageRetrieval(cloud),
       index: params.index,
       writer: createQdrantImageWriter(cloud),
+    },
+  };
+}
+
+/**
+ * rejects an explicitly invoked optional image capability without provider access
+ * @returns stable provider-unavailable failure
+ */
+function unavailableImages(): Extract<
+  OperationResult<never>,
+  { success: false }
+> {
+  return {
+    success: false,
+    error: {
+      code: 'PROVIDER_UNAVAILABLE',
+      message:
+        'Image retrieval is disabled; configure an image provider to use this capability.',
+      retryable: false,
     },
   };
 }

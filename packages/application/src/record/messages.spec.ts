@@ -96,7 +96,10 @@ function observation(id: string, text: string): Observation {
   };
 }
 
-/** a confirmed transcription whose adopted text is read through an observation of the same ID */
+/**
+ * a confirmed transcription whose adopted text is read through an observation of the same ID
+ * @param id
+ */
 function confirmed(id: string) {
   return {
     detail: {
@@ -115,7 +118,11 @@ interface ReadyTranscription {
   readonly original?: string;
 }
 
-/** a transcription that has not been confirmed, so no observation exists for it */
+/**
+ * a transcription that has not been confirmed, so no observation exists for it
+ * @param id
+ * @param facts
+ */
 function unconfirmed(id: string, facts: ReadyTranscription) {
   return {
     detail: {
@@ -143,6 +150,13 @@ interface Stored {
 /**
  * builds a fake transaction that restores its state when a result fails
  * @param options facts the fake repositories report
+ * @param options.record
+ * @param options.texts
+ * @param options.unconfirmed
+ * @param options.draftVanishes
+ * @param options.listed
+ * @param options.listFailure
+ * @param options.insertFailure
  * @returns the service under test, the committed state, and the spies
  */
 function fixture(
@@ -202,6 +216,16 @@ function fixture(
     return { items: options.listed ?? [], nextCursor: 'older' };
   });
   const repositories = {
+    knowledge: {
+      related: async () => ({
+        cards: [],
+        recordRevision: 1,
+        contextHash: 'a'.repeat(64),
+        reason: 'no_match' as const,
+      }),
+      getV2: async () => null,
+      getCorpusGeneration: async () => 'generation-1',
+    },
     commands: {
       get: async (_owner: string, operation: string, key: string) =>
         state.receipts.get(`${operation}:${key}`) ?? null,
@@ -308,6 +332,10 @@ describe('fn:createRecordMessageService', () => {
         data: {
           editDraftId: requestKey,
           jobId: generatedId,
+          knowledgeSnapshot: {
+            snapshotId: generatedId,
+            snapshotHash: expect.any(String),
+          },
           message: {
             id: generatedId,
             recordId,
@@ -344,7 +372,10 @@ describe('fn:createRecordMessageService', () => {
       const ports = fixture();
       const first = await ports.service.post(ownerId, recordId, post);
 
-      const replay = await ports.service.post(ownerId, recordId, post);
+      const replay = await ports.service.post(ownerId, recordId, {
+        ...post,
+        knowledgeAttachments: [],
+      });
 
       expect(replay).toEqual(first);
       expect(ports.state.jobs).toBe(1);
@@ -355,6 +386,21 @@ describe('fn:createRecordMessageService', () => {
 
     const conflicts: Array<[string, RecordMessagePost, string]> = [
       ['body', { ...post, body: 'Something else' }, recordId],
+      [
+        'attachments',
+        {
+          ...post,
+          knowledgeAttachments: [
+            {
+              entryId: generatedId,
+              revision: 1,
+              claimKey: 'material',
+              citationIds: [generatedId],
+            },
+          ],
+        },
+        recordId,
+      ],
       ['record', post, '00000000-0000-4000-8000-0000000000aa'],
       [
         'transcriptions',

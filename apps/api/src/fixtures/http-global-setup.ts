@@ -27,6 +27,7 @@ const suites = new Set([
   'routes/evidence',
   'routes/voice',
   'routes/knowledge-http',
+  'routes/knowledge-search',
   'routes/knowledge',
   'routes/source-branches',
   'routes/media',

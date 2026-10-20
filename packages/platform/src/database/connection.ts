@@ -10,7 +10,7 @@ export interface DatabaseConfig {
 
 /** typed platform database and its connection cleanup capability */
 export interface DatabaseConnection {
-  readonly db: PrismaClient;
+  readonly db: PrismaClient<'query'>;
   readonly close: () => Promise<void>;
 }
 
@@ -35,10 +35,12 @@ export function createDatabase(config: DatabaseConfig): DatabaseConnection {
     if (closed) {
       throw new Error('Database connection is closed');
     }
+
     return connect();
   };
   const db = new PrismaClient({
     adapter,
+    log: [{ emit: 'event', level: 'query' }],
     transactionOptions: { maxWait: 30_000, timeout: 60_000 },
   });
 

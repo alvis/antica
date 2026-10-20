@@ -177,7 +177,7 @@ export async function readSourceLocator(
   id: string,
 ): Promise<SourceLocator | null> {
   const locator = await tx.sourceLocators.findFirst({
-    where: { id, sources: { ownerId } },
+    where: { id, sources: { ownerId }, sourceVersions: { ownerId } },
   });
   if (!locator) {
     return null;

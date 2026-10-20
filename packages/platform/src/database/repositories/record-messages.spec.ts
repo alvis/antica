@@ -21,11 +21,16 @@ function conflictingTransaction(selects: unknown[][]): Transaction {
 
   return new Proxy(db, {
     get(target, property, receiver) {
-      if (
-        property === 'records' ||
-        property === 'editDraftRuns' ||
-        property === 'recordMessages'
-      ) {
+      if (property === 'editDraftRuns') {
+        return {
+          findFirst: first,
+          findFirstOrThrow: async () => ({
+            knowledgeContext: null,
+            result: null,
+          }),
+        };
+      }
+      if (property === 'records' || property === 'recordMessages') {
         return { findFirst: first };
       }
       if (property === '$queryRaw') {

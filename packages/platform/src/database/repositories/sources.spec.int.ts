@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { describe, expect, inject } from 'vitest';
 
@@ -12,8 +12,14 @@ import {
   readReferenceImage,
   readSourceLocator,
 } from './sources.js';
+import {
+  createStructuredSourceVersion,
+  writeStructuredCitation,
+} from './structured-sources.js';
 
 import type { ProviderChunkMapping } from '@antica/application/ports';
+import type { KnowledgeContentEnvelopeV2 } from '@antica/contracts';
+
 import type {
   Source,
   SourceVersion,
@@ -1032,3 +1038,317 @@ function sourcePair(): {
     },
   };
 }
+
+describe('fn:createStructuredSourceVersion', () => {
+  it('should deduplicate exact snapshots while keeping identical records from distinct provider identities separate', async ({
+    connection,
+  }) => {
+    const ownerId = randomUUID();
+    const sourceId = randomUUID();
+    const payload = { count: 3, title: 'Vase' };
+    const payloadHash = createHash('sha256')
+      .update(JSON.stringify(payload))
+      .digest('hex');
+    const snapshot = {
+      provider: 'museum',
+      objectId: 'object-1',
+      payloadHash,
+      schemaVersion: '1',
+      sourceHash: createHash('sha256')
+        .update(
+          JSON.stringify({
+            objectId: 'object-1',
+            payloadHash,
+            provider: 'museum',
+            schemaVersion: '1',
+          }),
+        )
+        .digest('hex'),
+      sourcePageUrl: 'https://museum.example/1',
+      retrievedAt: instant,
+      payload,
+    };
+    await connection.db.$transaction(async (tx) => {
+      await tx.sources.create({
+        data: {
+          id: sourceId,
+          ownerId,
+          kind: 'structured_open_data',
+          title: 'Museum object',
+          authorStatus: 'unknown',
+          access: 'link_only',
+        },
+      });
+      await tx.sourceLanguages.create({ data: { sourceId, language: 'en' } });
+      await tx.sourceContributors.create({
+        data: {
+          sourceId,
+          ordinal: 0,
+          nameAsPrinted: 'Museum',
+          role: 'institution',
+          attribution: 'as_printed',
+        },
+      });
+      const id = randomUUID();
+      expect(
+        await createStructuredSourceVersion(tx, ownerId, {
+          id,
+          sourceId,
+          snapshot,
+        }),
+      ).toBe(id);
+      expect(
+        await createStructuredSourceVersion(tx, ownerId, {
+          id: randomUUID(),
+          sourceId,
+          snapshot,
+        }),
+      ).toBe(id);
+      expect(await tx.sourceVersions.count({ where: { sourceId } })).toBe(1);
+      const citationId = randomUUID();
+      const citation: KnowledgeContentEnvelopeV2['citations'][number] = {
+        id: citationId,
+        relation: 'supports',
+        availability: 'link_only',
+        verification: 'located',
+        quote: 'Vase',
+        locator: {
+          kind: 'structured',
+          id: citationId,
+          sourceId,
+          sourceVersionId: id,
+          provider: 'museum',
+          objectId: 'object-1',
+          fieldPath: '/title',
+          valueHash: createHash('sha256')
+            .update(JSON.stringify('Vase'))
+            .digest('hex'),
+          url: snapshot.sourcePageUrl,
+          retrievedAt: instant,
+          excerpt: 'Vase',
+        },
+        source: {
+          id: sourceId,
+          versionId: id,
+          title: 'Museum object',
+          canonicalUrl: snapshot.sourcePageUrl,
+          languages: ['en'],
+          contributors: ['Museum'],
+          structuredSnapshot: snapshot,
+        },
+      };
+      await writeStructuredCitation(tx, ownerId, citation);
+      await writeStructuredCitation(tx, ownerId, citation);
+      const countCitationId = randomUUID();
+      const countCitation = {
+        ...citation,
+        id: countCitationId,
+        quote: '3',
+        locator: {
+          ...citation.locator,
+          id: countCitationId,
+          fieldPath: '/count',
+          valueHash: createHash('sha256').update('3').digest('hex'),
+          excerpt: '3',
+        },
+      };
+      await writeStructuredCitation(tx, ownerId, countCitation);
+      expect(
+        await tx.citations.findUnique({ where: { id: countCitationId } }),
+      ).toMatchObject({ locatorId: countCitationId });
+      if (citation.locator.kind !== 'structured') {
+        throw new Error('Expected structured fixture');
+      }
+      const capturedLocator = citation.locator;
+      for (const forged of [
+        { provider: 'different-museum' },
+        { objectId: 'different-object' },
+        { url: 'https://museum.example/forged' },
+        { retrievedAt: '2026-01-01T00:00:00.000Z' },
+      ]) {
+        await tx.sourceLocators.update({
+          where: { id: citationId },
+          data: forged,
+        });
+        await expect(
+          writeStructuredCitation(tx, ownerId, {
+            ...citation,
+            locator: { ...capturedLocator, ...forged },
+          }),
+        ).rejects.toThrow();
+        await tx.sourceLocators.update({
+          where: { id: citationId },
+          data: {
+            provider: capturedLocator.provider,
+            objectId: capturedLocator.objectId,
+            url: capturedLocator.url,
+            retrievedAt: capturedLocator.retrievedAt,
+          },
+        });
+      }
+
+      expect(await tx.citations.count({ where: { id: citationId } })).toBe(1);
+      expect(
+        await tx.sourceLocators.findUnique({ where: { id: citationId } }),
+      ).toMatchObject({
+        fieldPath: '/title',
+        valueHash: citation.locator.valueHash,
+        sourceVersionId: id,
+      });
+      await expect(
+        writeStructuredCitation(tx, randomUUID(), citation),
+      ).rejects.toThrow();
+      for (const invalidSnapshot of [
+        { ...snapshot, payload: { title: 'Forged title' } },
+        { ...snapshot, payloadHash: 'f'.repeat(64) },
+        { ...snapshot, provider: 'forged' },
+        { ...snapshot, sourcePageUrl: 'https://museum.example/forged' },
+        { ...snapshot, retrievedAt: '2026-01-01T00:00:00.000Z' },
+        {
+          ...snapshot,
+          observedRights: [
+            {
+              name: 'PDM',
+              observedAt: instant,
+              evidenceUrl: 'https://museum.example/rights',
+            },
+          ],
+        },
+        { ...snapshot, sourceHash: 'f'.repeat(64) },
+      ]) {
+        await expect(
+          writeStructuredCitation(tx, ownerId, {
+            ...citation,
+            source: { ...citation.source, structuredSnapshot: invalidSnapshot },
+          }),
+        ).rejects.toThrow();
+      }
+
+      await expect(
+        writeStructuredCitation(tx, ownerId, {
+          ...citation,
+          quote: 'Forged quote',
+        }),
+      ).rejects.toThrow();
+      await expect(
+        writeStructuredCitation(tx, ownerId, {
+          ...citation,
+          locator: {
+            kind: 'web',
+            id: citationId,
+            sourceId,
+            sourceVersionId: id,
+            url: snapshot.sourcePageUrl,
+            retrievedAt: instant,
+            section: 'Title',
+            excerpt: 'Vase',
+          },
+        }),
+      ).rejects.toThrow(TypeError);
+      const secondSnapshot = {
+        ...snapshot,
+        objectId: 'object-2',
+        sourceHash: createHash('sha256')
+          .update(
+            JSON.stringify({
+              objectId: 'object-2',
+              payloadHash,
+              provider: 'museum',
+              schemaVersion: '1',
+            }),
+          )
+          .digest('hex'),
+      };
+      const secondId = randomUUID();
+      const secondSourceId = randomUUID();
+      await tx.sources.create({
+        data: {
+          id: secondSourceId,
+          ownerId,
+          kind: 'structured_open_data',
+          title: 'Second object',
+          authorStatus: 'unknown',
+          access: 'link_only',
+        },
+      });
+      await expect(
+        createStructuredSourceVersion(tx, ownerId, {
+          id: randomUUID(),
+          sourceId: secondSourceId,
+          snapshot,
+        }),
+      ).rejects.toThrow();
+      const changedPayload = { title: 'Updated vase' };
+      const changedPayloadHash = createHash('sha256')
+        .update(JSON.stringify(changedPayload))
+        .digest('hex');
+      await expect(
+        createStructuredSourceVersion(tx, ownerId, {
+          id: randomUUID(),
+          sourceId: secondSourceId,
+          snapshot: {
+            ...snapshot,
+            payload: changedPayload,
+            payloadHash: changedPayloadHash,
+            sourceHash: createHash('sha256')
+              .update(
+                JSON.stringify({
+                  objectId: snapshot.objectId,
+                  payloadHash: changedPayloadHash,
+                  provider: snapshot.provider,
+                  schemaVersion: snapshot.schemaVersion,
+                }),
+              )
+              .digest('hex'),
+          },
+        }),
+      ).rejects.toThrow();
+      expect(
+        await createStructuredSourceVersion(tx, ownerId, {
+          id: secondId,
+          sourceId: secondSourceId,
+          snapshot: secondSnapshot,
+        }),
+      ).toBe(secondId);
+      expect(
+        await tx.sourceVersions.findMany({
+          where: { ownerId },
+          orderBy: { id: 'asc' },
+          select: { structuredPayload: true, payloadHash: true },
+        }),
+      ).toEqual([
+        { structuredPayload: payload, payloadHash },
+        { structuredPayload: payload, payloadHash },
+      ]);
+      await expect(
+        createStructuredSourceVersion(tx, randomUUID(), {
+          id: randomUUID(),
+          sourceId,
+          snapshot,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        createStructuredSourceVersion(tx, ownerId, {
+          id: randomUUID(),
+          sourceId,
+          snapshot: { ...snapshot, payload: { imageBase64: 'aGVsbG8=' } },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        createStructuredSourceVersion(tx, ownerId, {
+          id: randomUUID(),
+          sourceId,
+          snapshot: { ...snapshot, payload: { title: 'Changed' } },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        createStructuredSourceVersion(tx, ownerId, {
+          id: randomUUID(),
+          sourceId,
+          snapshot: { ...snapshot, sourceHash: 'f'.repeat(64) },
+        }),
+      ).rejects.toThrow();
+      expect(await tx.sourceVersions.count({ where: { ownerId } })).toBe(2);
+    });
+  });
+});

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
@@ -80,6 +80,203 @@ const invalidInputs: ReadonlyArray<{
 ];
 
 describe('Knowledge validation and method revision boundaries', () => {
+  it('should hide a revision whose persisted hash is unavailable', async () => {
+    await withKnowledge(async ({ ownerId, knowledge, withRepository }) => {
+      const original = value(await knowledge.createV2(ownerId, v2Input()));
+      const inconsistent = withRepository({ getV2Hash: async () => null });
+      expect(await inconsistent.getV2(ownerId, original.id, {})).toMatchObject({
+        success: false,
+        error: { code: 'NOT_FOUND' },
+      });
+      expect(
+        value(await knowledge.getV2(ownerId, original.id, {})).detail,
+      ).toEqual(original);
+    });
+  });
+
+  it('should persist located supporting citations across every v2 section and reject unsupported claims', async () => {
+    await withKnowledge(async ({ ownerId, knowledge, transaction }) => {
+      const stored = await persistCitation(transaction, ownerId);
+      if (stored.locator.kind !== 'web') {
+        throw new Error('Expected web fixture');
+      }
+      const input = v2Input();
+      input.content.citations = [
+        {
+          id: stored.id,
+          relation: 'supports',
+          availability: 'link_only',
+          verification: 'located',
+          quote: stored.locator.excerptAsRetrieved!,
+          locator: {
+            id: stored.id,
+            kind: 'web',
+            sourceId: stored.locator.sourceId,
+            sourceVersionId: stored.locator.sourceVersionId,
+            url: stored.locator.url,
+            retrievedAt: stored.locator.retrievedAt,
+            excerpt: stored.locator.excerptAsRetrieved!,
+          },
+          source: {
+            id: stored.locator.sourceId,
+            versionId: stored.locator.sourceVersionId,
+            title: '館藏來源',
+            languages: ['en'],
+            contributors: [],
+            canonicalUrl: 'https://museum.example/source',
+          },
+        },
+      ];
+      const claim = input.content.claims[0]!;
+      claim.supportState = 'cited';
+      claim.citationIds = [stored.id];
+      input.content.sections.summary.supportState = 'cited';
+      input.content.sections.summary.citationIds = [stored.id];
+      for (const section of [
+        'history',
+        'features',
+        'applicability',
+        'limits',
+      ] as const) {
+        input.content.sections[section] = [
+          { ...input.content.sections.summary, claimKey: section },
+        ];
+        input.content.claims.push({ ...claim, claimKey: section, section });
+      }
+      const saved = value(await knowledge.createV2(ownerId, input));
+      expect(saved.content.citations).toEqual(input.content.citations);
+      expect(saved.content.claims).toHaveLength(5);
+      for (const citation of [
+        { ...input.content.citations[0]!, relation: 'background' as const },
+        {
+          ...input.content.citations[0]!,
+          verification: 'needs_review' as const,
+        },
+      ]) {
+        expect(
+          await knowledge.createV2(ownerId, {
+            ...input,
+            requestKey: randomUUID(),
+            content: { ...input.content, citations: [citation] },
+          }),
+        ).toMatchObject({
+          success: false,
+          error: { code: 'VALIDATION_FAILED' },
+        });
+      }
+    });
+  });
+
+  it('should keep the previous v2 revision when the compare-and-swap loses a race', async () => {
+    await withKnowledge(async ({ ownerId, knowledge, withRepository }) => {
+      const original = value(await knowledge.createV2(ownerId, v2Input()));
+      const racing = withRepository({ addRevisionV2: async () => null });
+      expect(
+        await racing.updateV2(ownerId, original.id, {
+          ...v2Input(),
+          expectedRevision: 1,
+        }),
+      ).toMatchObject({ success: false, error: { code: 'REVISION_CONFLICT' } });
+      expect(
+        value(await knowledge.getV2(ownerId, original.id, {})).detail,
+      ).toEqual(original);
+    });
+  });
+
+  it.each(['create', 'update'] as const)(
+    'should reject %s when source ownership validation fails',
+    async (operation) => {
+      await withKnowledge(async ({ ownerId, knowledge, withRepository }) => {
+        const original = value(await knowledge.createV2(ownerId, v2Input()));
+        const unavailable = withRepository({
+          validateV2References: async () => false,
+        });
+        const result =
+          operation === 'create'
+            ? await unavailable.createV2(ownerId, v2Input())
+            : await unavailable.updateV2(ownerId, original.id, {
+                ...v2Input(),
+                expectedRevision: 1,
+              });
+        expect(result).toMatchObject({
+          success: false,
+          error: { code: 'SOURCE_UNAVAILABLE' },
+        });
+        expect(
+          value(await knowledge.getV2(ownerId, original.id, {})).detail,
+        ).toEqual(original);
+      });
+    },
+  );
+
+  it.each(['create', 'update'] as const)(
+    'should reject inconsistent v2 claims during %s before persistence',
+    async (operation) => {
+      await withKnowledge(async ({ ownerId, knowledge }) => {
+        const original = value(await knowledge.createV2(ownerId, v2Input()));
+        for (const scenario of [
+          'duplicate',
+          'missing',
+          'section',
+          'ordinal',
+          'text',
+          'support',
+          'citations',
+          'unresolved',
+          'unsupported',
+        ] as const) {
+          const input = v2Input();
+          invalidateV2(input, scenario);
+          const result =
+            operation === 'create'
+              ? await knowledge.createV2(ownerId, input)
+              : await knowledge.updateV2(ownerId, original.id, {
+                  ...input,
+                  expectedRevision: 1,
+                });
+          expect(result).toMatchObject({
+            success: false,
+            error: {
+              code:
+                scenario === 'unresolved'
+                  ? 'SOURCE_UNAVAILABLE'
+                  : 'VALIDATION_FAILED',
+            },
+          });
+          expect(
+            value(await knowledge.getV2(ownerId, original.id, {})).detail,
+          ).toEqual(original);
+        }
+      });
+    },
+  );
+
+  it('should migrate a legacy working head through a v2 revision', async () => {
+    await withKnowledge(async ({ ownerId, knowledge }) => {
+      const legacy = value(await knowledge.create(ownerId, knowledgeInput()));
+      const updated = value(
+        await knowledge.updateV2(ownerId, legacy.entry.id, {
+          ...v2Input(),
+          expectedRevision: 1,
+          status: 'saved',
+        }),
+      );
+      expect(updated).toMatchObject({
+        id: legacy.entry.id,
+        revision: 2,
+        savedBy: 'collector',
+      });
+      expect(
+        value(
+          await knowledge.getV2(ownerId, legacy.entry.id, {
+            view: 'revision',
+            revision: 1,
+          }),
+        ).detail,
+      ).toEqual(legacy);
+    });
+  });
+
   it.each(invalidInputs)(
     'should reject $name before persisting an entry',
     async ({ change, code }) => {
@@ -496,7 +693,7 @@ interface KnowledgeContext {
   readonly transaction: TransactionPort;
   readonly knowledge: KnowledgeService;
   readonly withRepository: (
-    overrides: Partial<UnitOfWork['knowledge']>,
+    overrides: Partial<UnitOfWork['knowledge']> & Record<string, unknown>,
   ) => KnowledgeService;
 }
 
@@ -561,7 +758,7 @@ async function persistCitation(
     publisher: null,
     publicationDateAsPrinted: null,
     isbn: null,
-    languages: [],
+    languages: ['en'],
     canonicalUrl: 'https://museum.example/source',
     access: 'link_only' as const,
     rightsStatement: null,
@@ -611,4 +808,103 @@ function value<T>(result: OperationResult<T>): T {
   }
 
   return result.data;
+}
+
+function v2Input(): import('@antica/contracts').KnowledgeWriteV2 {
+  const text = 'A body observation';
+
+  return {
+    requestKey: randomUUID(),
+    expectedRevision: null,
+    status: 'draft',
+    reviewDecisions: [],
+    translationDecisions: [],
+    content: {
+      contentSchemaVersion: 2,
+      entryType: 'concept',
+      origin: 'collector',
+      titles: [{ language: 'en', text: 'Porcelain' }],
+      aliases: [],
+      sections: {
+        summary: {
+          claimKey: 'body',
+          text,
+          citationIds: [],
+          supportState: 'needs_source',
+        },
+        history: [],
+        features: [],
+        applicability: [],
+        limits: [],
+      },
+      claims: [
+        {
+          claimKey: 'body',
+          section: 'summary',
+          ordinal: 0,
+          originalText: text,
+          originalLanguage: 'en',
+          statementType: 'observation',
+          scope: {},
+          qualifiers: {},
+          supportState: 'needs_source',
+          citationIds: [],
+          review: { state: 'pending' },
+          variants: [
+            {
+              language: 'fr',
+              kind: 'translation',
+              text: 'Une observation',
+              method: 'human',
+              sourceTextHash: createHash('sha256').update(text).digest('hex'),
+              review: { state: 'pending' },
+            },
+          ],
+        },
+      ],
+      topics: [],
+      citations: [],
+      images: [],
+      methodIds: [],
+      relatedEntryIds: [],
+      editorialReview: { state: 'pending' },
+    },
+  };
+}
+
+function invalidateV2(
+  input: import('@antica/contracts').KnowledgeWriteV2,
+  scenario: string,
+): void {
+  const claim = input.content.claims[0]!;
+  const node = input.content.sections.summary;
+  if (scenario === 'duplicate') {
+    input.content.claims.push(claim);
+  }
+  if (scenario === 'missing') {
+    input.content.claims = [];
+  }
+  if (scenario === 'section') {
+    claim.section = 'history';
+  }
+  if (scenario === 'ordinal') {
+    claim.ordinal = 1;
+  }
+  if (scenario === 'text') {
+    claim.originalText = 'Different text';
+  }
+  if (scenario === 'support') {
+    claim.supportState = 'cited';
+  }
+  if (scenario === 'citations') {
+    claim.citationIds = [randomUUID()];
+  }
+  if (scenario === 'unresolved') {
+    claim.citationIds = [randomUUID()];
+    node.citationIds = claim.citationIds;
+  }
+  if (scenario === 'unsupported') {
+    claim.supportState = 'cited';
+    node.supportState = 'cited';
+  }
 }

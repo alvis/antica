@@ -1,3 +1,9 @@
+export * from './knowledge-corpus.js';
+export * from './knowledge-v2.js';
+export * from './knowledge-import.js';
+export * from './knowledge-import-protocol.js';
+export * from './knowledge-v2-operations.js';
+export * from './source-structured.js';
 export {
   MAX_PAGE_SIZE,
   cursorPageSchema,
@@ -309,3 +315,29 @@ export type {
   RecordMessagePost,
   RecordMessagePosted,
 } from './record-message.js';
+export * from './knowledge-search.js';
+
+export {
+  relatedKnowledgeQuerySchema,
+  relatedKnowledgeMatchSchema,
+  relatedKnowledgeCardSchema,
+  relatedKnowledgePageSchema,
+} from './knowledge-related.js';
+export type {
+  RelatedKnowledgeQuery,
+  RelatedKnowledgePage,
+  RelatedKnowledgeDiscovery,
+} from './knowledge-related.js';
+
+export {
+  knowledgeEvidenceSnapshotV1Schema,
+  answerSegmentSchema,
+  knowledgeAttachmentSchema,
+  knowledgeEvidenceTextBytes,
+  knowledgeNoSupportedAnswer,
+} from './knowledge-evidence.js';
+export type {
+  KnowledgeEvidenceSnapshotV1,
+  AnswerSegment,
+  KnowledgeAttachment,
+} from './knowledge-evidence.js';

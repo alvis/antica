@@ -3,12 +3,21 @@ import { z } from 'zod';
 
 import {
   knowledgeQuerySchema,
+  knowledgeReadV2Schema,
   knowledgeUpdateSchema,
+  knowledgeUpdateV2Schema,
   knowledgeWriteSchema,
+  knowledgeWriteV2Schema,
   sourceCommandSchema,
 } from '@antica/contracts';
 
 import { invalid, jsonBody, respond } from '../http.js';
+
+import { registerRelatedKnowledgeRoute } from './knowledge-related.js';
+
+import { registerKnowledgeSearchRoutes } from './knowledge-search.js';
+
+import type { Context } from 'hono';
 
 import type {
   KnowledgeService,
@@ -16,6 +25,8 @@ import type {
 } from '@antica/application/server';
 
 import type { ApiEnv } from '../http.js';
+
+import type { RelatedKnowledgeService } from './knowledge-related.js';
 
 const maximumPageSize = 100;
 const acceptedStatus = 202;
@@ -41,11 +52,13 @@ const knowledgeReadSchema = z.strictObject({
  */
 export function createKnowledgeRoutes(
   sources: SourceService,
-  knowledge: KnowledgeService,
+  knowledge: RelatedKnowledgeService,
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   registerSourceRoutes(router, sources);
   registerKnowledgeListRoute(router, knowledge);
+  registerKnowledgeSearchRoutes(router, knowledge);
+  registerRelatedKnowledgeRoute(router, knowledge);
   registerKnowledgeDetailRoutes(router, knowledge);
 
   return router;
@@ -163,7 +176,16 @@ function registerKnowledgeDetailRoutes(
   knowledge: KnowledgeService,
 ): void {
   router.post('/knowledge', async (context) => {
-    const input = knowledgeWriteSchema.safeParse(await jsonBody(context));
+    const body = await jsonBody(context);
+    const v2Input = knowledgeWriteV2Schema.safeParse(body);
+    if (v2Input.success) {
+      return respond(
+        context,
+        await knowledge.createV2(context.get('ownerId'), v2Input.data),
+        createdStatus,
+      );
+    }
+    const input = knowledgeWriteSchema.safeParse(body);
     if (!input.success) {
       return invalid(context);
     }
@@ -174,24 +196,23 @@ function registerKnowledgeDetailRoutes(
       createdStatus,
     );
   });
-  router.get('/knowledge/:id', async (context) => {
-    const query = knowledgeReadSchema.safeParse(context.req.query());
-    if (!query.success) {
-      return invalid(context);
-    }
-
-    return respond(
-      context,
-      await knowledge.get(
-        context.get('ownerId'),
-        context.req.param('id'),
-        query.data.revision,
-        query.data.methodVersionId,
-      ),
-    );
-  });
+  router.get('/knowledge/:id', async (context) =>
+    getKnowledgeDetail(context, knowledge),
+  );
   router.patch('/knowledge/:id', async (context) => {
-    const input = knowledgeUpdateSchema.safeParse(await jsonBody(context));
+    const body = await jsonBody(context);
+    const v2Input = knowledgeUpdateV2Schema.safeParse(body);
+    if (v2Input.success) {
+      return respond(
+        context,
+        await knowledge.updateV2(
+          context.get('ownerId'),
+          context.req.param('id'),
+          v2Input.data,
+        ),
+      );
+    }
+    const input = knowledgeUpdateSchema.safeParse(body);
     if (!input.success) {
       return invalid(context);
     }
@@ -204,5 +225,121 @@ function registerKnowledgeDetailRoutes(
         input.data,
       ),
     );
+  });
+}
+
+/**
+ * Reads one knowledge revision and emits its persisted content ETag.
+ * @param context authenticated request context
+ * @param knowledge collector knowledge service
+ * @returns HTTP knowledge response
+ */
+async function getKnowledgeDetail(
+  context: Context<ApiEnv, '/knowledge/:id'>,
+  knowledge: KnowledgeService,
+): Promise<Response> {
+  const ownerId = context.get('ownerId');
+  const id = context.req.param('id');
+  const v2Query = knowledgeReadV2Schema.safeParse(context.req.query());
+  if (v2Query.success && context.req.query('methodVersionId') === undefined) {
+    const read =
+      v2Query.data.view === undefined && v2Query.data.revision !== undefined
+        ? { ...v2Query.data, view: 'revision' as const }
+        : v2Query.data;
+    const result = await knowledge.getV2(ownerId, id, read);
+    if (!result.success) {
+      return respond(context, result);
+    }
+    const revision =
+      'entry' in result.data.detail
+        ? result.data.detail.entry.revision
+        : result.data.detail.revision;
+    context.header('ETag', `"${revision}-${result.data.contentHash}"`);
+
+    return respond(context, { success: true, data: result.data.detail });
+  }
+  const query = knowledgeReadSchema.safeParse(context.req.query());
+  if (!query.success) {
+    return invalid(context);
+  }
+  if (knowledge.discovery) {
+    return discoveredMethodDetail(context, knowledge.discovery, query.data);
+  }
+  const legacy = await knowledge.get(
+    ownerId,
+    id,
+    query.data.revision,
+    query.data.methodVersionId,
+  );
+  if (!legacy.success) {
+    return respond(context, legacy);
+  }
+  const hash = await knowledge.getV2(ownerId, id, {
+    view: 'revision',
+    revision: legacy.data.entry.revision,
+  });
+  if (!hash.success) {
+    return respond(context, hash);
+  }
+  context.header(
+    'ETag',
+    `"${legacy.data.entry.revision}-${hash.data.contentHash}"`,
+  );
+
+  return respond(context, legacy);
+}
+
+/**
+ * serves a pinned legacy inspection method using the same bulk detail snapshot
+ * @param context authenticated request
+ * @param discovery bulk knowledge capabilities
+ * @param query legacy revision and method selection
+ * @returns legacy detail with persisted content ETag
+ */
+async function discoveredMethodDetail(
+  context: Context<ApiEnv, '/knowledge/:id'>,
+  discovery: NonNullable<KnowledgeService['discovery']>,
+  query: z.infer<typeof knowledgeReadSchema>,
+): Promise<Response> {
+  const value = await discovery.detail(
+    context.get('ownerId'),
+    context.req.param('id'),
+    { revision: query.revision },
+  );
+  if (!value || !('entry' in value.detail)) {
+    return respond(context, {
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Knowledge entry or requested version not found',
+        retryable: false,
+      },
+    });
+  }
+  const detail = value.detail;
+  const versions = detail.methodVersions.filter(
+    (version) => version.id === query.methodVersionId,
+  );
+  if (versions.length === 0) {
+    return respond(context, {
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Knowledge entry or requested version not found',
+        retryable: false,
+      },
+    });
+  }
+  context.header('ETag', `"${detail.entry.revision}-${value.contentHash}"`);
+
+  return respond(context, {
+    success: true,
+    data: {
+      ...detail,
+      methods: detail.methods.filter((method) =>
+        versions.some((version) => version.methodId === method.id),
+      ),
+      methodVersions: versions,
+    },
   });
 }

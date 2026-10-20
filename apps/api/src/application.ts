@@ -10,6 +10,7 @@ import { mountLocalTransfers } from './local-transfers.js';
 import { createAnalysisRoutes } from './routes/analysis.js';
 import { createEvidenceRoutes } from './routes/evidence.js';
 import { createJobRoutes } from './routes/job.js';
+import { createKnowledgeImportRoutes } from './routes/knowledge-import.js';
 import { createKnowledgeRoutes } from './routes/knowledge.js';
 import { createLocationRoutes } from './routes/location.js';
 import { createMediaRoutes } from './routes/media.js';
@@ -25,6 +26,7 @@ import type {
   ImageSearchService,
   JobService,
   KnowledgeService,
+  KnowledgeImportService,
   LocationService,
   MediaService,
   RecordMessageService,
@@ -59,6 +61,7 @@ export interface ApplicationParams {
   readonly jobs: JobService;
   readonly sources: SourceService;
   readonly knowledge: KnowledgeService;
+  readonly knowledgeImports?: KnowledgeImportService;
   readonly research: ResearchService;
   readonly images: ImageSearchService;
   readonly transcriptions: TranscriptionService;
@@ -114,6 +117,9 @@ export function createApplication(params: ApplicationParams): Hono<ApiEnv> {
   app.route('/v1', createEvidenceRoutes(params.evidence));
   app.route('/v1', createAnalysisRoutes(params.analysis));
   app.route('/v1', createJobRoutes(params.jobs));
+  if (params.knowledgeImports) {
+    app.route('/v1', createKnowledgeImportRoutes(params.knowledgeImports));
+  }
   app.route('/v1', createKnowledgeRoutes(params.sources, params.knowledge));
   app.route('/v1', createResearchRoutes(params.research, params.images));
   app.route('/v1', createVoiceRoutes(params.transcriptions, params.edits));
@@ -141,7 +147,7 @@ function mountErrors(app: Hono<ApiEnv>): void {
     }
 
     const requestId = randomUUID();
-    const causes: ReturnType<typeof sanitizedError>[] = [];
+    const causes: Array<ReturnType<typeof sanitizedError>> = [];
     const seen = new Set<unknown>([error]);
     let cause: unknown = error.cause;
     for (let depth = 0; depth < 3 && cause !== undefined; depth += 1) {
@@ -174,6 +180,11 @@ function mountErrors(app: Hono<ApiEnv>): void {
   });
 }
 
+/**
+ * retains bounded diagnostics without exposing raw provider responses
+ * @param error internal failure to sanitize
+ * @returns safe error identity, source frame and stack fingerprint
+ */
 function sanitizedError(error: unknown): {
   errorType: 'TypeError' | 'RangeError' | 'SyntaxError' | 'Error' | 'NonError';
   sourceFrame: string | null;

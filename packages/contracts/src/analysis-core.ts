@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { answerSegmentSchema } from './knowledge-evidence.js';
+
 import { periodSchema, recordFieldsSchema } from './record.js';
 import {
   entityIdSchema,
@@ -126,6 +128,7 @@ export const editDraftResultSchema = z.strictObject({
   sourceObservationIds: z.array(entityIdSchema),
   /** the assistant's text answer to the instruction; results stored before replies existed read as empty */
   replyZhHant: z.string().default(''),
+  answerSegments: z.array(answerSegmentSchema).max(32).optional(),
   suggestedDescriptionZhHant: z.string(),
   proposedChanges: z.array(proposedChangeSchema),
 });

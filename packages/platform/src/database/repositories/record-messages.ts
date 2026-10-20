@@ -11,6 +11,7 @@ import {
   entityIdSchema,
   instantSchema,
   recordMessageSchema,
+  knowledgeEvidenceSnapshotV1Schema,
   revisionSchema,
 } from '@antica/contracts';
 
@@ -94,6 +95,9 @@ function toMessage(row: recordMessages): RecordMessage {
     body: row.body,
     editDraftId: row.editDraftId,
     createdAt: iso(row.createdAt),
+    ...(row.author === 'assistant'
+      ? { knowledgeEvidence: row.knowledgeEvidence ?? [], answerSegments: [] }
+      : {}),
   });
 }
 
@@ -189,15 +193,33 @@ export function createRecordMessageRepository(
     async insertAssistantReply(input) {
       const body = requireBody(input.body, 'Assistant reply');
       await assertAccessible(input.recordId, input.editDraftId);
+      const draft = await tx.editDraftRuns.findFirstOrThrow({
+        where: { id: input.editDraftId, ownerId, recordId: input.recordId },
+        select: { knowledgeContext: true, result: true },
+      });
+      const evidence =
+        draft.knowledgeContext === null
+          ? null
+          : knowledgeEvidenceSnapshotV1Schema.parse(draft.knowledgeContext);
+      const result =
+        draft.result === null
+          ? null
+          : editDraftResultSchema.parse(draft.result);
       const [inserted] = await tx.$queryRaw<recordMessages[]>`
-        insert into record_messages (id, owner_id, record_id, author, body, edit_draft_id, request_key, created_at)
+        insert into record_messages (id, owner_id, record_id, author, body, edit_draft_id, request_key, created_at, knowledge_evidence)
         values (${input.id}::uuid, ${ownerId}, ${input.recordId}::uuid, 'assistant', ${body},
-          ${input.editDraftId}::uuid, null, ${iso(input.createdAt)}::timestamptz)
+          ${input.editDraftId}::uuid, null, ${iso(input.createdAt)}::timestamptz, ${evidence === null ? null : JSON.stringify(evidence)}::jsonb)
         on conflict (edit_draft_id) where author = 'assistant' do nothing
         returning id, owner_id as "ownerId", record_id as "recordId", author, body,
-          edit_draft_id as "editDraftId", request_key as "requestKey", created_at as "createdAt"`;
+          edit_draft_id as "editDraftId", request_key as "requestKey", created_at as "createdAt", knowledge_evidence as "knowledgeEvidence"`;
       if (inserted) {
-        return { message: toMessage(inserted), created: true };
+        return {
+          message: {
+            ...toMessage(inserted),
+            answerSegments: result?.answerSegments ?? [],
+          },
+          created: true,
+        };
       }
       const existing = await readStored(
         { editDraftId: input.editDraftId, author: 'assistant' },
@@ -266,7 +288,12 @@ export function createRecordMessageRepository(
           });
 
           return {
-            message: toMessage(message),
+            message: {
+              ...toMessage(message),
+              ...(message.author === 'assistant'
+                ? { answerSegments: facts.result?.answerSegments ?? [] }
+                : {}),
+            },
             draft: {
               status: facts.status,
               revision: facts.revision,

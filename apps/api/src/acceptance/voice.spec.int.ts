@@ -411,7 +411,7 @@ describe('Persistent selective edit adoption', () => {
                 name: 'Collector name',
                 description: '手感粗糙',
                 recordRevision: 3,
-                analysisInputVersion: 3,
+                analysisInputVersion: 2,
               },
             },
           });

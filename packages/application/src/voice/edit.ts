@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { recordFieldsSchema } from '@antica/contracts';
 
+import { freezeKnowledgeEvidence } from '../knowledge/evidence.js';
+
 import { recordFieldsOf } from '../record/fields.js';
 
 import type {
@@ -11,9 +13,12 @@ import type {
   EditDraftDetail,
   EditDraftRequest,
   ModelSelection,
+  KnowledgeAttachment,
   ProposedChange,
   RecordDetail,
 } from '@antica/contracts';
+
+import type { KnowledgeEvidenceReader } from '../knowledge/evidence.js';
 
 import type {
   ClockPort,
@@ -218,6 +223,8 @@ export interface EditDraftSubmitParams {
   readonly clock: ClockPort;
   /** creates job and outbox identifiers */
   readonly ids: IdPort;
+  /** freeze suggested knowledge evidence for a record message, including an empty selection */
+  readonly knowledgeAttachments?: readonly KnowledgeAttachment[];
   /** accept a request whose only input is its instruction, as a typed conversation message is */
   readonly allowInstructionOnly?: boolean;
   /** accept transcriptions that are ready but not yet confirmed, as a spoken conversation message is; their text is frozen as source text and no observation exists */
@@ -230,6 +237,12 @@ export interface EditDraftSubmitParams {
  * @param ownerId collector submitting the request
  * @param input frozen edit request, whose request key is also the draft ID
  * @param params model selection, clock, ID source, and whether an instruction alone or ready transcriptions are enough input
+ * @param params.selection selected structured-output model
+ * @param params.clock submission timestamp source
+ * @param params.ids server identifier source
+ * @param params.knowledgeAttachments suggested evidence to validate and freeze for messages
+ * @param params.allowInstructionOnly whether a message without media may start a draft
+ * @param params.allowReadyTranscriptions whether ready voice text may be frozen before confirmation
  * @returns the draft and job IDs, the earlier ones on an identical replay, or a typed failure that rolls the caller's transaction back
  */
 export async function submitEditDraft(
@@ -240,11 +253,14 @@ export async function submitEditDraft(
     selection,
     clock,
     ids,
+    knowledgeAttachments,
     allowInstructionOnly = false,
     allowReadyTranscriptions = false,
   }: EditDraftSubmitParams,
 ): Promise<OperationResult<EditDraftAccepted>> {
-  const fingerprint = digest(input);
+  const fingerprint = digest(
+    knowledgeAttachments?.length ? { ...input, knowledgeAttachments } : input,
+  );
   const prior = await unit.commands.get(
     ownerId,
     'editDrafts.submit',
@@ -345,6 +361,18 @@ export async function submitEditDraft(
       'Select a transcription or observation for the edit',
     );
   }
+  const grounded =
+    knowledgeAttachments === undefined
+      ? undefined
+      : await freezeKnowledgeEvidence(
+          unit.knowledge as typeof unit.knowledge & KnowledgeEvidenceReader,
+          record,
+          knowledgeAttachments,
+          ids.create(),
+        );
+  if (grounded && !grounded.success) {
+    return grounded;
+  }
   const now = clock.now();
   const editDraftId = input.requestKey;
   const jobId = ids.create();
@@ -354,6 +382,7 @@ export async function submitEditDraft(
     revision: 1,
     status: 'pending',
     snapshot: {
+      ...(grounded?.success ? { knowledgeContext: grounded.data } : {}),
       recordId: record.id,
       versions: {
         recordRevision: record.recordRevision,
@@ -485,7 +514,7 @@ async function writeSelected(
     },
     {
       recordRevision: record.recordRevision + 1,
-      analysisInputVersion: record.analysisInputVersion + 1,
+      analysisInputVersion: record.analysisInputVersion,
       evidenceVersion: record.evidenceVersion,
     },
   );

@@ -160,7 +160,12 @@ function CompletedAnalysisStory(
   args: Readonly<AnalysisContainerProps>,
 ): ReactElement {
   const currentRun = useRef(completedRun);
-  const currentRecord = useRef(storyRecord);
+  const currentRecord = useRef({
+    ...storyRecord,
+    tags: ['manually edited'],
+    recordRevision: storyRecord.recordRevision + 1,
+    analysisInputVersion: storyRecord.analysisInputVersion + 1,
+  });
   const responses = useMemo<StoryResponses>(
     () => ({
       [`GET /v1/analyses/${storyRunId}`]: () => currentRun.current,
@@ -179,7 +184,6 @@ function CompletedAnalysisStory(
           ...currentRecord.current,
           ...appliedFields,
           recordRevision: currentRecord.current.recordRevision + 1,
-          analysisInputVersion: currentRecord.current.analysisInputVersion + 1,
         });
         currentRun.current = analysisRunDetailSchema.parse({
           ...currentRun.current,
@@ -225,6 +229,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** unrelated manual edits leave both proposed fields applicable */
 export const CompletedWithProposals = {
   render: (args) => <CompletedAnalysisStory {...args} />,
   play: async ({ canvasElement }) => {

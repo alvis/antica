@@ -210,6 +210,15 @@ model citations {
   knowledgeRevisionCitations knowledgeRevisionCitations[]
   noteCitations              noteCitations[]
 
+  /// retains historical TopicLabel associations
+  topicLabelProvenanceCitation TopicLabel[] @relation("TopicLabel_provenanceCitation")
+
+  /// retains historical AuthorityMapping associations
+  authorityMappingCitation AuthorityMapping[] @relation("AuthorityMapping_citation")
+
+  /// retains historical CitedClaimCitation associations
+  citedClaimCitationCitation CitedClaimCitation[] @relation("CitedClaimCitation_citation")
+
   @@index([locatorId], map: "citations_locator_idx")
 }
 
@@ -322,6 +331,8 @@ model editDraftRuns {
   jobs                    jobs                      @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_runs_job_id_jobs_id_fk")
   records                 records                   @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "edit_draft_runs_record_id_records_id_fk")
   recordMessages          recordMessages?
+  /// freezes revision-pinned knowledge evidence for an edit draft
+  knowledgeContext        Json?                     @map("knowledge_context")
 
   @@unique([ownerId, id], map: "edit_draft_runs_owner_id_uq")
   @@index([ownerId, recordId, createdAt], map: "edit_draft_runs_record_idx")
@@ -458,6 +469,9 @@ model jobs {
   researchRuns        researchRuns[]
   transcriptionRuns   transcriptionRuns?
 
+  /// retains historical ImportRun associations
+  importRunJob ImportRun[] @relation("ImportRun_job")
+
   @@unique([ownerId, id], map: "jobs_owner_id_uq")
   @@index([ownerId, state, createdAt], map: "jobs_owner_state_idx")
 }
@@ -478,9 +492,29 @@ model knowledgeEntries {
   notes                      notes[]
   researchRuns               researchRuns[]
   sourceKnowledgeDrafts      sourceKnowledgeDrafts[]
+  /// stable namespaced corpus identity; absent on legacy entries
+  contentId                  String?                      @map("content_id")
+  /// pins the latest explicitly saved revision independently of the working head
+  latestSavedRevision        Int?                         @map("latest_saved_revision")
+
+  /// pins the referenced knowledgeRevisions identity without cascading historical evidence
+  latestSaved knowledgeRevisions? @relation("knowledgeEntries_latestSaved", fields: [id, latestSavedRevision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_entries_latest_saved_fk")
+
+  /// retains historical KnowledgeRevisionTopic associations
+  knowledgeRevisionTopicEntry KnowledgeRevisionTopic[] @relation("KnowledgeRevisionTopic_entry")
+
+  /// retains historical CitedClaim associations
+  citedClaimEntry CitedClaim[] @relation("CitedClaim_entry")
+
+  /// retains historical ReviewDiff associations
+  reviewDiffEntry ReviewDiff[]              @relation("ReviewDiff_entry")
+  /// retains every revision and language search projection
+  searchDocuments KnowledgeSearchDocument[] @relation("search_entry")
 
   @@unique([ownerId, displayCode], map: "knowledge_entries_owner_code_uq")
   @@unique([ownerId, id], map: "knowledge_entries_owner_id_uq")
+  @@unique([ownerId, contentId], map: "knowledge_entries_owner_content_uq", where: raw("(content_id IS NOT NULL)"))
+  @@index([ownerId, latestSavedRevision, id], map: "knowledge_entries_saved_pointer_idx")
   @@map("knowledge_entries")
 }
 
@@ -530,19 +564,53 @@ model knowledgeRevisionMethods {
 }
 
 model knowledgeRevisions {
-  entryId          String           @map("entry_id") @db.Uuid
-  revision         Int
-  status           String
-  savedBy          String?          @map("saved_by")
-  titleZhHant      String           @map("title_zh_hant")
-  summaryZhHant    String           @map("summary_zh_hant")
-  content          Json
-  contentHash      String           @map("content_hash")
-  createdAt        DateTime         @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
-  knowledgeEntries knowledgeEntries @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revisions_entry_id_knowledge_entries_id_fk")
+  entryId              String              @map("entry_id") @db.Uuid
+  revision             Int
+  status               String
+  savedBy              String?             @map("saved_by")
+  titleZhHant          String              @map("title_zh_hant")
+  summaryZhHant        String              @map("summary_zh_hant")
+  content              Json
+  contentHash          String              @map("content_hash")
+  createdAt            DateTime            @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  knowledgeEntries     knowledgeEntries    @relation(fields: [entryId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revisions_entry_id_knowledge_entries_id_fk")
+  /// keeps legacy envelopes at version one until explicitly upgraded
+  contentSchemaVersion Int                 @default(1) @map("content_schema_version")
+  /// leaves legacy entries unclassified until audited
+  entryType            KnowledgeEntryType? @map("entry_type")
+  /// preserves unknown legacy provenance
+  origin               KnowledgeOrigin?
+  /// SHA-256 baseline for upstream divergence detection
+  upstreamBaseHash     String?             @map("upstream_base_hash")
+  /// identifies the editorial reviewer independently of collector save
+  editorialReviewedBy  String?             @map("editorial_reviewed_by")
+  /// records editorial review time in UTC
+  editorialReviewedAt  DateTime?           @map("editorial_reviewed_at") @db.Timestamptz(6)
+
+  /// retains historical knowledgeEntries associations
+  knowledgeEntriesLatestSaved knowledgeEntries[] @relation("knowledgeEntries_latestSaved")
+
+  /// retains historical KnowledgeRevisionTopic associations
+  knowledgeRevisionTopicEntryRevision KnowledgeRevisionTopic[] @relation("KnowledgeRevisionTopic_entryRevision")
+
+  /// retains historical CitedClaim associations
+  citedClaimEntryRevision CitedClaim[] @relation("CitedClaim_entryRevision")
+
+  /// retains historical CorpusInstallItem associations
+  corpusInstallItemEntryRevision CorpusInstallItem[] @relation("CorpusInstallItem_entryRevision")
+
+  /// retains historical ReviewDiff associations
+  reviewDiffBase ReviewDiff[] @relation("ReviewDiff_base")
+
+  /// retains historical ReviewDiff associations
+  reviewDiffCandidate ReviewDiff[]              @relation("ReviewDiff_candidate")
+  /// pins text projections to the exact content envelope
+  searchDocuments     KnowledgeSearchDocument[] @relation("search_revision")
 
   @@id([entryId, revision], map: "knowledge_revisions_entry_id_revision_pk")
   @@index([titleZhHant], map: "knowledge_revisions_title_idx")
+  @@index([entryId, status, revision(sort: Desc)], map: "knowledge_revisions_status_revision_idx")
+  @@index([entryType, entryId, revision], map: "knowledge_revisions_entry_type_idx")
   @@map("knowledge_revisions")
 }
 
@@ -1003,16 +1071,18 @@ model recordMeasurements {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model recordMessages {
-  id            String        @id @db.Uuid
-  ownerId       String        @map("owner_id")
-  recordId      String        @map("record_id") @db.Uuid
-  author        String
-  body          String
-  editDraftId   String        @unique(map: "record_messages_assistant_reply_uq", where: raw("(author = 'assistant'::text)")) @map("edit_draft_id") @db.Uuid
-  requestKey    String?       @map("request_key") @db.Uuid
-  createdAt     DateTime      @map("created_at") @db.Timestamptz(6)
-  editDraftRuns editDraftRuns @relation(fields: [editDraftId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_messages_edit_draft_id_edit_draft_runs_id_fk")
-  records       records       @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_messages_record_id_records_id_fk")
+  id                String        @id @db.Uuid
+  ownerId           String        @map("owner_id")
+  recordId          String        @map("record_id") @db.Uuid
+  author            String
+  body              String
+  editDraftId       String        @unique(map: "record_messages_assistant_reply_uq", where: raw("(author = 'assistant'::text)")) @map("edit_draft_id") @db.Uuid
+  requestKey        String?       @map("request_key") @db.Uuid
+  createdAt         DateTime      @map("created_at") @db.Timestamptz(6)
+  editDraftRuns     editDraftRuns @relation(fields: [editDraftId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_messages_edit_draft_id_edit_draft_runs_id_fk")
+  records           records       @relation(fields: [recordId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "record_messages_record_id_records_id_fk")
+  /// preserves cited reply evidence; legacy null means no evidence
+  knowledgeEvidence Json?         @map("knowledge_evidence")
 
   @@unique([ownerId, id], map: "record_messages_owner_id_uq")
   @@unique([ownerId, requestKey], map: "record_messages_owner_request_uq")
@@ -1111,8 +1181,28 @@ model referenceImages {
   sourceVersions                                                       sourceVersions    @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_source_version_id_source_versions_id_fk")
   mediaDerivatives                                                     mediaDerivatives? @relation(fields: [storedDerivativeId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reference_images_stored_derivative_id_media_derivatives_id_fk")
   referenceLinks                                                       referenceLinks[]
+  /// identifies the remote image provider when known
+  provider                                                             String?
+  /// preserves the opaque provider image identity
+  providerImageId                                                      String?           @map("provider_image_id")
+  /// retains the catalogue page independently of the image URL
+  sourcePageUrl                                                        String?           @map("source_page_url")
+  /// records known image width in pixels
+  width                                                                Int?
+  /// records known image height in pixels
+  height                                                               Int?
+  /// records image rights without gating capture or display
+  observedRights                                                       Json?             @map("observed_rights")
+  /// records the last remote availability observation
+  lastCheckedAt                                                        DateTime?         @map("last_checked_at") @db.Timestamptz(6)
+  /// keeps legacy image availability unknown
+  status                                                               RemoteImageStatus @default(unchecked)
+  /// SHA-256 of the exact URL including query parameters
+  remoteUrlHash                                                        String?           @map("remote_url_hash")
 
+  @@unique([sourceVersionId, remoteUrlHash], map: "reference_images_remote_url_uq", where: raw("(remote_url_hash IS NOT NULL)"))
   @@index([sourceVersionId, id], map: "reference_images_version_idx")
+  @@index([status, lastCheckedAt, id], map: "reference_images_status_checked_idx")
   @@map("reference_images")
 }
 
@@ -1422,6 +1512,7 @@ model sourceLanguages {
   sources  sources @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_languages_source_id_sources_id_fk")
 
   @@id([sourceId, language], map: "source_languages_source_id_language_pk")
+  @@index([language, sourceId], map: "source_languages_filter_idx")
   @@map("source_languages")
 }
 
@@ -1455,7 +1546,19 @@ model sourceLocators {
   mediaAssets                                                           mediaAssets?      @relation(fields: [snapshotAssetId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_snapshot_asset_id_media_assets_id_fk")
   sources                                                               sources           @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_source_id_sources_id_fk")
   sourceVersions                                                        sourceVersions    @relation(fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_source_version_id_source_versions_id_fk")
+  /// identifies the structured metadata provider
+  provider                                                              String?
+  /// preserves the provider object identifier verbatim
+  objectId                                                              String?           @map("object_id")
+  /// RFC6901 pointer into the captured structured payload
+  fieldPath                                                             String?           @map("field_path")
+  /// SHA-256 of the captured field value
+  valueHash                                                             String?           @map("value_hash")
 
+  /// pins the referenced sourceVersions identity without cascading historical evidence
+  versionSource sourceVersions @relation("sourceLocators_versionSource", fields: [sourceId, sourceVersionId], references: [sourceId, id], onDelete: NoAction, onUpdate: NoAction, map: "source_locators_version_source_fk")
+
+  @@unique([sourceVersionId, fieldPath, valueHash], map: "source_locators_structured_field_uq", where: raw("(kind = 'structured'::text)"))
   @@index([sourceVersionId, kind], map: "source_locators_version_idx")
   @@map("source_locators")
 }
@@ -1554,6 +1657,31 @@ model sourceVersions {
   sourceRegions          sourceRegions[]
   sourceVersionAssets    sourceVersionAssets[]
   sources                sources                  @relation(fields: [sourceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "source_versions_source_id_sources_id_fk")
+  /// links an optional provider object identity
+  externalObjectId       String?                  @map("external_object_id") @db.Uuid
+  /// pins the provider metadata schema
+  providerSchemaVersion  String?                  @map("provider_schema_version")
+  /// SHA-256 of canonical structured metadata
+  payloadHash            String?                  @map("payload_hash")
+  /// stores metadata and URL strings only, never image bytes
+  structuredPayload      Json?                    @map("structured_payload")
+  /// records observed rights without creating an eligibility gate
+  observedRights         Json?                    @map("observed_rights")
+
+  /// pins the referenced ExternalObject identity without cascading historical evidence
+  externalObject ExternalObject? @relation("sourceVersions_externalObject", fields: [ownerId, sourceId, externalObjectId], references: [ownerId, sourceId, id], onDelete: NoAction, onUpdate: NoAction, map: "source_versions_external_object_fk")
+
+  /// retains historical ImportItem associations
+  importItemSourceVersion ImportItem[] @relation("ImportItem_sourceVersion")
+
+  /// retains historical ReviewDiff associations
+  reviewDiffOldSourceVersion ReviewDiff[] @relation("ReviewDiff_oldSourceVersion")
+
+  /// retains historical ReviewDiff associations
+  reviewDiffNewSourceVersion ReviewDiff[] @relation("ReviewDiff_newSourceVersion")
+
+  /// retains historical sourceLocators associations
+  sourceLocatorsVersionSource sourceLocators[] @relation("sourceLocators_versionSource")
 
   @@unique([ownerId, sourceHash], map: "source_versions_owner_hash_uq")
   @@unique([ownerId, id], map: "source_versions_owner_id_uq")
@@ -1583,6 +1711,9 @@ model sources {
   sourceLanguages          sourceLanguages[]
   sourceLocators           sourceLocators[]
   sourceVersions           sourceVersions[]
+
+  /// retains historical ExternalObject associations
+  externalObjectSource ExternalObject[] @relation("ExternalObject_source")
 
   @@unique([ownerId, id], map: "sources_owner_id_uq")
   @@index([ownerId, title, id], map: "sources_owner_title_idx")
@@ -1666,4 +1797,836 @@ model verification {
   updatedAt  DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
 
   @@index([identifier])
+}
+
+/// defines the finite topic facet vocabulary
+enum TopicFacet {
+  /// records the category state
+  category
+  /// records the material state
+  material
+  /// records the object type state
+  object_type
+  /// records the period state
+  period
+  /// records the region state
+  region
+  /// records the kiln maker state
+  kiln_maker
+  /// records the technique state
+  technique
+  /// records the motif state
+  motif
+  /// records the mark state
+  mark
+  /// records the surface state
+  surface
+  /// records the condition state
+  condition
+  /// records the repair restoration state
+  repair_restoration
+  /// records the authentication limit state
+  authentication_limit
+  /// records the provenance state
+  provenance
+}
+
+/// defines the finite topic label kind vocabulary
+enum TopicLabelKind {
+  /// records the preferred state
+  preferred
+  /// records the alias state
+  alias
+  /// records the original state
+  original
+}
+
+/// defines the finite topic relation kind vocabulary
+enum TopicRelationKind {
+  /// records the related state
+  related
+}
+
+/// defines the finite authority kind vocabulary
+enum AuthorityKind {
+  /// records the wikidata state
+  wikidata
+  /// records the getty aat state
+  getty_aat
+  /// records the getty ulan state
+  getty_ulan
+  /// records the getty tgn state
+  getty_tgn
+}
+
+/// defines the finite authority relation vocabulary
+enum AuthorityRelation {
+  /// records the exact state
+  exact
+  /// records the close state
+  close
+  /// records the broader state
+  broader
+  /// records the related state
+  related
+}
+
+/// defines the finite knowledge review state vocabulary
+enum KnowledgeReviewState {
+  /// records the pending state
+  pending
+  /// records the reviewed state
+  reviewed
+  /// records the rejected state
+  rejected
+}
+
+/// defines the finite knowledge entry type vocabulary
+enum KnowledgeEntryType {
+  /// records the concept state
+  concept
+  /// records the method state
+  method
+  /// records the object example state
+  object_example
+}
+
+/// defines the finite knowledge origin vocabulary
+enum KnowledgeOrigin {
+  /// records the curated seed state
+  curated_seed
+  /// records the open import state
+  open_import
+  /// records the book state
+  book
+  /// records the research state
+  research
+  /// records the collector state
+  collector
+}
+
+/// defines the finite topic applicability vocabulary
+enum TopicApplicability {
+  /// records the general state
+  general
+  /// records the specific state
+  specific
+}
+
+/// defines the finite cited claim section vocabulary
+enum CitedClaimSection {
+  /// records the summary state
+  summary
+  /// records the history state
+  history
+  /// records the features state
+  features
+  /// records the applicability state
+  applicability
+  /// records the limits state
+  limits
+}
+
+/// defines the finite claim statement type vocabulary
+enum ClaimStatementType {
+  /// records the source attribution state
+  source_attribution
+  /// records the observation state
+  observation
+  /// records the interpretation state
+  interpretation
+  /// records the method state
+  method
+  /// records the limitation state
+  limitation
+}
+
+/// defines the finite claim support state vocabulary
+enum ClaimSupportState {
+  /// records the cited state
+  cited
+  /// records the needs source state
+  needs_source
+}
+
+/// defines the finite language variant kind vocabulary
+enum LanguageVariantKind {
+  /// records the original state
+  original
+  /// records the translation state
+  translation
+}
+
+/// defines the finite translation method vocabulary
+enum TranslationMethod {
+  /// records the original state
+  original
+  /// records the human state
+  human
+  /// records the machine state
+  machine
+}
+
+/// defines the finite external object status vocabulary
+enum ExternalObjectStatus {
+  /// records the active state
+  active
+  /// records the missing state
+  missing
+}
+
+/// defines the finite remote image status vocabulary
+enum RemoteImageStatus {
+  /// records the unchecked state
+  unchecked
+  /// records the available state
+  available
+  /// records the unavailable state
+  unavailable
+  /// records the removed state
+  removed
+}
+
+/// defines the finite import run status vocabulary
+enum ImportRunStatus {
+  /// records the queued state
+  queued
+  /// records the running state
+  running
+  /// records the partial state
+  partial
+  /// records the completed state
+  completed
+  /// records the failed state
+  failed
+  /// records the cancelled state
+  cancelled
+}
+
+/// defines the finite import item status vocabulary
+enum ImportItemStatus {
+  /// records the staged state
+  staged
+  /// records the unchanged state
+  unchanged
+  /// records the imported state
+  imported
+  /// records the failed state
+  failed
+}
+
+/// defines the finite review diff status vocabulary
+enum ReviewDiffStatus {
+  /// records the pending state
+  pending
+  /// records the accepted state
+  accepted
+  /// records the rejected state
+  rejected
+  /// records the superseded state
+  superseded
+}
+
+/// defines the finite corpus release status vocabulary
+enum CorpusReleaseStatus {
+  /// records the draft state
+  draft
+  /// records the published state
+  published
+  /// records the withdrawn state
+  withdrawn
+}
+
+/// defines the finite corpus install status vocabulary
+enum CorpusInstallStatus {
+  /// records the running state
+  running
+  /// records the completed state
+  completed
+  /// records the failed state
+  failed
+}
+
+/// defines the finite corpus item disposition vocabulary
+enum CorpusItemDisposition {
+  /// records the created state
+  created
+  /// records the unchanged state
+  unchanged
+  /// records the update draft state
+  update_draft
+  /// records the conflict state
+  conflict
+}
+
+/// persists topic metadata without removing historical evidence
+model Topic {
+  /// identifies an owner-scoped taxonomy concept
+  id                          String                   @id @db.Uuid
+  /// isolates the collector taxonomy
+  ownerId                     String                   @map("owner_id")
+  /// stable namespaced corpus concept identity
+  contentId                   String                   @map("content_id")
+  /// classifies the browse and filter dimension
+  facet                       TopicFacet
+  /// references the same-owner directed parent
+  parentId                    String?                  @map("parent_id") @db.Uuid
+  /// orders siblings before the stable identity tie-break
+  sortOrder                   Int                      @default(0) @map("sort_order")
+  /// retires a topic without removing historical links
+  retiredAt                   DateTime?                @map("retired_at") @db.Timestamptz(6)
+  /// records initial row creation in UTC
+  createdAt                   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced Topic identity without cascading historical evidence
+  parent                      Topic?                   @relation("Topic_parent", fields: [ownerId, parentId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "topic_parent_fk")
+  /// retains historical Topic associations
+  topicParent                 Topic[]                  @relation("Topic_parent")
+  /// retains historical TopicLabel associations
+  topicLabelTopic             TopicLabel[]             @relation("TopicLabel_topic")
+  /// retains historical TopicRelation associations
+  topicRelationFromTopic      TopicRelation[]          @relation("TopicRelation_fromTopic")
+  /// retains historical TopicRelation associations
+  topicRelationToTopic        TopicRelation[]          @relation("TopicRelation_toTopic")
+  /// retains historical AuthorityMapping associations
+  authorityMappingTopic       AuthorityMapping[]       @relation("AuthorityMapping_topic")
+  /// retains historical KnowledgeRevisionTopic associations
+  knowledgeRevisionTopicTopic KnowledgeRevisionTopic[] @relation("KnowledgeRevisionTopic_topic")
+
+  @@unique([ownerId, contentId], map: "topics_owner_content_uq")
+  @@unique([ownerId, id], map: "topics_owner_id_uq")
+  @@index([ownerId, facet, parentId, sortOrder, id], map: "topics_browse_idx")
+  @@map("topics")
+}
+
+/// persists topic label metadata without removing historical evidence
+model TopicLabel {
+  /// identifies a preserved topic label
+  id                   String         @id @db.Uuid
+  /// isolates the label with its topic
+  ownerId              String         @map("owner_id")
+  /// pins the labeled concept
+  topicId              String         @map("topic_id") @db.Uuid
+  /// BCP47 source language without a UI-locale restriction
+  language             String
+  /// preserves original display text
+  text                 String
+  /// stores the non-destructive search copy
+  normalizedText       String         @map("normalized_text")
+  /// distinguishes preferred, alias and original labels
+  kind                 TopicLabelKind
+  /// optionally attributes the label to located evidence
+  provenanceCitationId String?        @map("provenance_citation_id") @db.Uuid
+  /// records initial row creation in UTC
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced Topic identity without cascading historical evidence
+  topic                Topic          @relation("TopicLabel_topic", fields: [ownerId, topicId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "topic_label_topic_fk")
+  /// pins the referenced citations identity without cascading historical evidence
+  provenanceCitation   citations?     @relation("TopicLabel_provenanceCitation", fields: [provenanceCitationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "topic_label_provenance_citation_fk")
+
+  @@unique([topicId, language, kind, normalizedText], map: "topic_labels_identity_uq")
+  @@unique([topicId, language], map: "topic_labels_preferred_uq", where: raw("(kind = 'preferred'::\"TopicLabelKind\")"))
+  @@index([ownerId, normalizedText, topicId], map: "topic_labels_search_idx")
+  @@map("topic_labels")
+}
+
+/// persists topic relation metadata without removing historical evidence
+model TopicRelation {
+  /// isolates both endpoints to one collector
+  ownerId     String            @map("owner_id")
+  /// stores the lower UUID of an undirected pair
+  fromTopicId String            @map("from_topic_id") @db.Uuid
+  /// stores the higher UUID of an undirected pair
+  toTopicId   String            @map("to_topic_id") @db.Uuid
+  /// identifies the non-hierarchical association
+  relation    TopicRelationKind
+  /// records initial row creation in UTC
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced Topic identity without cascading historical evidence
+  fromTopic   Topic             @relation("TopicRelation_fromTopic", fields: [ownerId, fromTopicId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "topic_relation_from_topic_fk")
+  /// pins the referenced Topic identity without cascading historical evidence
+  toTopic     Topic             @relation("TopicRelation_toTopic", fields: [ownerId, toTopicId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "topic_relation_to_topic_fk")
+
+  @@id([fromTopicId, toTopicId, relation])
+  @@map("topic_relations")
+}
+
+/// persists authority mapping metadata without removing historical evidence
+model AuthorityMapping {
+  /// identifies one attributed authority mapping
+  id               String               @id @db.Uuid
+  /// isolates the collector mapping
+  ownerId          String               @map("owner_id")
+  /// pins the local concept
+  topicId          String               @map("topic_id") @db.Uuid
+  /// identifies the external vocabulary
+  authority        AuthorityKind
+  /// preserves the opaque external concept identity
+  authorityId      String               @map("authority_id")
+  /// retains the authoritative concept URI
+  uri              String
+  /// records mapping precision without assuming equivalence
+  relation         AuthorityRelation
+  /// pins a vocabulary release when available
+  authorityVersion String?              @map("authority_version")
+  /// records when the mapping evidence was retrieved
+  retrievedAt      DateTime             @map("retrieved_at") @db.Timestamptz(6)
+  /// pins the evidence supporting this mapping
+  citationId       String               @map("citation_id") @db.Uuid
+  /// distinguishes human review from citation presence
+  reviewState      KnowledgeReviewState @map("review_state")
+  /// identifies the actor responsible for the review
+  reviewedBy       String?              @map("reviewed_by")
+  /// records the review decision time in UTC
+  reviewedAt       DateTime?            @map("reviewed_at") @db.Timestamptz(6)
+  /// records initial row creation in UTC
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced Topic identity without cascading historical evidence
+  topic            Topic                @relation("AuthorityMapping_topic", fields: [ownerId, topicId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "authority_mapping_topic_fk")
+  /// pins the referenced citations identity without cascading historical evidence
+  citation         citations            @relation("AuthorityMapping_citation", fields: [citationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "authority_mapping_citation_fk")
+
+  @@unique([topicId, authority, authorityId, relation], map: "authority_mappings_identity_uq")
+  @@index([ownerId, authority, authorityId], map: "authority_mappings_lookup_idx")
+  @@map("authority_mappings")
+}
+
+/// persists knowledge revision topic metadata without removing historical evidence
+model KnowledgeRevisionTopic {
+  /// isolates the entry and topic association
+  ownerId       String             @map("owner_id")
+  /// identifies the revisioned entry
+  entryId       String             @map("entry_id") @db.Uuid
+  /// pins the exact content envelope
+  revision      Int
+  /// pins the attributed taxonomy concept
+  topicId       String             @map("topic_id") @db.Uuid
+  /// distinguishes general and specific applicability
+  applicability TopicApplicability
+  /// preserves limits on the topic assignment
+  uncertainty   String?
+  /// records initial row creation in UTC
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced knowledgeEntries identity without cascading historical evidence
+  entry         knowledgeEntries   @relation("KnowledgeRevisionTopic_entry", fields: [ownerId, entryId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_topic_entry_fk")
+  /// pins the referenced knowledgeRevisions identity without cascading historical evidence
+  entryRevision knowledgeRevisions @relation("KnowledgeRevisionTopic_entryRevision", fields: [entryId, revision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_topic_entry_revision_fk")
+  /// pins the referenced Topic identity without cascading historical evidence
+  topic         Topic              @relation("KnowledgeRevisionTopic_topic", fields: [ownerId, topicId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_revision_topic_topic_fk")
+
+  @@id([entryId, revision, topicId])
+  @@index([ownerId, topicId, entryId, revision], map: "knowledge_revision_topics_lookup_idx")
+  @@map("knowledge_revision_topics")
+}
+
+/// persists cited claim metadata without removing historical evidence
+model CitedClaim {
+  /// identifies this revision-specific atomic claim
+  id                      String               @id @db.Uuid
+  /// isolates the claim with its entry
+  ownerId                 String               @map("owner_id")
+  /// identifies the knowledge entry
+  entryId                 String               @map("entry_id") @db.Uuid
+  /// pins the immutable content envelope
+  revision                Int
+  /// preserves claim identity across revisions
+  claimKey                String               @map("claim_key")
+  /// places the statement in its semantic section
+  section                 CitedClaimSection
+  /// preserves ordered statements within the section
+  ordinal                 Int
+  /// retains the independently assertable original statement
+  originalText            String               @map("original_text")
+  /// BCP47 language of the unmodified source statement
+  originalLanguage        String               @map("original_language")
+  /// separates attribution, observation and interpretation
+  statementType           ClaimStatementType   @map("statement_type")
+  /// records applicability without implicit authentication
+  scope                   Json
+  /// preserves qualification of the statement
+  qualifiers              Json
+  /// retains explicit uncertainty
+  uncertainty             String?
+  /// keeps unsupported claims distinct from cited claims
+  supportState            ClaimSupportState    @map("support_state")
+  /// distinguishes human review from citation presence
+  reviewState             KnowledgeReviewState @map("review_state")
+  /// identifies the actor responsible for the review
+  reviewedBy              String?              @map("reviewed_by")
+  /// records the review decision time in UTC
+  reviewedAt              DateTime?            @map("reviewed_at") @db.Timestamptz(6)
+  /// records initial row creation in UTC
+  createdAt               DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// retains historical CitedClaimCitation associations
+  citedClaimCitationClaim CitedClaimCitation[] @relation("CitedClaimCitation_claim")
+  /// retains historical LanguageVariant associations
+  languageVariantClaim    LanguageVariant[]    @relation("LanguageVariant_claim")
+  /// pins the referenced knowledgeEntries identity without cascading historical evidence
+  entry                   knowledgeEntries     @relation("CitedClaim_entry", fields: [ownerId, entryId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "cited_claim_entry_fk")
+  /// pins the referenced knowledgeRevisions identity without cascading historical evidence
+  entryRevision           knowledgeRevisions   @relation("CitedClaim_entryRevision", fields: [entryId, revision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "cited_claim_entry_revision_fk")
+
+  @@unique([entryId, revision, claimKey], map: "cited_claims_key_uq")
+  @@unique([entryId, revision, section, ordinal], map: "cited_claims_ordinal_uq")
+  @@index([ownerId, entryId, revision, supportState, reviewState], map: "cited_claims_grounding_idx")
+  @@map("cited_claims")
+}
+
+/// persists cited claim citation metadata without removing historical evidence
+model CitedClaimCitation {
+  /// pins the revision-specific claim
+  claimId    String     @map("claim_id") @db.Uuid
+  /// retains the existing version-pinned citation
+  citationId String     @map("citation_id") @db.Uuid
+  /// records initial row creation in UTC
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced CitedClaim identity without cascading historical evidence
+  claim      CitedClaim @relation("CitedClaimCitation_claim", fields: [claimId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "cited_claim_citation_claim_fk")
+  /// pins the referenced citations identity without cascading historical evidence
+  citation   citations  @relation("CitedClaimCitation_citation", fields: [citationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "cited_claim_citation_citation_fk")
+
+  @@id([claimId, citationId])
+  @@index([citationId, claimId], map: "cited_claim_citations_citation_idx")
+  @@map("cited_claim_citations")
+}
+
+/// persists language variant metadata without removing historical evidence
+model LanguageVariant {
+  /// identifies one original or translated claim variant
+  id             String               @id @db.Uuid
+  /// inherits the original claim citation graph
+  claimId        String               @map("claim_id") @db.Uuid
+  /// BCP47 language without UI-locale restrictions
+  language       String
+  /// distinguishes original text from translation
+  kind           LanguageVariantKind
+  /// preserves the attributed text for this language
+  text           String
+  /// records whether a human or machine translated the text
+  method         TranslationMethod
+  /// identifies the translator when known
+  translator     String?
+  /// distinguishes human review from citation presence
+  reviewState    KnowledgeReviewState @map("review_state")
+  /// identifies the actor responsible for the review
+  reviewedBy     String?              @map("reviewed_by")
+  /// records the review decision time in UTC
+  reviewedAt     DateTime?            @map("reviewed_at") @db.Timestamptz(6)
+  /// records translation time when applicable
+  translatedAt   DateTime?            @map("translated_at") @db.Timestamptz(6)
+  /// SHA-256 of the original text used for this variant
+  sourceTextHash String               @map("source_text_hash")
+  /// records initial row creation in UTC
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced CitedClaim identity without cascading historical evidence
+  claim          CitedClaim           @relation("LanguageVariant_claim", fields: [claimId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "language_variant_claim_fk")
+
+  @@unique([claimId, language, kind], map: "language_variants_identity_uq")
+  @@index([language, claimId], map: "language_variants_language_idx")
+  @@map("language_variants")
+}
+
+/// persists external object metadata without removing historical evidence
+model ExternalObject {
+  /// identifies a provider object in an owner library
+  id                           String               @id @db.Uuid
+  /// isolates the imported object
+  ownerId                      String               @map("owner_id")
+  /// identifies the upstream institution
+  provider                     String
+  /// preserves the opaque upstream identifier
+  objectId                     String               @map("object_id")
+  /// reuses the existing bibliography source
+  sourceId                     String               @map("source_id") @db.Uuid
+  /// retains the authoritative object page
+  canonicalRecordUrl           String               @map("canonical_record_url")
+  /// records the provider modification timestamp when supplied
+  upstreamModifiedAt           DateTime?            @map("upstream_modified_at") @db.Timestamptz(6)
+  /// records the most recent successful upstream observation
+  lastSeenAt                   DateTime             @map("last_seen_at") @db.Timestamptz(6)
+  /// retains missing objects without deleting history
+  status                       ExternalObjectStatus
+  /// records initial row creation in UTC
+  createdAt                    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// records the latest operational change in UTC
+  updatedAt                    DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// pins the referenced sources identity without cascading historical evidence
+  source                       sources              @relation("ExternalObject_source", fields: [ownerId, sourceId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "external_object_source_fk")
+  /// retains historical sourceVersions associations
+  sourceVersionsExternalObject sourceVersions[]     @relation("sourceVersions_externalObject")
+
+  @@unique([ownerId, provider, objectId], map: "external_objects_identity_uq")
+  @@unique([ownerId, sourceId], map: "external_objects_source_uq")
+  @@unique([ownerId, sourceId, id], map: "external_objects_owner_source_id_uq")
+  @@index([ownerId, provider, lastSeenAt, id], map: "external_objects_seen_idx")
+  @@map("external_objects")
+}
+
+/// persists import run metadata without removing historical evidence
+model ImportRun {
+  /// identifies a checkpointed import execution
+  id                  String          @id @db.Uuid
+  /// isolates the import owner
+  ownerId             String          @map("owner_id")
+  /// pins the durable job and its lifecycle
+  jobId               String          @unique @map("job_id") @db.Uuid
+  /// identifies the upstream adapter
+  provider            String
+  /// freezes the bounded approved selection
+  query               Json
+  /// SHA-256 selection identity for safe resume
+  queryHash           String          @map("query_hash")
+  /// pins mapping and cursor compatibility
+  adapterVersion      String          @map("adapter_version")
+  /// deduplicates explicit owner requests
+  requestKey          String          @map("request_key")
+  /// holds the last atomically committed checkpoint
+  cursor              Json?
+  /// records progress without treating partial failure as completion
+  status              ImportRunStatus
+  /// records execution start in UTC
+  startedAt           DateTime?       @map("started_at") @db.Timestamptz(6)
+  /// records terminal completion in UTC
+  finishedAt          DateTime?       @map("finished_at") @db.Timestamptz(6)
+  /// pins the accepted input manifest
+  inputHash           String?         @map("input_hash")
+  /// pins the imported result manifest
+  outputHash          String?         @map("output_hash")
+  /// holds batch-committed progress counts
+  counts              Json
+  /// retains bounded resumable failure details
+  failureSummary      Json?           @map("failure_summary")
+  /// records initial row creation in UTC
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// records the latest operational change in UTC
+  updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// pins the referenced jobs identity without cascading historical evidence
+  job                 jobs            @relation("ImportRun_job", fields: [ownerId, jobId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "import_run_job_fk")
+  /// retains historical ImportItem associations
+  importItemRun       ImportItem[]    @relation("ImportItem_run")
+  /// retains historical ReviewDiff associations
+  reviewDiffImportRun ReviewDiff[]    @relation("ReviewDiff_importRun")
+
+  @@unique([ownerId, requestKey], map: "import_runs_request_uq")
+  @@unique([ownerId, id], map: "import_runs_owner_id_uq")
+  @@index([ownerId, provider, status, createdAt, id], map: "import_runs_progress_idx")
+  @@map("import_runs")
+}
+
+/// persists import item metadata without removing historical evidence
+model ImportItem {
+  /// pins the resumable import run
+  runId            String           @map("run_id") @db.Uuid
+  /// preserves the opaque object key within the run
+  providerObjectId String           @map("provider_object_id")
+  /// SHA-256 metadata hash for unchanged detection
+  payloadHash      String?          @map("payload_hash")
+  /// retains failed objects for retry
+  status           ImportItemStatus
+  /// counts attempts committed for this object
+  attemptCount     Int              @default(0) @map("attempt_count")
+  /// records a bounded machine-readable failure code
+  errorCode        String?          @map("error_code")
+  /// pins the imported snapshot when one was created
+  sourceVersionId  String?          @map("source_version_id") @db.Uuid
+  /// records initial row creation in UTC
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// records the latest operational change in UTC
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// pins the referenced ImportRun identity without cascading historical evidence
+  run              ImportRun        @relation("ImportItem_run", fields: [runId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "import_item_run_fk")
+  /// pins the referenced sourceVersions identity without cascading historical evidence
+  sourceVersion    sourceVersions?  @relation("ImportItem_sourceVersion", fields: [sourceVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "import_item_source_version_fk")
+
+  @@id([runId, providerObjectId])
+  @@index([runId, status, providerObjectId], map: "import_items_progress_idx")
+  @@map("import_items")
+}
+
+/// persists review diff metadata without removing historical evidence
+model ReviewDiff {
+  /// identifies a pending upstream change decision
+  id                   String              @id @db.Uuid
+  /// isolates the owner review
+  ownerId              String              @map("owner_id")
+  /// links the originating import when applicable
+  importRunId          String?             @map("import_run_id") @db.Uuid
+  /// pins the affected knowledge entry
+  entryId              String              @map("entry_id") @db.Uuid
+  /// pins the baseline when prior content exists
+  baseRevision         Int?                @map("base_revision")
+  /// pins the proposed draft without implicitly saving it
+  candidateRevision    Int                 @map("candidate_revision")
+  /// retains the prior source snapshot
+  oldSourceVersionId   String?             @map("old_source_version_id") @db.Uuid
+  /// retains the proposed source snapshot
+  newSourceVersionId   String?             @map("new_source_version_id") @db.Uuid
+  /// detects collector divergence from the baseline
+  baseContentHash      String?             @map("base_content_hash")
+  /// pins the proposed revision envelope
+  candidateContentHash String              @map("candidate_content_hash")
+  /// retains typed field, claim, image and topic differences
+  changes              Json
+  /// records review disposition independently of collector save
+  status               ReviewDiffStatus
+  /// identifies the reviewing actor
+  reviewedBy           String?             @map("reviewed_by")
+  /// records the decision time in UTC
+  reviewedAt           DateTime?           @map("reviewed_at") @db.Timestamptz(6)
+  /// records initial row creation in UTC
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// records the latest operational change in UTC
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// pins the referenced ImportRun identity without cascading historical evidence
+  importRun            ImportRun?          @relation("ReviewDiff_importRun", fields: [ownerId, importRunId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "review_diff_import_run_fk")
+  /// pins the referenced sourceVersions identity without cascading historical evidence
+  oldSourceVersion     sourceVersions?     @relation("ReviewDiff_oldSourceVersion", fields: [ownerId, oldSourceVersionId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "review_diff_old_source_version_fk")
+  /// pins the referenced sourceVersions identity without cascading historical evidence
+  newSourceVersion     sourceVersions?     @relation("ReviewDiff_newSourceVersion", fields: [ownerId, newSourceVersionId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "review_diff_new_source_version_fk")
+  /// pins the referenced knowledgeEntries identity without cascading historical evidence
+  entry                knowledgeEntries    @relation("ReviewDiff_entry", fields: [ownerId, entryId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "review_diff_entry_fk")
+  /// pins the referenced knowledgeRevisions identity without cascading historical evidence
+  base                 knowledgeRevisions? @relation("ReviewDiff_base", fields: [entryId, baseRevision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "review_diff_base_fk")
+  /// pins the referenced knowledgeRevisions identity without cascading historical evidence
+  candidate            knowledgeRevisions  @relation("ReviewDiff_candidate", fields: [entryId, candidateRevision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "review_diff_candidate_fk")
+
+  @@unique([entryId, candidateRevision], map: "review_diffs_candidate_uq")
+  @@index([ownerId, status, createdAt, id], map: "review_diffs_queue_idx")
+  @@map("review_diffs")
+}
+
+/// persists corpus release metadata without removing historical evidence
+model CorpusRelease {
+  /// identifies a versioned global corpus manifest
+  id                   String              @id @db.Uuid
+  /// names the corpus independently of its release
+  corpusId             String              @map("corpus_id")
+  /// identifies the published semantic version
+  version              String
+  /// pins the manifest format
+  schemaVersion        Int                 @map("schema_version")
+  /// SHA-256 of canonical manifest bytes
+  manifestHash         String              @map("manifest_hash")
+  /// records editorial publication, distinct from collector save
+  publishedAt          DateTime?           @map("published_at") @db.Timestamptz(6)
+  /// identifies the release reviewer
+  editorialReviewer    String?             @map("editorial_reviewer")
+  /// retains withdrawn releases and historical receipts
+  status               CorpusReleaseStatus
+  /// preserves observed corpus rights notices
+  rightsNotices        Json                @map("rights_notices")
+  /// records initial row creation in UTC
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// retains historical CorpusInstall associations
+  corpusInstallRelease CorpusInstall[]     @relation("CorpusInstall_release")
+
+  @@unique([corpusId, version], map: "corpus_releases_version_uq")
+  @@unique([corpusId, manifestHash], map: "corpus_releases_hash_uq")
+  @@map("corpus_releases")
+}
+
+/// persists corpus install metadata without removing historical evidence
+model CorpusInstall {
+  /// identifies an idempotent owner installation receipt
+  id                       String              @id @db.Uuid
+  /// isolates the installed draft library
+  ownerId                  String              @map("owner_id")
+  /// pins the exact corpus release
+  releaseId                String              @map("release_id") @db.Uuid
+  /// deduplicates owner installation requests
+  requestKey               String              @map("request_key")
+  /// records resumable installation progress
+  status                   CorpusInstallStatus
+  /// records successful receipt completion
+  installedAt              DateTime?           @map("installed_at") @db.Timestamptz(6)
+  /// records created, unchanged, changed and conflicting items
+  counts                   Json
+  /// records initial row creation in UTC
+  createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// records the latest operational change in UTC
+  updatedAt                DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// pins the referenced CorpusRelease identity without cascading historical evidence
+  release                  CorpusRelease       @relation("CorpusInstall_release", fields: [releaseId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "corpus_install_release_fk")
+  /// retains historical CorpusInstallItem associations
+  corpusInstallItemInstall CorpusInstallItem[] @relation("CorpusInstallItem_install")
+
+  @@unique([ownerId, releaseId], map: "corpus_installs_release_uq")
+  @@unique([ownerId, requestKey], map: "corpus_installs_request_uq")
+  @@index([ownerId, status], map: "corpus_installs_status_idx")
+  @@map("corpus_installs")
+}
+
+/// persists corpus install item metadata without removing historical evidence
+model CorpusInstallItem {
+  /// pins the installation receipt
+  installId     String                @map("install_id") @db.Uuid
+  /// preserves the stable namespaced corpus entry identity
+  contentId     String                @map("content_id")
+  /// identifies the installed knowledge entry
+  entryId       String                @map("entry_id") @db.Uuid
+  /// pins the installed revision after the working head changes
+  revision      Int
+  /// SHA-256 of the installed revision envelope
+  contentHash   String                @map("content_hash")
+  /// records conflict without overwriting collector edits
+  disposition   CorpusItemDisposition
+  /// records initial row creation in UTC
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// pins the referenced CorpusInstall identity without cascading historical evidence
+  install       CorpusInstall         @relation("CorpusInstallItem_install", fields: [installId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "corpus_install_item_install_fk")
+  /// pins the referenced knowledgeRevisions identity without cascading historical evidence
+  entryRevision knowledgeRevisions    @relation("CorpusInstallItem_entryRevision", fields: [entryId, revision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "corpus_install_item_entry_revision_fk")
+
+  @@id([installId, contentId])
+  @@map("corpus_install_items")
+}
+
+/// stores extension-free lexical projections of immutable revision content
+model KnowledgeSearchDocument {
+  // --- IDENTIFIERS --- //
+  /// isolates the search corpus to its collector
+  ownerId  String @map("owner_id")
+  /// identifies the revisioned knowledge entry
+  entryId  String @map("entry_id") @db.Uuid
+  /// pins the exact content envelope
+  revision Int
+  /// BCP47 language of this projection, including preserved source scripts
+  language String
+
+  // --- PROPERTIES --- //
+  /// pins runtime, ICU and curated dictionary versions for reproducible tokens
+  tokenizerVersion            String                  @map("tokenizer_version")
+  /// invalidates cursors when the searchable corpus changes
+  corpusGeneration            BigInt                  @map("corpus_generation")
+  /// stores normalized segmented title tokens in the strongest ranking lane
+  titleTokens                 String                  @map("title_tokens")
+  /// stores reviewed aliases without changing original display text
+  aliasTokens                 String                  @map("alias_tokens")
+  /// stores applicable topic tokens in the second ranking lane
+  topicTokens                 String                  @map("topic_tokens")
+  /// stores supported claim tokens in the third ranking lane
+  claimTokens                 String                  @map("claim_tokens")
+  /// stores selected captured source tokens in the lowest ranking lane
+  sourceTokens                String                  @map("source_tokens")
+  /// bounds substring and optional trigram indexing to compact title, alias and mark text
+  normalizedTitleAliasesMarks String                  @map("normalized_title_aliases_marks")
+  /// computed by PostgreSQL from weighted simple-dictionary tokens, never supplied by clients
+  searchVector                Unsupported("tsvector") @default(dbgenerated()) @map("search_vector")
+
+  // --- TIMESTAMPS --- //
+  /// records initial projection creation in UTC
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // --- RELATIONS --- //
+  /// prevents projections from crossing owner boundaries
+  entry         knowledgeEntries   @relation("search_entry", fields: [ownerId, entryId], references: [ownerId, id], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_search_documents_entry_fk")
+  /// preserves the exact historical revision dependency
+  entryRevision knowledgeRevisions @relation("search_revision", fields: [entryId, revision], references: [entryId, revision], onDelete: NoAction, onUpdate: NoAction, map: "knowledge_search_documents_revision_fk")
+
+  @@id([ownerId, entryId, revision, language])
+  @@index([ownerId, entryId, revision], map: "knowledge_search_documents_entry_idx")
+  @@index([ownerId, language, entryId, revision], map: "knowledge_search_documents_language_idx")
+  @@index([searchVector], type: Gin, map: "knowledge_search_documents_vector_idx")
+  /// limits trigram acceleration to compact title, alias and mark text
+  @@index([normalizedTitleAliasesMarks(ops: raw("gin_trgm_ops"))], type: Gin, map: "knowledge_search_documents_compact_trigram_idx")
+  @@map("knowledge_search_documents")
 }

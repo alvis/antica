@@ -449,9 +449,11 @@ export async function listPendingOutbox(
       createdAt: Date;
     }>
   >`
-    select event_id as id, event_name as name, payload as event, owner_id as "ownerId", resource_id as "resourceId", created_at as "createdAt"
-    from outbox where delivered_at is null and available_at <= now()
-    order by available_at, event_id limit ${Math.min(Math.max(limit, 1), 100)}`;
+    with pending as (select * from outbox where delivered_at is null and available_at <= now()
+      order by available_at, event_id limit ${Math.min(Math.max(limit, 1), 100)}),
+    charged as (update import_runs r set counts = jsonb_set(r.counts, '{controlSqlOperations}', to_jsonb(coalesce((r.counts->>'controlSqlOperations')::int, 0) + 1))
+      where r.job_id in (select job_id from pending where event_name = 'antica/knowledgeImport.requested'))
+    select event_id as id, event_name as name, payload || jsonb_build_object('eventId', event_id, 'schemaVersion', schema_version, 'jobId', job_id, 'resourceId', resource_id, 'ownerId', owner_id, 'idempotencyKey', idempotency_key) as event, owner_id as "ownerId", resource_id as "resourceId", created_at as "createdAt" from pending`;
 
   return rows.map((row) => ({
     ...row,

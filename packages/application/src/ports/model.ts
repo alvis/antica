@@ -3,6 +3,7 @@ import type {
   AnalysisOutput,
   EditDraftRequest,
   EditDraftResult,
+  KnowledgeEvidenceSnapshotV1,
   ModelCapabilities,
   ModelInvocation,
   ModelFailureAudit,
@@ -118,6 +119,8 @@ export interface RecordEditingPort {
     context: {
       readonly fields: RecordFields;
       readonly versions: RecordVersions;
+      readonly knowledgeContext?: KnowledgeEvidenceSnapshotV1;
+      readonly evidenceRepair?: string;
     },
     selection: ModelSelection,
   ): Promise<ModelOperationResult<EditDraftResult>>;

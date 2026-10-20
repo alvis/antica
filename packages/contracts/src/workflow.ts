@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import { editDraftResultSchema, modelInvocationSchema } from './analysis.js';
+import { knowledgeEvidenceSnapshotV1Schema } from './knowledge-evidence.js';
+
 import {
   observationSchema,
   transcriptionRequestSchema,
@@ -69,6 +71,7 @@ export const editDraftAcceptedSchema = z.strictObject({
 });
 export type EditDraftAccepted = z.infer<typeof editDraftAcceptedSchema>;
 export const editDraftSnapshotSchema = z.strictObject({
+  knowledgeContext: knowledgeEvidenceSnapshotV1Schema.optional(),
   recordId: entityIdSchema,
   versions: recordVersionsSchema,
   fields: recordFieldsSchema,

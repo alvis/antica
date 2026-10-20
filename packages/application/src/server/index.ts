@@ -40,7 +40,16 @@ export type {
   SourceReadSigningPort,
 } from '../knowledge/ingestion.js';
 export { createKnowledgeService } from '../knowledge/service.js';
+export {
+  createKnowledgeImportService,
+  createKnowledgeImportHandler,
+} from '../knowledge/import.js';
+export type {
+  KnowledgeImportService,
+  KnowledgeImportParams,
+} from '../knowledge/import.js';
 export type { KnowledgeService } from '../knowledge/service.js';
+export { installCorpusRelease } from '../knowledge/corpus-install.js';
 export { createImageSearchService } from '../knowledge/retrieval.js';
 export type { ImageSearchService } from '../knowledge/retrieval.js';
 export {
@@ -58,3 +67,11 @@ export type { TranscriptionMediaReader } from '../voice/transcription-handler.js
 export { createEditDraftService } from '../voice/edit.js';
 export type { EditDraftService } from '../voice/edit.js';
 export { createEditDraftHandler } from '../voice/edit-handler.js';
+
+export type { KnowledgeDiscovery } from '../knowledge/discovery.js';
+export { withKnowledgeDiscovery } from '../knowledge/discovery.js';
+export {
+  buildKnowledgeEvidenceSnapshot,
+  freezeKnowledgeEvidence,
+  validateKnowledgeAnswerSegments,
+} from '../knowledge/evidence.js';

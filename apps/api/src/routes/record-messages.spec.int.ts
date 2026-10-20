@@ -2,9 +2,14 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { describe, expect, inject } from 'vitest';
 
-import { createRecordService } from '@antica/application/server';
+import {
+  createRecordService,
+  createKnowledgeService,
+} from '@antica/application/server';
 import {
   editDraftResultSchema,
+  knowledgeNoSupportedAnswer,
+  knowledgeEvidenceSnapshotV1Schema,
   observationSchema,
   recordDetailSchema,
   recordHistoryPageSchema,
@@ -14,21 +19,57 @@ import {
   transcriptionDetailSchema,
   uploadSessionSchema,
 } from '@antica/contracts';
+import { createAiSdkModels } from '@antica/platform/ai';
 
 import { createHttpTest } from '../fixtures/http/test.js';
 import { createLocalSettings } from '../fixtures/runtime.js';
-
-import type { ModelInvocation } from '@antica/contracts';
 
 import type {
   RecordEditingPort,
   TranscriptionPort,
 } from '@antica/application/ports';
+import type { ModelInvocation, KnowledgeWriteV2 } from '@antica/contracts';
 
 import type { ApplicationSettings } from '../configuration.js';
 import type { HttpFixture } from '../fixtures/http.js';
 
 const FAIL = 'FAIL THE MODEL';
+const GROUNDED = 'Explain the saved museum claim';
+const NO_OUTPUT = 'Provider gives no structured response';
+const noOutputCalls = { count: 0 };
+const noOutputModel = {
+  specificationVersion: 'v4',
+  provider: 'test',
+  modelId: 'empty-provider',
+  supportedUrls: {},
+  doGenerate: async () => {
+    noOutputCalls.count += 1;
+
+    return {
+      content: [],
+      finishReason: { unified: 'content-filter', raw: 'content-filter' },
+      usage: {
+        inputTokens: {
+          total: undefined,
+          noCache: undefined,
+          cacheRead: undefined,
+          cacheWrite: undefined,
+        },
+        outputTokens: {
+          total: undefined,
+          text: undefined,
+          reasoning: undefined,
+        },
+      },
+      warnings: [],
+    };
+  },
+  doStream: async () => {
+    throw new Error('Streaming is not used by this fixture');
+  },
+} satisfies NonNullable<
+  Parameters<typeof createAiSdkModels>[0]['languageModels']
+>[string];
 const reply = '開發示範：已依你提供的文字整理描述，請確認是否套用。';
 
 /**
@@ -39,6 +80,27 @@ const reply = '開發示範：已依你提供的文字整理描述，請確認�
 function scripted(inner: RecordEditingPort): RecordEditingPort {
   return {
     draft: async (request, sourceText, context, selection) => {
+      if (request.instructionZhHant === NO_OUTPUT) {
+        return createAiSdkModels({
+          profiles: [
+            {
+              modelId: selection.modelId,
+              provider: 'gateway',
+              providerModelVersion: null,
+              adapterKind: 'live',
+              roles: ['recordEditing'],
+              capabilities: {
+                textInput: true,
+                imageInput: false,
+                audioInput: false,
+                structuredOutput: true,
+                toolCalling: false,
+              },
+            },
+          ],
+          languageModels: { [selection.modelId]: noOutputModel },
+        }).recordEditing.draft(request, sourceText, context, selection);
+      }
       if (request.instructionZhHant === FAIL) {
         return {
           success: false,
@@ -60,6 +122,41 @@ function scripted(inner: RecordEditingPort): RecordEditingPort {
         return drafted;
       }
       const value = editDraftResultSchema.parse(drafted.data.value);
+      if (request.instructionZhHant === GROUNDED) {
+        const entry = context.knowledgeContext?.entries[0];
+        const claim = entry?.claims[0];
+        if (!entry || !claim) {
+          throw new Error('Expected frozen museum evidence');
+        }
+        const text = `${claim.statement} ${claim.uncertainty ?? ''}`.trim();
+
+        return {
+          success: true,
+          data: {
+            ...drafted.data,
+            value: {
+              ...value,
+              replyZhHant: text,
+              proposedChanges: [],
+              answerSegments: [
+                {
+                  text,
+                  evidenceRefs: [
+                    {
+                      entryId: entry.entryId,
+                      revision: entry.revision,
+                      claimKey: claim.claimKey,
+                      citationIds: claim.citations.map(
+                        (citation) => citation.citationId,
+                      ),
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        };
+      }
 
       return {
         success: true,
@@ -67,6 +164,7 @@ function scripted(inner: RecordEditingPort): RecordEditingPort {
           ...drafted.data,
           value: {
             ...value,
+            answerSegments: [{ text: value.replyZhHant, evidenceRefs: [] }],
             proposedChanges: [
               ...value.proposedChanges,
               {
@@ -745,7 +843,9 @@ describe('fn:createRecordMessageRoutes', () => {
     const path = `/v1/records/${record.id}/messages`;
 
     const responses = await Promise.all(
-      Array.from({ length: 8 }, () => fixture.request(path, 'POST', input)),
+      Array.from({ length: 8 }, async () =>
+        fixture.request(path, 'POST', input),
+      ),
     );
 
     const statuses = responses.map((response) => response.status);
@@ -1094,5 +1194,371 @@ describe('fn:createRecordMessageRoutes', () => {
 
     expect(response.status).toBe(422);
     expect(await response.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+});
+
+/**
+ * snapshots record mutation surfaces around a message request and its worker
+ * @param fixture real authenticated API runtime
+ * @param recordId record whose apply boundary is under test
+ */
+async function messageRecordCounts(fixture: HttpFixture, recordId: string) {
+  const db = fixture.runtime.database.db;
+
+  return Promise.all([
+    db.records.count({ where: { id: recordId } }),
+    db.recordCategories.count({ where: { recordId } }),
+    db.recordMaterials.count({ where: { recordId } }),
+    db.recordMeasurements.count({ where: { recordId } }),
+    db.recordTags.count({ where: { recordId } }),
+    db.recordAcquisitions.count({ where: { recordId } }),
+    db.editDraftAdoptionEvents.count({ where: { recordId } }),
+  ]);
+}
+
+/**
+ * snapshots all accepted-message side effects for a rollback assertion
+ * @param fixture real authenticated API runtime
+ * @param ownerId authenticated owner
+ * @param recordId record whose request is rejected
+ */
+async function messageWriteCounts(
+  fixture: HttpFixture,
+  ownerId: string,
+  recordId: string,
+) {
+  const db = fixture.runtime.database.db;
+
+  return Promise.all([
+    db.editDraftRuns.count({ where: { ownerId } }),
+    db.jobs.count({ where: { ownerId } }),
+    db.recordMessages.count({ where: { ownerId } }),
+    messageRecordCounts(fixture, recordId),
+  ]);
+}
+
+/**
+ * creates located immutable source authority for saved and rejected-attachment scenarios
+ * @param fixture authenticated API runtime
+ * @param ownerId source owner
+ */
+async function seedMessageKnowledge(
+  fixture: HttpFixture,
+  ownerId: string,
+): Promise<KnowledgeWriteV2['content']> {
+  const db = fixture.runtime.database.db;
+  const sourceId = randomUUID();
+  const versionId = randomUUID();
+  const citationId = randomUUID();
+  const text = `Museum object ${sourceId} is porcelain, with tentative attribution.`;
+  const source = {
+    id: sourceId,
+    versionId,
+    title: 'Museum catalog',
+    canonicalUrl: 'https://museum.example/object',
+    languages: ['en'],
+    contributors: [],
+  };
+  await db.sources.create({
+    data: {
+      id: sourceId,
+      ownerId,
+      kind: 'web',
+      title: source.title,
+      authorStatus: 'unknown',
+      access: 'link_only',
+    },
+  });
+  await db.sourceVersions.create({
+    data: {
+      id: versionId,
+      sourceId,
+      ownerId,
+      sourceHash: createHash('sha256').update(text).digest('hex'),
+      metadataSnapshot: {
+        title: source.title,
+        canonicalUrl: source.canonicalUrl,
+        languages: source.languages,
+        contributors: [],
+      },
+      capturedAt: '2026-10-19T00:00:00.000Z',
+      status: 'registered',
+      textIndexStatus: 'registered',
+      imageIndexStatus: 'registered',
+    },
+  });
+  await db.sourceLocators.create({
+    data: {
+      id: citationId,
+      sourceId,
+      sourceVersionId: versionId,
+      kind: 'web',
+      url: source.canonicalUrl,
+      retrievedAt: '2026-10-19T00:00:00.000Z',
+      excerptAsRetrieved: text,
+    },
+  });
+  await db.citations.create({
+    data: {
+      id: citationId,
+      locatorId: citationId,
+      relation: 'supports',
+      availability: 'link_only',
+      verification: 'located',
+    },
+  });
+  const review = { state: 'pending' as const };
+
+  return {
+    contentSchemaVersion: 2,
+    entryType: 'object_example',
+    origin: 'collector',
+    titles: [{ language: 'en', text: 'Museum vase' }],
+    aliases: [],
+    sections: {
+      summary: {
+        claimKey: 'material',
+        text,
+        citationIds: [citationId],
+        supportState: 'cited',
+      },
+      history: [],
+      features: [],
+      applicability: [],
+      limits: [],
+    },
+    claims: [
+      {
+        claimKey: 'material',
+        section: 'summary',
+        ordinal: 0,
+        originalText: text,
+        originalLanguage: 'en',
+        statementType: 'observation',
+        scope: { object: ['Museum vase'] },
+        qualifiers: {},
+        uncertainty: 'Tentative attribution',
+        supportState: 'cited',
+        citationIds: [citationId],
+        review,
+        variants: [],
+      },
+    ],
+    citations: [
+      {
+        id: citationId,
+        relation: 'supports',
+        availability: 'link_only',
+        verification: 'located',
+        quote: text,
+        locator: {
+          kind: 'web',
+          id: citationId,
+          sourceId,
+          sourceVersionId: versionId,
+          url: source.canonicalUrl,
+          retrievedAt: '2026-10-19T00:00:00.000Z',
+          excerpt: text,
+        },
+        source,
+      },
+    ],
+    topics: [],
+    images: [],
+    methodIds: [],
+    relatedEntryIds: [],
+    editorialReview: review,
+  };
+}
+
+describe('record messages frozen knowledge over HTTP', () => {
+  it('should freeze POST attachments, preserve historical GET evidence, and write no record changes without apply', async ({
+    fixture,
+  }) => {
+    const record = await createRecord(fixture);
+    const db = fixture.runtime.database.db;
+    const { ownerId } = await db.records.findUniqueOrThrow({
+      where: { id: record.id },
+    });
+    const content = await seedMessageKnowledge(fixture, ownerId);
+    const { transaction, clock, ids } = fixture.runtime;
+    const knowledge = createKnowledgeService(transaction, clock, ids);
+    const saved = await knowledge.createV2(ownerId, {
+      requestKey: randomUUID(),
+      expectedRevision: null,
+      content,
+      status: 'saved',
+      reviewDecisions: [{ claimKey: 'material', state: 'reviewed' }],
+      translationDecisions: [],
+    });
+    if (!saved.success) {
+      throw new Error(saved.error.message);
+    }
+    const attachment = {
+      entryId: saved.data.id,
+      revision: 1,
+      claimKey: 'material',
+      citationIds: [content.citations[0]!.id],
+    };
+    const recordBefore = await db.records.findUniqueOrThrow({
+      where: { id: record.id },
+    });
+    const countsBefore = await messageRecordCounts(fixture, record.id);
+    const request = post(GROUNDED, { knowledgeAttachments: [attachment] });
+    const response = await fixture.request(
+      `/v1/records/${record.id}/messages`,
+      'POST',
+      request,
+    );
+    expect(response.status).toBe(202);
+    const accepted = recordMessagePostedSchema.parse(await response.json());
+    const draft = await db.editDraftRuns.findUniqueOrThrow({
+      where: { id: accepted.editDraftId },
+    });
+    const frozen = knowledgeEvidenceSnapshotV1Schema.parse(
+      draft.knowledgeContext,
+    );
+    expect(accepted.knowledgeSnapshot).toEqual({
+      snapshotId: frozen.snapshotId,
+      snapshotHash: frozen.snapshotHash,
+    });
+    expect(frozen.entries).toMatchObject([
+      {
+        entryId: saved.data.id,
+        revision: 1,
+        claims: [
+          {
+            statement: content.claims[0]!.originalText,
+            language: 'en',
+            uncertainty: 'Tentative attribution',
+          },
+        ],
+      },
+    ]);
+    expect(await fixture.runtime.drain()).toMatchObject({
+      settled: 1,
+      failures: [],
+    });
+    const before = await conversation(fixture, record.id);
+    const assistant = before.items.find((item) => item.author === 'assistant');
+    expect(assistant).toMatchObject({
+      knowledgeEvidence: frozen,
+      answerSegments: [{ evidenceRefs: [attachment] }],
+      draft: { proposedChanges: [] },
+    });
+    const changed = await knowledge.updateV2(ownerId, saved.data.id, {
+      requestKey: randomUUID(),
+      expectedRevision: 1,
+      status: 'saved',
+      content: {
+        ...content,
+        claims: content.claims.map((claim) => ({
+          ...claim,
+          uncertainty: 'Attribution now disputed',
+        })),
+      },
+      reviewDecisions: [{ claimKey: 'material', state: 'reviewed' }],
+      translationDecisions: [],
+    });
+    expect(changed.success).toBe(true);
+    expect(await conversation(fixture, record.id)).toEqual(before);
+    expect(await messageRecordCounts(fixture, record.id)).toEqual(countsBefore);
+    expect(
+      await db.records.findUniqueOrThrow({ where: { id: record.id } }),
+    ).toEqual(recordBefore);
+  });
+
+  it('should reject foreign and unsaved POST attachments without draft, job, message or record writes', async ({
+    fixture,
+  }) => {
+    const record = await createRecord(fixture);
+    const db = fixture.runtime.database.db;
+    const { ownerId } = await db.records.findUniqueOrThrow({
+      where: { id: record.id },
+    });
+    const { transaction, clock, ids } = fixture.runtime;
+    const knowledge = createKnowledgeService(transaction, clock, ids);
+    for (const [entryOwner, status] of [
+      [randomUUID(), 'saved'],
+      [ownerId, 'draft'],
+    ] as const) {
+      const content = await seedMessageKnowledge(fixture, entryOwner);
+      const saved = await knowledge.createV2(entryOwner, {
+        requestKey: randomUUID(),
+        expectedRevision: null,
+        content,
+        status,
+        reviewDecisions: [{ claimKey: 'material', state: 'reviewed' }],
+        translationDecisions: [],
+      });
+      if (!saved.success) {
+        throw new Error(saved.error.message);
+      }
+      const before = await messageWriteCounts(fixture, ownerId, record.id);
+      const response = await fixture.request(
+        `/v1/records/${record.id}/messages`,
+        'POST',
+        post(GROUNDED, {
+          knowledgeAttachments: [
+            {
+              entryId: saved.data.id,
+              revision: 1,
+              claimKey: 'material',
+              citationIds: [content.citations[0]!.id],
+            },
+          ],
+        }),
+      );
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({ code: 'EVIDENCE_INVALID' });
+      expect(await messageWriteCounts(fixture, ownerId, record.id)).toEqual(
+        before,
+      );
+    }
+    expect((await conversation(fixture, record.id)).items).toEqual([]);
+  });
+
+  it('should save an unsupported reply after two actual no-output provider attempts with truthful audit and no record writes', async ({
+    fixture,
+  }) => {
+    const record = await createRecord(fixture);
+    const countsBefore = await messageRecordCounts(fixture, record.id);
+    const callsBefore = noOutputCalls.count;
+    const response = await fixture.request(
+      `/v1/records/${record.id}/messages`,
+      'POST',
+      post(NO_OUTPUT),
+    );
+    expect(response.status).toBe(202);
+    const accepted = recordMessagePostedSchema.parse(await response.json());
+    expect(await fixture.runtime.drain()).toMatchObject({
+      settled: 1,
+      failures: [],
+    });
+    expect(noOutputCalls.count).toBe(callsBefore + 2);
+    const draft =
+      await fixture.runtime.database.db.editDraftRuns.findUniqueOrThrow({
+        where: { id: accepted.editDraftId },
+      });
+    expect(draft.invocation).toMatchObject({
+      role: 'recordEditing',
+      provider: 'gateway',
+      adapterKind: 'live',
+      usage: { inputTokens: null, outputTokens: null },
+      finishReason: null,
+    });
+    expect((await conversation(fixture, record.id)).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          author: 'assistant',
+          body: knowledgeNoSupportedAnswer,
+          answerSegments: [
+            { text: knowledgeNoSupportedAnswer, evidenceRefs: [] },
+          ],
+          draft: expect.objectContaining({ proposedChanges: [] }),
+        }),
+      ]),
+    );
+    expect(await messageRecordCounts(fixture, record.id)).toEqual(countsBefore);
   });
 });

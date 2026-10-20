@@ -177,7 +177,7 @@ function fixture(
       ...record(),
       ...input.fields,
       recordRevision: 2,
-      analysisInputVersion: 2,
+      analysisInputVersion: 1,
     };
   });
   // mirrors the repository: applied proposals live on the draft, skipped ones in its history
@@ -517,7 +517,7 @@ describe('fn:createEditDraftService', () => {
         editDraftId: draftId,
         acceptedProposalIds: [proposalId],
       },
-      { recordRevision: 2, analysisInputVersion: 2, evidenceVersion: 1 },
+      { recordRevision: 2, analysisInputVersion: 1, evidenceVersion: 1 },
     );
     expect(ports.markApplied).toHaveBeenCalledTimes(1);
   });
@@ -689,7 +689,12 @@ describe('fn:createEditDraftService adoption guardrails', () => {
   it('should reject an adopted field changed since the draft even when the revision matches', async () => {
     const ports = fixture({
       run: twoFieldRun(),
-      record: { ...record(), recordRevision: 3, description: 'Collector edit' },
+      record: {
+        ...record(),
+        recordRevision: 3,
+        analysisInputVersion: 4,
+        description: 'Collector edit',
+      },
     });
 
     expect(
@@ -713,7 +718,12 @@ describe('fn:createEditDraftService adoption guardrails', () => {
   it('should adopt an unchanged field while an unadopted field changed after the draft (A7)', async () => {
     const ports = fixture({
       run: twoFieldRun(),
-      record: { ...record(), recordRevision: 3, description: 'Collector edit' },
+      record: {
+        ...record(),
+        recordRevision: 3,
+        analysisInputVersion: 4,
+        description: 'Collector edit',
+      },
     });
 
     expect(
@@ -733,7 +743,7 @@ describe('fn:createEditDraftService adoption guardrails', () => {
         editDraftId: draftId,
         acceptedProposalIds: [proposalId],
       },
-      { recordRevision: 4, analysisInputVersion: 2, evidenceVersion: 1 },
+      { recordRevision: 4, analysisInputVersion: 4, evidenceVersion: 1 },
     );
   });
 
@@ -876,7 +886,7 @@ describe('fn:createEditDraftService skipped proposals', () => {
         editDraftId: draftId,
         acceptedProposalIds: [proposalId],
       },
-      { recordRevision: 2, analysisInputVersion: 2, evidenceVersion: 1 },
+      { recordRevision: 2, analysisInputVersion: 1, evidenceVersion: 1 },
     );
     expect(ports.appendAdoption.mock.calls).toEqual([
       [draftId, proposalId, 'accepted', expect.any(String)],
@@ -949,7 +959,12 @@ describe('fn:createEditDraftService skipped proposals', () => {
   it('should skip a proposal whose field changed since the draft (A7)', async () => {
     const ports = fixture({
       run: twoFieldRun(),
-      record: { ...record(), recordRevision: 3, description: 'Collector edit' },
+      record: {
+        ...record(),
+        recordRevision: 3,
+        analysisInputVersion: 4,
+        description: 'Collector edit',
+      },
     });
 
     expect(

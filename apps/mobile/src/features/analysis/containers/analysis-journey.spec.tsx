@@ -59,10 +59,45 @@ it('should apply only proposals the collector leaves selected', async () => {
   ]);
 });
 
-it('should preserve selection after a stale write and retry against the refreshed revision', async () => {
+it('should apply an unchanged field after unrelated manual edits advance the input version', async () => {
+  const currentRecord = {
+    ...collectionRecord,
+    recordRevision: 3,
+    analysisInputVersion: run.snapshot.analysisInputVersion + 1,
+    tags: ['manually edited'],
+  };
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
     get: async (path) =>
-      path.startsWith('/v1/analyses/') ? run : collectionRecord,
+      path.startsWith('/v1/analyses/') ? run : currentRecord,
+  });
+  await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2));
+  await fireEvent.press(screen.getAllByRole('checkbox')[0]);
+  const apply = screen.getByRole('button', {
+    name: 'Apply selected changes (1)',
+  });
+  await waitFor(() => expect(apply).toBeEnabled());
+  await fireEvent.press(apply);
+  await waitFor(() => expect(view.commands).toHaveBeenCalledTimes(1));
+  expect(view.commands).toHaveBeenCalledWith(
+    `/v1/analyses/${runId}/apply`,
+    expect.anything(),
+    expect.objectContaining({
+      body: {
+        expectedRecordRevision: 3,
+        selectedProposalIds: [firstProposalId],
+      },
+    }),
+  );
+});
+
+it('should preserve selection after a stale write and retry against the refreshed revision', async () => {
+  const currentRecord = {
+    ...collectionRecord,
+    analysisInputVersion: run.snapshot.analysisInputVersion + 1,
+  };
+  const view = await renderMobile(<AnalysisContainer runId={runId} />, {
+    get: async (path) =>
+      path.startsWith('/v1/analyses/') ? run : currentRecord,
   });
   await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2));
   view.commands.mockRejectedValueOnce(
@@ -73,7 +108,7 @@ it('should preserve selection after a stale write and retry against the refreshe
     }),
   );
   view.reads.mockResolvedValueOnce({
-    ...collectionRecord,
+    ...currentRecord,
     recordRevision: 2,
   });
   await fireEvent.press(screen.getAllByRole('checkbox')[0]);

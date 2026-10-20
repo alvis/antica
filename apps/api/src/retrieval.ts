@@ -41,34 +41,36 @@ export function createImageProviders(
           indexVersion: config.IMAGE_INDEX_VERSION!,
         };
   const result = createConfiguredImageRetrieval(
-    config.ANTICA_IMAGE_SEARCH_DRIVER === 'local'
-      ? {
-          driver: 'local',
-          production: settings.app.NODE_ENV === 'production',
-          index,
-          readQuery: readers.readQuery,
-          readEntries: readers.readImageEntries,
-        }
-      : {
-          driver: 'voyage-qdrant',
-          production: settings.app.NODE_ENV === 'production',
-          index,
-          voyageApiKey: config.VOYAGE_API_KEY!,
-          url: config.QDRANT_URL!,
-          apiKey: config.QDRANT_API_KEY,
-          collection: config.QDRANT_COLLECTION!,
-          ownerId: collectorUserId,
-          corpusId: config.IMAGE_CORPUS_ID!,
-          readQuery: readers.readQuery,
-          resolveEntry: async (pointId) =>
-            (await readers.readImageEntries()).find(
-              (entry) =>
-                (entry.match.ref.kind === 'reference'
-                  ? entry.match.ref.referenceImageId
-                  : entry.image.canonicalViewId) === pointId,
-            ) ?? null,
-          compare: createImageComparison(settings, persistence, index),
-        },
+    config.ANTICA_IMAGE_SEARCH_DRIVER === 'disabled'
+      ? { driver: 'disabled' }
+      : config.ANTICA_IMAGE_SEARCH_DRIVER === 'local'
+        ? {
+            driver: 'local',
+            production: settings.app.NODE_ENV === 'production',
+            index,
+            readQuery: readers.readQuery,
+            readEntries: readers.readImageEntries,
+          }
+        : {
+            driver: 'voyage-qdrant',
+            production: settings.app.NODE_ENV === 'production',
+            index,
+            voyageApiKey: config.VOYAGE_API_KEY!,
+            url: config.QDRANT_URL!,
+            apiKey: config.QDRANT_API_KEY,
+            collection: config.QDRANT_COLLECTION!,
+            ownerId: collectorUserId,
+            corpusId: config.IMAGE_CORPUS_ID!,
+            readQuery: readers.readQuery,
+            resolveEntry: async (pointId) =>
+              (await readers.readImageEntries()).find(
+                (entry) =>
+                  (entry.match.ref.kind === 'reference'
+                    ? entry.match.ref.referenceImageId
+                    : entry.image.canonicalViewId) === pointId,
+              ) ?? null,
+            compare: createImageComparison(settings, persistence, index),
+          },
   );
   if (!result.success) {
     throw new Error(result.error.message);

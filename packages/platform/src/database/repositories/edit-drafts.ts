@@ -117,6 +117,9 @@ export function createEditDraftRepository(
           revision: detail.revision,
           status: detail.status,
           snapshot: jsonValue(detail.snapshot),
+          ...(detail.snapshot.knowledgeContext
+            ? { knowledgeContext: jsonValue(detail.snapshot.knowledgeContext) }
+            : {}),
           request: jsonValue(request),
           modelSelection: jsonValue(run.modelSelection),
           result: nullableJson(null),

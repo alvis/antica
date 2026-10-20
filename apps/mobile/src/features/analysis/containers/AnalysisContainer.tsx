@@ -454,12 +454,7 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                       count: selected.length,
                     })}
                     onPress={() => void apply(record.data!)}
-                    disabled={
-                      busy ||
-                      selected.length === 0 ||
-                      record.data?.analysisInputVersion !==
-                        run.data.snapshot.analysisInputVersion
-                    }
+                    disabled={busy || selected.length === 0 || !record.data}
                   />
                   {applied && (
                     <>

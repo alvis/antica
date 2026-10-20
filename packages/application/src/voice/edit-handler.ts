@@ -1,7 +1,12 @@
 import {
   editDraftResultSchema,
+  knowledgeNoSupportedAnswer,
   recordMessageReplyMaxLength,
 } from '@antica/contracts';
+
+import { validateKnowledgeAnswerSegments } from '../knowledge/evidence.js';
+
+import type { EditDraftResult } from '@antica/contracts';
 
 import type {
   ClockPort,
@@ -62,55 +67,110 @@ export function createEditDraftHandler(
       return capability;
     }
     const snapshot = run.detail.snapshot;
-    const modeled = await model.draft(
+    const context = {
+      fields: snapshot.fields,
+      versions: snapshot.versions,
+      ...(snapshot.knowledgeContext
+        ? { knowledgeContext: snapshot.knowledgeContext }
+        : {}),
+    };
+    let modeled = await model.draft(
       run.request,
       snapshot.sourceText.map((source) => source.text),
-      { fields: snapshot.fields, versions: snapshot.versions },
+      context,
       run.modelSelection,
     );
-    if (!modeled.success) {
-      return modeled;
-    }
-    const parsed = editDraftResultSchema.safeParse(modeled.data.value);
-    if (!parsed.success) {
-      return failure(
-        'VALIDATION_FAILED',
-        'Edit model output failed schema validation',
-      );
-    }
-    // the stored result and the reply stay within the cap the app renders
-    const output = {
-      ...parsed.data,
-      replyZhHant: capReply(parsed.data.replyZhHant),
+    let invocation = modeled.success
+      ? modeled.data.invocation
+      : modeled.audit.invocation;
+    let output: EditDraftResult = {
+      editDraftId: run.detail.editDraftId,
+      recordId: snapshot.recordId,
+      baseVersions: snapshot.versions,
+      sourceTranscriptionIds: run.request.transcriptionIds,
+      sourceObservationIds: run.request.observationIds,
+      suggestedDescriptionZhHant: snapshot.fields.description,
+      replyZhHant: knowledgeNoSupportedAnswer,
+      answerSegments: [{ text: knowledgeNoSupportedAnswer, evidenceRefs: [] }],
+      proposedChanges: [],
     };
-    if (
-      output.editDraftId !== run.detail.editDraftId ||
-      output.recordId !== snapshot.recordId ||
-      !same(output.baseVersions, snapshot.versions) ||
-      !same(output.sourceTranscriptionIds, run.request.transcriptionIds) ||
-      !same(output.sourceObservationIds, run.request.observationIds)
-    ) {
-      return failure(
-        'VALIDATION_FAILED',
-        'Edit output changed its frozen input identity',
-      );
-    }
-    const proposalIds = new Set<string>();
-    const fields = new Set<string>();
-    for (const change of output.proposedChanges) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      invocation =
+        (modeled.success
+          ? modeled.data.invocation
+          : modeled.audit.invocation) ?? invocation;
       if (
-        proposalIds.has(change.id) ||
-        fields.has(change.field) ||
-        !same(change.before, snapshot.fields[change.field])
+        !modeled.success &&
+        (!snapshot.knowledgeContext ||
+          (attempt === 0 && modeled.error.code !== 'MODEL_OUTPUT_INVALID'))
       ) {
-        return failure(
-          'VALIDATION_FAILED',
-          'Edit proposal changed or duplicated its frozen field',
+        return modeled;
+      }
+      if (modeled.success) {
+        // Parse the existing edit contract separately so malformed references can be repaired.
+        const { answerSegments, ...base } = Object(
+          modeled.data.value,
+        ) as EditDraftResult;
+        const parsed = editDraftResultSchema.safeParse(base);
+        if (!parsed.success) {
+          return failure(
+            'VALIDATION_FAILED',
+            'Edit model output failed schema validation',
+          );
+        }
+        const candidate = {
+          ...parsed.data,
+          ...(answerSegments === undefined ? {} : { answerSegments }),
+        };
+        if (!validFrozenOutput(candidate, run)) {
+          return failure(
+            'VALIDATION_FAILED',
+            'Edit output changed or duplicated its frozen input or field',
+          );
+        }
+        if (
+          !snapshot.knowledgeContext ||
+          (answerSegments &&
+            validateKnowledgeAnswerSegments(
+              answerSegments,
+              snapshot.knowledgeContext,
+            ))
+        ) {
+          output = candidate;
+          break;
+        }
+        invocation = {
+          ...modeled.data.invocation,
+          citationCheck: { valid: false, rejectedReferenceIds: [] },
+        };
+      }
+      if (attempt === 0) {
+        modeled = await model.draft(
+          run.request,
+          snapshot.sourceText.map((source) => source.text),
+          {
+            ...context,
+            evidenceRepair:
+              'The previous answer contained missing or invalid evidence references. Return answerSegments using only exact entryId, revision, claimKey and citationIds present in knowledgeContext. Preserve applicability and uncertainty. If support is absent, say so with no evidenceRefs. Never invent URLs, locators or edits.',
+          },
+          run.modelSelection,
         );
       }
-      proposalIds.add(change.id);
-      fields.add(change.field);
     }
+    output = {
+      ...output,
+      replyZhHant: snapshot.knowledgeContext
+        ? output.answerSegments!.map((segment) => segment.text).join('\n')
+        : capReply(output.replyZhHant),
+    };
+    const verified = output;
+    if (!invocation) {
+      return failure(
+        'VALIDATION_FAILED',
+        'Edit model returned no auditable invocation',
+      );
+    }
+    const savedInvocation = invocation;
 
     return transaction.run<OperationResult<void>>(ownerId, async (unit) => {
       const current = await unit.editDrafts.get(run.detail.editDraftId);
@@ -125,8 +185,8 @@ export function createEditDraftHandler(
       if (
         !(await unit.editDrafts.saveResult(
           current.detail.editDraftId,
-          output,
-          modeled.data.invocation,
+          verified,
+          savedInvocation,
           current.detail.revision,
           now,
         ))
@@ -155,7 +215,7 @@ export function createEditDraftHandler(
           id: ids.create(),
           recordId: current.detail.snapshot.recordId,
           editDraftId: current.detail.editDraftId,
-          body: output.replyZhHant.trim() || NEUTRAL_REPLY_ZH_HANT,
+          body: verified.replyZhHant.trim() || NEUTRAL_REPLY_ZH_HANT,
           createdAt: now,
         });
       }
@@ -198,4 +258,41 @@ function capReply(reply: string): string {
   return reply.length > recordMessageReplyMaxLength && !cut.isWellFormed()
     ? cut.slice(0, -1)
     : cut;
+}
+
+/**
+ * Preserves the existing identity, unique-field and before-value checks on every attempt.
+ * @param output parsed edit result, including a repair when requested
+ * @param run authoritative frozen edit request
+ * @returns whether the output still belongs to this exact draft and fields
+ */
+function validFrozenOutput(
+  output: EditDraftResult,
+  run: EditDraftRunRecord,
+): boolean {
+  const snapshot = run.detail.snapshot;
+  if (
+    output.editDraftId !== run.detail.editDraftId ||
+    output.recordId !== snapshot.recordId ||
+    !same(output.baseVersions, snapshot.versions) ||
+    !same(output.sourceTranscriptionIds, run.request.transcriptionIds) ||
+    !same(output.sourceObservationIds, run.request.observationIds)
+  ) {
+    return false;
+  }
+  const ids = new Set<string>();
+  const fields = new Set<string>();
+  for (const change of output.proposedChanges) {
+    if (
+      ids.has(change.id) ||
+      fields.has(change.field) ||
+      !same(change.before, snapshot.fields[change.field])
+    ) {
+      return false;
+    }
+    ids.add(change.id);
+    fields.add(change.field);
+  }
+
+  return true;
 }

@@ -291,7 +291,7 @@ describe('evaluation commands', () => {
       await runEditingCommand();
       const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
       expect(report.evaluations[0]).toMatchObject({
-        passedCases: 0,
+        passedCases: 2,
         assumptionA8: { verdict: 'inconclusive', runsPerCase: 1 },
         cases: expect.arrayContaining([
           expect.objectContaining({
@@ -302,7 +302,32 @@ describe('evaluation commands', () => {
       });
       expect(captured.runtime.exitCode).toBe(1);
     } finally {
-      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('should preserve successful legacy editing reports without knowledge inputs', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'antica-cli-legacy-'));
+    try {
+      const fixture = await readEditingDataset('editing-v1');
+      const path = join(directory, 'dataset.json');
+      await writeFile(
+        path,
+        JSON.stringify({
+          ...fixture,
+          cases: fixture.cases.filter((item) => item.knowledge === undefined),
+        }),
+      );
+      const captured = captureCommand(['--snapshot', path, '--output', '-']);
+      await runEditingCommand();
+      const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
+      expect(report.evaluations[0]).toMatchObject({
+        passedCases: 16,
+        totalCases: 16,
+        assumptionA8: { verdict: 'pending-live' },
+      });
+      expect(captured.runtime.exitCode).toBeUndefined();
+    } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
@@ -400,7 +425,9 @@ describe('evaluation commands', () => {
       const report = JSON.parse(String(captured.stdout.mock.calls[0]?.[0]));
       expect(report).toEqual(expect.any(Object));
       expect(captured.stderr).not.toHaveBeenCalled();
-      expect(captured.runtime.exitCode).toBeUndefined();
+      expect(captured.runtime.exitCode).toBe(
+        command.name === 'editing' ? 1 : undefined,
+      );
     },
   );
 

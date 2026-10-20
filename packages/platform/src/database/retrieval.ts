@@ -364,7 +364,7 @@ export function createRetrievalReaders({
         join source_knowledge_drafts on (source_knowledge_drafts.source_version_id = source_versions.id and source_knowledge_drafts.owner_id = ${ownerId})
         join knowledge_entries on (source_knowledge_drafts.entry_id = knowledge_entries.id and knowledge_entries.owner_id = ${ownerId})
         join knowledge_revisions on (knowledge_revisions.entry_id = knowledge_entries.id and knowledge_revisions.revision = knowledge_entries.current_revision)
-        where (source_pages.source_version_id = source_versions.id and length(trim(source_regions.raw_text)) > 0 and ${regionCursor ? Prisma.sql`(source_regions.id, knowledge_entries.id) > (${regionCursor.regionId}::uuid, ${regionCursor.entryId}::uuid)` : Prisma.sql`true`})
+        where (knowledge_revisions.content_schema_version = 1 and source_pages.source_version_id = source_versions.id and length(trim(source_regions.raw_text)) > 0 and ${regionCursor ? Prisma.sql`(source_regions.id, knowledge_entries.id) > (${regionCursor.regionId}::uuid, ${regionCursor.entryId}::uuid)` : Prisma.sql`true`})
         order by source_regions.id asc, knowledge_entries.id asc
         limit ${200}
       `);
@@ -427,7 +427,7 @@ export function createRetrievalReaders({
         knowledge_revisions.content as "content"
         from knowledge_entries
         join knowledge_revisions on (knowledge_entries.id = knowledge_revisions.entry_id and knowledge_entries.current_revision = knowledge_revisions.revision)
-        where (knowledge_entries.owner_id = ${ownerId} and ${cursor ? Prisma.sql`knowledge_entries.id > ${cursor}::uuid` : Prisma.sql`true`})
+        where (knowledge_revisions.content_schema_version = 1 and knowledge_entries.owner_id = ${ownerId} and ${cursor ? Prisma.sql`knowledge_entries.id > ${cursor}::uuid` : Prisma.sql`true`})
         order by knowledge_entries.id asc
         limit ${200}
       `);
