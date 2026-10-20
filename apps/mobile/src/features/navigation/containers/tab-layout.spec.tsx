@@ -11,17 +11,17 @@ import { renderRouter } from 'expo-router/testing-library';
 
 import type { FC, PropsWithChildren, ReactElement } from 'react';
 
+const TodayScene = (): ReactElement => <Text>Today route</Text>;
 const CollectionScene = (): ReactElement => <Text>Collection route</Text>;
-const TasksScene = (): ReactElement => <Text>Tasks route</Text>;
 const KnowledgeScene = (): ReactElement => <Text>Knowledge route</Text>;
-const ResearchScene = (): ReactElement => <Text>Research route</Text>;
+const MeScene = (): ReactElement => <Text>Me route</Text>;
 
-const routes = ['collection', 'tasks', 'knowledge', 'research'] as const;
+const routes = ['today', 'collection', 'knowledge', 'me'] as const;
 const sceneLabels = [
+  'Today route',
   'Collection route',
-  'Tasks route',
   'Knowledge route',
-  'Research route',
+  'Me route',
 ];
 
 describe('rc:TabLayout', () => {
@@ -29,15 +29,15 @@ describe('rc:TabLayout', () => {
     {
       language: 'Traditional Chinese on a new installation',
       storedLocale: null,
-      titles: ['藏品', '待辦', '知識庫', '研究'],
+      titles: ['今天', '藏品', '知識', '我'],
     },
     {
       language: 'English once it is saved',
       storedLocale: 'en' as const,
-      titles: ['Collection', 'Tasks', 'Knowledge', 'Research'],
+      titles: ['Today', 'Collection', 'Knowledge', 'Me'],
     },
   ])(
-    'should label and navigate the collector journeys in $language',
+    'should label and navigate the four v5 tabs in $language',
     async ({ storedLocale, titles }) => {
       const preferences = memoryPreferences(
         storedLocale === null
@@ -50,10 +50,10 @@ describe('rc:TabLayout', () => {
       const pending = renderRouter(
         {
           _layout: TabLayout,
+          today: TodayScene,
           collection: CollectionScene,
-          tasks: TasksScene,
           knowledge: KnowledgeScene,
-          research: ResearchScene,
+          me: MeScene,
         },
         { initialUrl: '/collection', wrapper: Device },
       );
@@ -73,7 +73,7 @@ describe('rc:TabLayout', () => {
         },
       });
       for (const [index, route] of routes.entries()) {
-        await user.press(screen.getByText(titles[index]));
+        await user.press(screen.getByTestId(`tab-${route}`));
         await waitFor(() => {
           expect(pending.getPathname()).toBe(`/${route}`);
           expect(screen.getByText(sceneLabels[index])).toBeVisible();

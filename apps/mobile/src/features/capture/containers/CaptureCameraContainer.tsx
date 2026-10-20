@@ -4,10 +4,12 @@ import { Linking, Modal, StyleSheet, View } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors } from '@antica/ui';
+import { AskAssistantPill, colors } from '@antica/ui';
 
+import { useAskAssistant } from '../../../providers/AskAssistantProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
+import { shotTypeLabels } from '../capture-grid';
 import { CaptureCamera } from '../components/CaptureCamera';
 import { CaptureCameraFallback } from '../components/CaptureCameraFallback';
 import { useCameraShots } from '../hooks/useCameraShots';
@@ -15,6 +17,8 @@ import { useCameraShots } from '../hooks/useCameraShots';
 import type { FC } from 'react';
 
 import type { LocalMedia } from '../../../adapters/media-upload';
+
+import type { ShotType } from '../capture-grid';
 
 export type CaptureCameraContainerProps = {
   /** name of the record the photos belong to, or the new-item label */
@@ -34,6 +38,36 @@ const layout = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.jade },
   preview: StyleSheet.absoluteFill,
 });
+
+/**
+ * the assistant pill over the camera, in its glass variant, attaching the shot the collector is on
+ * @param props pill properties
+ * @param props.shotType the selected shot type
+ * @param props.onLeave closes the camera when an answer navigates away from it
+ * @returns the pill, or nothing outside the ask provider
+ */
+const CameraAskPill: FC<{ shotType: ShotType; onLeave: () => void }> = ({
+  shotType,
+  onLeave,
+}) => {
+  const { t } = useLocale();
+  const ask = useAskAssistant();
+
+  return ask ? (
+    <AskAssistantPill
+      testID="ask-assistant"
+      variant="onPhoto"
+      label={t('askAssistant')}
+      expanded={ask.context !== null}
+      onPress={() =>
+        ask.open(
+          { kind: 'capture', check: t(shotTypeLabels[shotType]) },
+          onLeave,
+        )
+      }
+    />
+  ) : null;
+};
 
 /**
  * runs the in-app multi-shot camera: every shot joins the draft at once while the collector
@@ -101,6 +135,7 @@ export const CaptureCameraContainer: FC<CaptureCameraContainerProps> = ({
               setFacing((value) => (value === 'back' ? 'front' : 'back'))
             }
             onClose={onClose}
+            askAction={<CameraAskPill {...shots} onLeave={onClose} />}
           />
         )}
       </SafeAreaView>

@@ -202,6 +202,12 @@ export const RecordEditContainer: FC<RecordEditContainerProps> = ({
     <Screen
       title={t('editRecord')}
       subtitle={edit.record.data?.code}
+      askContext={{
+        kind: 'record',
+        recordId,
+        name: edit.record.data?.name ?? undefined,
+        code: edit.record.data?.code,
+      }}
       scrollRef={scrollRef}>
       <QueryState
         loading={!edit.session && !edit.record.error}

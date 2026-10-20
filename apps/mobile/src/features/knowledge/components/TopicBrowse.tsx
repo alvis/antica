@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { styles } from '@antica/ui';
+import { colors, styles } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -23,7 +23,7 @@ const layout = StyleSheet.create({
     justifyContent: 'center',
     padding: 12,
     borderWidth: 1,
-    borderColor: '#173D35',
+    borderColor: colors.jade,
     borderRadius: 8,
     flexGrow: 1,
     flexBasis: '40%',

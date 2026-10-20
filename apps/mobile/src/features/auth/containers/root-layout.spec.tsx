@@ -22,6 +22,8 @@ jest.mock(
   () =>
     ({
       Redirect: jest.fn<typeof import('expo-router').Redirect>(() => null),
+      // the root ask sheet reads the router; nothing in these tests opens it
+      useRouter: jest.fn<typeof import('expo-router').useRouter>(),
       Stack: Object.assign(
         jest.fn(() => {
           const { Text } =

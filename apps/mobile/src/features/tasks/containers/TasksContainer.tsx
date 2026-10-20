@@ -27,7 +27,7 @@ export const TasksContainer: FC = () => {
   });
 
   return (
-    <Screen title={t('tasks')} action={<SettingsAction />}>
+    <Screen title={t('tabToday')} action={<SettingsAction />}>
       <QueryState
         loading={tasks.isPending}
         error={tasks.error}

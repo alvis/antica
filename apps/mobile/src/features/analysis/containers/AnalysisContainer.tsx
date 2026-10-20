@@ -35,9 +35,17 @@ import type { FC } from 'react';
 
 import type { LayoutChangeEvent } from 'react-native';
 
-import type { ActionState, Finding, ProposedChange } from '@antica/contracts';
+import type {
+  ActionState,
+  AnalysisRunDetail,
+  Finding,
+  ProposedChange,
+} from '@antica/contracts';
 
 import type { MessageKey } from '../../../i18n/messages';
+import type { LocaleState } from '../../../providers/LocaleProvider';
+
+import type { AskContext } from '../../assistant/ask-context';
 
 export type AnalysisContainerProps = {
   runId: string;
@@ -52,6 +60,37 @@ const referenceLabelKeys = {
   observation: 'observationWithId',
   citation: 'citationWithId',
 } as const satisfies Record<ReferenceKind, MessageKey>;
+
+/**
+ * attaches the suggestion the collector is looking at, with its evidence, else the run's record
+ * @param run the loaded analysis run, if any
+ * @param proposalId the focused or first ticked suggestion
+ * @param t translator for the field name
+ * @returns what the assistant pill attaches
+ */
+function analysisAskContext(
+  run: AnalysisRunDetail | undefined,
+  proposalId: string | undefined,
+  t: LocaleState['t'],
+): AskContext {
+  if (!run) {
+    return { kind: 'none' };
+  }
+  const output = run.result.output;
+  const change = output?.proposedChanges.find((item) => item.id === proposalId);
+  if (!output || !change) {
+    return { kind: 'record', recordId: run.recordId };
+  }
+
+  return {
+    kind: 'suggestion',
+    recordId: run.recordId,
+    field: localizeProposalField(change.field, t),
+    evidence: output.findings
+      .filter((finding) => change.findingIds.includes(finding.id))
+      .map((finding) => finding.text),
+  };
+}
 
 export const AnalysisContainer: FC<AnalysisContainerProps> = ({
   runId,
@@ -241,10 +280,12 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
   };
 
   const output = run.data?.result.output;
+  const askContext = analysisAskContext(run.data, proposalId ?? selected[0], t);
 
   return (
     <Screen
       title={t('results')}
+      askContext={askContext}
       scrollRef={focus.scrollRef}
       subtitle={
         run.data

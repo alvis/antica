@@ -43,6 +43,8 @@ export type RecordMessagesContainerProps = {
   recordId: string;
   /** message to scroll to and mark, when opened from the record's change history */
   messageId?: string;
+  /** unsent question to start the composer with, when opened from the ask sheet */
+  draft?: string;
 };
 
 /**
@@ -50,11 +52,13 @@ export type RecordMessagesContainerProps = {
  * @param props screen properties
  * @param props.recordId record the conversation is about
  * @param props.messageId message to scroll to and mark, if any
+ * @param props.draft unsent question for the composer, if any
  * @returns the conversation thread above a composer, inside the record's screen frame
  */
 export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
   recordId,
   messageId,
+  draft,
 }) => {
   const { api } = useAuth();
   const { t } = useLocale();
@@ -65,6 +69,7 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
     recordId,
     record: record.data,
     t,
+    initialText: draft,
   });
   const { send, voice } = composer;
   const cards = useEditCardStates();
@@ -127,6 +132,12 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
     <Screen
       title={t('messages')}
       subtitle={record.data?.name ?? record.data?.code}
+      askContext={{
+        kind: 'record',
+        recordId,
+        name: record.data?.name ?? undefined,
+        code: record.data?.code,
+      }}
       scrollable={false}>
       <View style={{ flex: 1, paddingHorizontal: 16 }}>
         <QueryState

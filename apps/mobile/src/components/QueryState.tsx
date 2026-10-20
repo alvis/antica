@@ -1,6 +1,6 @@
 import { ActivityIndicator, Text, View } from 'react-native';
 
-import { ActionButton, styles } from '@antica/ui';
+import { ActionButton, colors, styles } from '@antica/ui';
 
 import { useLocale } from '../providers/LocaleProvider';
 
@@ -22,7 +22,7 @@ export const QueryState: FC<QueryStateProps> = ({
   if (loading) {
     return (
       <View accessible accessibilityRole="progressbar">
-        <ActivityIndicator color="#173D35" />
+        <ActivityIndicator color={colors.jade} />
         <Text style={styles.secondary}>{t('loading')}</Text>
       </View>
     );

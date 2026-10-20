@@ -3,7 +3,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
 
-import ResearchRoute from '../../../app/(private)/(tabs)/research';
+import ResearchRoute from '../../../app/(private)/research/index';
 import NewResearchRoute from '../../../app/(private)/research/new';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
 

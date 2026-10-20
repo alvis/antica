@@ -96,9 +96,9 @@ appId: ${APP_ID}
           timeout: 60000
       - runFlow: support/dismiss-dev-logbox.yaml
       # The choice saved before sign-in carries into the tabs.
-      - assertVisible: Tasks
+      - assertVisible: Today
       - assertVisible: Knowledge
-      - assertVisible: Research
+      - assertVisible: Me
       - tapOn:
           id: open-settings
       - extendedWaitUntil:
@@ -126,8 +126,8 @@ appId: ${APP_ID}
           visible:
             id: collection-add-item
           timeout: 30000
-      - assertVisible: 待辦
-      - assertVisible: 知識庫
+      - assertVisible: 今天
+      - assertVisible: 知識
       # Relaunch without clearing state: the saved choice is read back.
       - launchApp
       - extendedWaitUntil:
@@ -135,5 +135,5 @@ appId: ${APP_ID}
             id: collection-add-item
           timeout: 120000
       - runFlow: support/dismiss-dev-logbox.yaml
-      - assertVisible: 待辦
-      - assertVisible: 研究
+      - assertVisible: 今天
+      - assertVisible: 我
