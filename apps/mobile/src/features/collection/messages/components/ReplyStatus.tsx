@@ -14,9 +14,7 @@ export type ReplyStatusProps = {
   status: 'pending' | 'failed';
   /** whether the reply has been pending long enough to reassure the collector */
   stillWorking: boolean;
-  /** failure of the last attempt to send the message again */
-  error: string;
-  /** posts the message again; absent while sending is unavailable */
+  /** restores a draft for explicit reattachment; absent while sending */
   onSendAgain?: () => void;
 };
 
@@ -26,15 +24,13 @@ export type ReplyStatusProps = {
  * @param props.messageId collector message awaiting its reply
  * @param props.status whether the reply is pending or failed
  * @param props.stillWorking whether the pending reply is taking long
- * @param props.error failure of the last resend
- * @param props.onSendAgain posts the message again, absent while unavailable
+ * @param props.onSendAgain restores the words to the composer, absent while unavailable
  * @returns a progress line while pending, or a failure alert with the send-again action
  */
 export const ReplyStatus: FC<ReplyStatusProps> = ({
   messageId,
   status,
   stillWorking,
-  error,
   onSendAgain,
 }) => {
   const { t } = useLocale();
@@ -61,15 +57,6 @@ export const ReplyStatus: FC<ReplyStatusProps> = ({
         style={styles.error}>
         {t('assistantFailed')}
       </Text>
-      {Boolean(error) && (
-        <Text
-          testID={`record-message-send-again-error-${messageId}`}
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-          style={styles.error}>
-          {error}
-        </Text>
-      )}
       <MessageButton
         label={t('sendAgain')}
         testID={`record-message-send-again-${messageId}`}

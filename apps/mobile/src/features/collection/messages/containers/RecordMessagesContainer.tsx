@@ -9,7 +9,11 @@ import { Screen } from '../../../../components/Screen';
 import { useAuth } from '../../../../providers/AuthProvider';
 import { useLocale } from '../../../../providers/LocaleProvider';
 
+import { RelatedKnowledgeContainer } from '../../../knowledge/containers/RelatedKnowledgeContainer';
+
 import { recordQuery } from '../../api/record-query';
+
+import { KnowledgeEvidenceCard } from '../components/KnowledgeEvidenceCard';
 
 import { MessageBubble } from '../components/MessageBubble';
 import { MessageButton } from '../components/MessageButton';
@@ -19,7 +23,6 @@ import { useEditCardStates } from '../hooks/useEditCardStates';
 import { useMessageComposer } from '../hooks/useMessageComposer';
 import { useMessageFocus } from '../hooks/useMessageFocus';
 import { useRecordMessageThread } from '../hooks/useRecordMessageThread';
-import { useResend } from '../hooks/useResend';
 
 import { EditCardContainer } from './EditCardContainer';
 
@@ -64,27 +67,9 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
     t,
   });
   const { send, voice } = composer;
-  const { resend, stateOf: resendOf } = useResend({
-    api,
-    recordId,
-    record: record.data,
-    t,
-  });
   const cards = useEditCardStates();
   const newestFirst = [...thread.entries].reverse();
   const focus = useMessageFocus(messageId, newestFirst);
-
-  /**
-   * offers to post a failed message again while no resend of it is in flight or accepted
-   * @param entry failed collector message
-   * @returns the action, or undefined while it is unavailable
-   */
-  const sendAgainFor = (entry: RecordMessageEntry): (() => void) | undefined =>
-    resend &&
-    resendOf(entry.id)?.status !== 'sending' &&
-    resendOf(entry.id)?.status !== 'accepted'
-      ? () => void resend(entry)
-      : undefined;
 
   const renderEntry = ({
     item,
@@ -118,10 +103,14 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
             messageId={item.id}
             status={item.draft.status}
             stillWorking={thread.stillWorkingIds.has(item.id)}
-            error={resendOf(item.id)?.error ?? ''}
-            onSendAgain={sendAgainFor(item)}
+            onSendAgain={
+              composer.canRestore
+                ? () => composer.restore(item.body)
+                : undefined
+            }
           />
         )}
+      {item.author === 'assistant' && <KnowledgeEvidenceCard message={item} />}
       {item.author === 'assistant' && item.draft.proposedChanges.length > 0 && (
         <EditCardContainer
           recordId={recordId}
@@ -188,7 +177,18 @@ export const RecordMessagesContainer: FC<RecordMessagesContainerProps> = ({
           )}
         </QueryState>
       </View>
+      <RelatedKnowledgeContainer
+        recordId={recordId}
+        recordRevision={record.data?.recordRevision}
+        onAttach={composer.attach}
+        attachments={composer.attachments.map((item) => item.reference)}
+        busy={composer.busy}
+      />
       <MessageComposer
+        hint={composer.hint}
+        attachments={composer.attachments}
+        onRemoveAttachment={composer.removeAttachment}
+        busy={composer.busy}
         text={composer.text}
         onChangeText={composer.setText}
         onSend={send && (() => void send())}

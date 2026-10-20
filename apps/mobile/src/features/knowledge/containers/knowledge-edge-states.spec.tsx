@@ -44,12 +44,11 @@ it('should distinguish an empty corpus from a constrained search with no matches
 });
 
 it('should offer empty facet groups while the first search page is unavailable', async () => {
+  // Keep topic facets empty after their request settles, not only while loading.
   await renderMobile(<KnowledgeRoute />, {
     get: async (path) => {
       if (path.includes('/topics?')) {
-        return path.includes('facet=category')
-          ? topicsPage
-          : { ...topicsPage, items: [] };
+        return { ...topicsPage, items: [], total: 0 };
       }
 
       throw new Error('Search offline');
@@ -61,9 +60,7 @@ it('should offer empty facet groups while the first search page is unavailable',
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Show filters' }));
   expect(screen.getByTestId('knowledge-filters')).toBeTruthy();
-  expect(
-    (await screen.findAllByText('No available values')).length,
-  ).toBeGreaterThan(0);
+  expect(screen.getAllByText('No available values').length).toBeGreaterThan(0);
 });
 
 it('should retry an entry read and expose the gallery only after recovery', async () => {

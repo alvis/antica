@@ -18,9 +18,11 @@ import type {
 } from '@antica/application/ports';
 import type {
   AnalysisOutput,
+  AnswerSegment,
   EditDraftRequest,
   EditDraftResult,
   Finding,
+  KnowledgeEvidenceSnapshotV1,
   ModelCapabilities,
   ModelSelection,
   ProposedChange,
@@ -316,7 +318,10 @@ export function createDevelopmentModels(): ModelAdapters {
           ...draft,
           ...(context.knowledgeContext
             ? {
-                answerSegments: [{ text: draft.replyZhHant, evidenceRefs: [] }],
+                answerSegments: draftDevelopmentKnowledge(
+                  context.knowledgeContext,
+                  draft.replyZhHant,
+                ),
               }
             : {}),
         });
@@ -469,6 +474,52 @@ function readLabel(
   }
 
   return field;
+}
+
+/**
+ * quotes the first two frozen claims with their limits and immutable references
+ * @param snapshot saved evidence already admitted by the server
+ * @param replyZhHant record reply preserved when saved knowledge has no support
+ * @returns bounded development answer segments without invented evidence
+ */
+function draftDevelopmentKnowledge(
+  snapshot: KnowledgeEvidenceSnapshotV1,
+  replyZhHant: string,
+): AnswerSegment[] {
+  const segments = snapshot.entries
+    .flatMap((entry) =>
+      entry.claims.map((claim) => ({
+        text: [
+          '開發示範：已儲存來源記載：',
+          claim.statement,
+          `適用範圍：${JSON.stringify(claim.scope)}`,
+          `限定條件：${JSON.stringify(claim.qualifiers)}`,
+          claim.uncertainty,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        evidenceRefs: [
+          {
+            entryId: entry.entryId,
+            revision: entry.revision,
+            claimKey: claim.claimKey,
+            citationIds: claim.citations.map((citation) => citation.citationId),
+          },
+        ],
+      })),
+    )
+    .slice(0, 2);
+  if (segments.length === 0) {
+    return [{ text: replyZhHant, evidenceRefs: [] }];
+  }
+  if (segments.map((segment) => segment.text).join('\n').length > 4000) {
+    return segments.map((segment) => ({
+      ...segment,
+      text: '開發示範：來源內容較長，請開啟引用查看完整陳述、適用範圍及限定條件。',
+    }));
+  }
+
+  return segments;
 }
 
 /**

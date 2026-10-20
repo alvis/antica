@@ -5,6 +5,7 @@ import { describe, expect, inject } from 'vitest';
 import {
   createRecordService,
   createKnowledgeService,
+  validateKnowledgeAnswerSegments,
 } from '@antica/application/server';
 import {
   editDraftResultSchema,
@@ -35,6 +36,9 @@ import type { HttpFixture } from '../fixtures/http.js';
 
 const FAIL = 'FAIL THE MODEL';
 const GROUNDED = 'Explain the saved museum claim';
+const PLAIN_QUESTION = '這是甚麼器物？';
+const PLAIN_EDIT = '請把描述改為青瓷瓶';
+const DEVELOPMENT_QUESTION = 'What do the saved sources say?';
 const NO_OUTPUT = 'Provider gives no structured response';
 const noOutputCalls = { count: 0 };
 const noOutputModel = {
@@ -119,6 +123,14 @@ function scripted(inner: RecordEditingPort): RecordEditingPort {
         selection,
       );
       if (!drafted.success) {
+        return drafted;
+      }
+      // This scenario exercises the actual development output through the real worker validator.
+      if (
+        [DEVELOPMENT_QUESTION, PLAIN_QUESTION, PLAIN_EDIT].includes(
+          request.instructionZhHant,
+        )
+      ) {
         return drafted;
       }
       const value = editDraftResultSchema.parse(drafted.data.value);
@@ -251,6 +263,8 @@ async function createRecord(fixture: HttpFixture, name = 'Plain vase') {
     { unitKind: 'single', name },
     randomUUID(),
   );
+
+  expect(created.status, await created.clone().text()).toBe(201);
 
   return recordDetailSchema.parse(await created.json());
 }
@@ -1560,5 +1574,129 @@ describe('record messages frozen knowledge over HTTP', () => {
       ]),
     );
     expect(await messageRecordCounts(fixture, record.id)).toEqual(countsBefore);
+  });
+});
+
+describe('development record messages frozen knowledge over HTTP', () => {
+  it('should answer an ordinary question and propose edits without saved knowledge', async ({
+    fixture,
+  }) => {
+    const record = await createRecord(fixture);
+    const before = await messageRecordCounts(fixture, record.id);
+    for (const body of [PLAIN_QUESTION, PLAIN_EDIT]) {
+      const response = await fixture.request(
+        `/v1/records/${record.id}/messages`,
+        'POST',
+        post(body),
+      );
+      expect(response.status).toBe(202);
+      expect(await fixture.runtime.drain()).toMatchObject({
+        settled: 1,
+        failures: [],
+      });
+    }
+    const assistants = (await conversation(fixture, record.id)).items.filter(
+      (message) => message.author === 'assistant',
+    );
+    expect(assistants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          body: expect.stringContaining('開發示範：這是提問'),
+          draft: expect.objectContaining({ proposedChanges: [] }),
+        }),
+        expect.objectContaining({
+          body: reply,
+          draft: expect.objectContaining({
+            proposedChanges: [
+              expect.objectContaining({ field: 'description' }),
+            ],
+          }),
+        }),
+      ]),
+    );
+    expect(await messageRecordCounts(fixture, record.id)).toEqual(before);
+  });
+
+  it('should persist real development citations validated against the frozen POST context', async ({
+    fixture,
+  }) => {
+    const record = await createRecord(fixture);
+    const db = fixture.runtime.database.db;
+    const { ownerId } = await db.records.findUniqueOrThrow({
+      where: { id: record.id },
+    });
+    const content = await seedMessageKnowledge(fixture, ownerId);
+    const { transaction, clock, ids } = fixture.runtime;
+    const saved = await createKnowledgeService(
+      transaction,
+      clock,
+      ids,
+    ).createV2(ownerId, {
+      requestKey: randomUUID(),
+      expectedRevision: null,
+      content,
+      status: 'saved',
+      reviewDecisions: [{ claimKey: 'material', state: 'reviewed' }],
+      translationDecisions: [],
+    });
+    if (!saved.success) {
+      throw new Error(saved.error.message);
+    }
+    const attachment = {
+      entryId: saved.data.id,
+      revision: saved.data.revision,
+      claimKey: 'material',
+      citationIds: [content.citations[0]!.id],
+    };
+    const recordBefore = await db.records.findUniqueOrThrow({
+      where: { id: record.id },
+    });
+
+    const response = await fixture.request(
+      `/v1/records/${record.id}/messages`,
+      'POST',
+      post(DEVELOPMENT_QUESTION, {
+        knowledgeAttachments: [attachment],
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    const accepted = recordMessagePostedSchema.parse(await response.json());
+    const run = await db.editDraftRuns.findUniqueOrThrow({
+      where: { id: accepted.editDraftId },
+    });
+    const frozen = knowledgeEvidenceSnapshotV1Schema.parse(
+      run.knowledgeContext,
+    );
+    expect(await fixture.runtime.drain()).toMatchObject({
+      settled: 1,
+      failures: [],
+    });
+    const history = await conversation(fixture, record.id);
+    const assistant = history.items.find(
+      (message) => message.author === 'assistant',
+    );
+    expect(assistant).toBeDefined();
+    expect(assistant!.knowledgeEvidence).toEqual(frozen);
+    expect(
+      assistant!.answerSegments?.flatMap((segment) => segment.evidenceRefs),
+    ).toEqual([attachment]);
+    expect(
+      validateKnowledgeAnswerSegments(assistant!.answerSegments!, frozen),
+    ).toBe(true);
+    expect(assistant!.draft.proposedChanges).toEqual([]);
+    expect(assistant!.body).toContain(content.claims[0]!.originalText);
+    expect(assistant!.body).toContain('Tentative attribution');
+    const completed = await db.editDraftRuns.findUniqueOrThrow({
+      where: { id: accepted.editDraftId },
+    });
+    expect(completed.invocation).toMatchObject({
+      adapterKind: 'development',
+      role: 'recordEditing',
+      citationCheck: { valid: true, rejectedReferenceIds: [] },
+    });
+    expect(
+      await db.records.findUniqueOrThrow({ where: { id: record.id } }),
+    ).toEqual(recordBefore);
   });
 });

@@ -24,14 +24,17 @@ let current: ReturnType<typeof useKnowledgeEntry>;
  * exposes the live hook through the standard authenticated mobile harness
  * @param props selected revision
  * @param props.view saved or working revision
+ * @param props.revision optional pinned revision from the route
  * @returns no visual content
  */
 const EntryProbe = ({
   view = 'saved',
+  revision,
 }: {
-  view?: 'saved' | 'working';
+  view?: 'saved' | 'working' | 'revision';
+  revision?: number;
 }): null => {
-  current = useKnowledgeEntry(knowledgeEntry.id, view);
+  current = useKnowledgeEntry(knowledgeEntry.id, view, revision);
 
   return null;
 };
@@ -90,4 +93,23 @@ it('should recognize a revision conflict code even when the HTTP status differs'
 
   expect(current.editor.status).toBe('conflict');
   expect(current.editor.title).toBe('Retained title');
+});
+
+it('should read the requested historical revision without saving or replacing it with working content', async () => {
+  const view = await renderMobile(<EntryProbe view="revision" revision={3} />, {
+    get: async () => knowledgeEntry,
+  });
+  await waitFor(() => expect(current.detail.data).toEqual(knowledgeEntry));
+
+  expect(view.reads).toHaveBeenCalledWith(
+    `/v1/knowledge/${knowledgeEntry.id}?view=revision&locale=en&revision=3`,
+    expect.anything(),
+    expect.anything(),
+  );
+  await act(async () => current.save());
+  await act(async () => current.reload());
+  expect(view.patches).not.toHaveBeenCalled();
+  expect(
+    view.reads.mock.calls.every(([path]) => path.includes('view=revision')),
+  ).toBe(true);
 });

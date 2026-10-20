@@ -104,7 +104,7 @@ it('should keep an unsaved research question when the interface language changes
   );
 });
 
-it('should change only app-owned copy, leaving stored content untouched and sending no request', async () => {
+it('should change only app-owned copy, leaving stored content untouched without refetching stored records', async () => {
   const fetchSpy = jest.spyOn(globalThis, 'fetch');
   const view = await renderMobile(
     <>
@@ -134,6 +134,7 @@ it('should change only app-owned copy, leaving stored content untouched and send
   const cachedBefore = view.client
     .getQueryCache()
     .getAll()
+    .filter((query) => query.queryKey[0] !== 'record-related-knowledge')
     .map((query) => [query.queryKey, query.state.dataUpdatedAt]);
 
   await fireEvent.press(screen.getByRole('radio', { name: 'English' }));
@@ -156,6 +157,7 @@ it('should change only app-owned copy, leaving stored content untouched and send
     view.client
       .getQueryCache()
       .getAll()
+      .filter((query) => query.queryKey[0] !== 'record-related-knowledge')
       .map((query) => [query.queryKey, query.state.dataUpdatedAt]),
   ).toEqual(cachedBefore);
 });

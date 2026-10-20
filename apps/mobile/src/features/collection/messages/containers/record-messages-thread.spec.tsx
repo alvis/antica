@@ -11,12 +11,10 @@ import {
 import { stillWorkingAfterMs } from '../api/record-messages';
 
 import {
-  apiError,
   entry,
   messagesPath,
   page,
   recordId,
-  sentTo,
 } from './record-messages.spec.fixtures';
 
 jest.mock(
@@ -205,7 +203,11 @@ it('should poll while a reply is pending and stop once it arrives', async () => 
     screen.queryByTestId(`record-message-thinking-${question.id}`),
   ).toBeNull();
   const settled = reads;
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 2500)));
+  const pollingQuietPeriodMs = 2500;
+  await act(
+    async () =>
+      new Promise((resolve) => setTimeout(resolve, pollingQuietPeriodMs)),
+  );
 
   expect(reads).toBe(settled);
   expect(view.commands).not.toHaveBeenCalled();
@@ -264,119 +266,48 @@ it('should time the reassurance from when the message was stored, not when it wa
   ).toHaveAccessibleName('The assistant is thinking…');
 });
 
-it('should send a failed message again once, under a new key, and lock it while in flight and after acceptance', async () => {
+it('should restore a failed message for an explicit send and explain source reselection', async () => {
   const failed = entry('collector', 'Describe the rim', { status: 'failed' });
-  let accept: () => void = () => undefined;
   const view = await renderMobile(<RecordMessagesRoute />, {
     get: async (path) =>
       path === `/v1/records/${recordId}` ? collectionRecord : page([failed]),
-    post: async () =>
-      new Promise((resolve) => {
-        accept = () => resolve({});
-      }),
   });
 
-  expect(
-    await screen.findByText('The assistant could not answer this message.'),
-  ).toBeTruthy();
-  const again = screen.getByTestId(`record-message-send-again-${failed.id}`);
-  await fireEvent.press(again);
-  expect(again).toBeDisabled();
-  await act(async () => {
-    accept();
-    await Promise.resolve();
-  });
-  expect(again).toBeDisabled();
-  await fireEvent.press(again);
+  await fireEvent.press(
+    await screen.findByTestId(`record-message-send-again-${failed.id}`),
+  );
 
-  const [post] = sentTo(view.commands, messagesPath);
-  expect(post.body).toMatchObject({
-    body: 'Describe the rim',
-    transcriptionIds: [],
-    expectedRecordRevision: collectionRecord.recordRevision,
-  });
-  expect(post.idempotencyKey).toBe(post.body.requestKey);
-  expect(view.commands).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId('record-message-input')).toHaveDisplayValue(
+    failed.body,
+  );
+  expect(screen.getByTestId('record-message-reattach-hint')).toHaveTextContent(
+    'Sources must be reattached before sending again.',
+  );
+  expect(screen.getByTestId('record-messages-related')).toBeVisible();
+  expect(view.commands).not.toHaveBeenCalled();
 });
 
-it('should retry a resend under its own key without touching the composer', async () => {
+it('should not restore a failed message while a composed message is being sent', async () => {
   const failed = entry('collector', 'Describe the rim', { status: 'failed' });
   const view = await renderMobile(<RecordMessagesRoute />, {
     get: async (path) =>
       path === `/v1/records/${recordId}` ? collectionRecord : page([failed]),
+    post: async () => new Promise(() => undefined),
   });
-  view.commands
-    .mockRejectedValueOnce(new TypeError('Network request failed'))
-    .mockRejectedValueOnce(new TypeError('Network request failed'))
-    .mockResolvedValue({});
   await fireEvent.changeText(
     await screen.findByTestId('record-message-input'),
-    'Composer draft',
+    'Current draft',
   );
   await fireEvent.press(screen.getByTestId('record-message-send'));
-  expect(await screen.findByTestId('record-message-error')).toHaveTextContent(
-    'Connect to the internet and retry.',
-  );
+  const restore = screen.getByTestId(`record-message-send-again-${failed.id}`);
 
-  await fireEvent.press(
-    screen.getByTestId(`record-message-send-again-${failed.id}`),
-  );
-  expect(
-    await screen.findByTestId(`record-message-send-again-error-${failed.id}`),
-  ).toHaveTextContent('Connect to the internet and retry.');
-  expect(
-    screen.getByTestId(`record-message-send-again-${failed.id}`),
-  ).toBeEnabled();
-  await fireEvent.press(
-    screen.getByTestId(`record-message-send-again-${failed.id}`),
-  );
-  await waitFor(() =>
-    expect(
-      screen.getByTestId(`record-message-send-again-${failed.id}`),
-    ).toBeDisabled(),
-  );
-  await fireEvent.press(screen.getByTestId('record-message-send'));
-  await waitFor(() =>
-    expect(screen.getByTestId('record-message-input')).toHaveDisplayValue(''),
-  );
+  expect(restore).toBeDisabled();
+  await fireEvent.press(restore);
 
-  const [composed, resent, retried, composedAgain] = sentTo(
-    view.commands,
-    messagesPath,
+  expect(screen.getByTestId('record-message-input')).toHaveDisplayValue(
+    'Current draft',
   );
-  expect(retried.idempotencyKey).toBe(resent.idempotencyKey);
-  expect(resent.idempotencyKey).not.toBe(composed.idempotencyKey);
-  expect(composedAgain.idempotencyKey).toBe(composed.idempotencyKey);
-});
-
-it('should give a stale resend a new key and reload the record', async () => {
-  const failed = entry('collector', 'Describe the rim', { status: 'failed' });
-  const view = await renderMobile(<RecordMessagesRoute />, {
-    get: async (path) =>
-      path === `/v1/records/${recordId}` ? collectionRecord : page([failed]),
-  });
-  view.commands
-    .mockRejectedValueOnce(apiError(422, 'REVISION_CONFLICT', 'Record changed'))
-    .mockResolvedValue({});
-  const again = await screen.findByTestId(
-    `record-message-send-again-${failed.id}`,
-  );
-
-  await fireEvent.press(again);
-  expect(
-    await screen.findByTestId(`record-message-send-again-error-${failed.id}`),
-  ).toHaveTextContent(
-    'The item changed after this screen loaded. It has been reloaded; send again.',
-  );
-  await fireEvent.press(again);
-  await waitFor(() => expect(again).toBeDisabled());
-
-  const [first, second] = sentTo(view.commands, messagesPath);
-  expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
-  expect(
-    view.reads.mock.calls.filter(([path]) => path === `/v1/records/${recordId}`)
-      .length,
-  ).toBeGreaterThan(1);
+  expect(view.commands).toHaveBeenCalledTimes(1);
 });
 
 it('should retry a failed thread read', async () => {
