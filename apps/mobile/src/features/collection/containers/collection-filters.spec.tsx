@@ -175,9 +175,9 @@ it('should search trimmed text and select freshness without offering duplicate c
       screen.getByText('Your collection is empty. Add an item to begin.'),
     ).toBeTruthy(),
   );
-  await fireEvent.press(screen.getByRole('button', { name: 'Settings' }));
+  // settings live under the 我 tab now, so the collection header offers none
+  expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
   await fireEvent.press(screen.getAllByRole('button', { name: 'Add item' })[0]);
-  expect(view.router.push).toHaveBeenCalledWith('/settings');
   expect(view.router.push).toHaveBeenCalledWith('/capture');
 });
 

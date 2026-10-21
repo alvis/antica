@@ -1,6 +1,6 @@
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '@antica/ui';
+import { colors, theme } from '@antica/ui';
 
 import { localizeStatus } from '../../../i18n/messages';
 import { useLocale } from '../../../providers/LocaleProvider';
@@ -75,7 +75,11 @@ const layout = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  videoBadgeText: { color: colors.card, fontSize: 12, fontWeight: '600' },
+  videoBadgeText: {
+    color: colors.card,
+    fontSize: 12,
+    ...theme.font.face('sans', '600'),
+  },
   select: {
     position: 'absolute',
     top: 0,
@@ -95,14 +99,22 @@ const layout = StyleSheet.create({
     justifyContent: 'center',
   },
   checked: { backgroundColor: colors.jade, borderColor: colors.jade },
-  checkText: { color: colors.card, fontSize: 16, fontWeight: '700' },
+  checkText: {
+    color: colors.card,
+    fontSize: 16,
+    ...theme.font.face('sans', '700'),
+  },
   strip: {
     minHeight: 48,
     paddingHorizontal: 12,
     justifyContent: 'center',
     backgroundColor: colors.card,
   },
-  stripText: { color: colors.text, fontSize: 16 },
+  stripText: {
+    ...theme.font.face('sans', '400'),
+    color: colors.text,
+    fontSize: 16,
+  },
   state: { paddingHorizontal: 12, backgroundColor: colors.card },
   stripEmpty: { color: colors.muted },
 });

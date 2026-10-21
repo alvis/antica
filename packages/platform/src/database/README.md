@@ -27,6 +27,32 @@ ANTICA_COLLECTOR_PHONE='+447700900123' pnpm --filter @antica/platform db:seed
 The seed is development-only. Prisma generation does not require a running
 database or a configured connection URL.
 
+## Demo seed
+
+`pnpm seed:demo` (root alias of `@antica/platform seed:demo`) fills the demo
+collector's catalogue with the five objects of the approved mobile design: the
+records and their six angle photos, the dish's analysis with five undecided
+suggestions, the jar's retake request, the chair's edit card and the saved
+knowledge entries. It resets that collector's record-side rows first, so a rerun
+recreates the same state. It is development-only, and it refuses the end-to-end
+owner and every phone but the demo owner `+15550100002`.
+
+It writes through a running API, so start one first against a migrated database
+with the corpus installed:
+
+```sh
+export DATABASE_URL=postgresql://… # the demo database
+export ANTICA_COLLECTOR_PHONE=+15550100002 # the API binds one collector per database
+export ANTICA_OTP_DRIVER=development ANTICA_DEV_OTP_INBOX=/path/to/otp.jsonl
+pnpm --filter @antica/api dev # serves the API, by default on port 8080
+pnpm seed:demo # set ANTICA_SEED_API_URL when the API is not at http://127.0.0.1:8080
+```
+
+The seed uploads the photos and waits for them to be processed, so while it runs,
+rerun `pnpm jobs:drain` against the same database in another shell.
+
+The photos and their licence notes live in `demo/images/`.
+
 ## Native SQL and baseline
 
 `migrations/0_init/migration.sql` reproduces main's schema from migrations 0000–0008: 102 tables, 20 check constraints and 168 foreign keys. `1_edit_draft_adoption_events/migration.sql` adds adoption history and its owner-scoped draft identity; `2_record_messages/migration.sql` adds record messages, bringing the chain to 104 tables, 24 checks and 172 foreign keys. Native SQL retains partial indexes, composite owner identities, cascading authentication ownership, defaults and foreign keys.

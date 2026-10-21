@@ -4,6 +4,8 @@ import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { View } from 'react-native';
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 import {
   observationSchema,
   recordDetailSchema,
@@ -11,7 +13,11 @@ import {
 } from '@antica/contracts';
 
 import CollectionRoute from '../../../app/(private)/(tabs)/collection';
-import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import {
+  collectionRecord,
+  deviceMetrics,
+  renderMobile,
+} from '../../../mobile.spec.fixtures';
 import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { RecordContainer } from '../../collection/containers/RecordContainer';
@@ -255,11 +261,13 @@ async function showSurface(
   surface: Surface,
 ): Promise<void> {
   await screen.rerender(
-    <QueryClientProvider client={client}>
-      <LocaleProvider>
-        <ReturnJourney surface={surface} />
-      </LocaleProvider>
-    </QueryClientProvider>,
+    <SafeAreaProvider initialMetrics={deviceMetrics}>
+      <QueryClientProvider client={client}>
+        <LocaleProvider>
+          <ReturnJourney surface={surface} />
+        </LocaleProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>,
   );
 }
 

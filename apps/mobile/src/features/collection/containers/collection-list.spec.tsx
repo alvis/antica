@@ -90,3 +90,13 @@ it('should offer capture when the collection is empty', async () => {
   await fireEvent.press(screen.getAllByRole('button', { name: 'Add item' })[1]);
   expect(view.router.push).toHaveBeenCalledWith('/capture');
 });
+
+it('should offer search from the top bar', async () => {
+  await renderMobile(<CollectionRoute />, {
+    get: async () => ({ items: [pictured], nextCursor: null }),
+  });
+
+  expect(
+    await screen.findByRole('button', { name: 'Search the collection' }),
+  ).toBeTruthy();
+});

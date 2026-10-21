@@ -99,8 +99,9 @@ appId: ${APP_ID}
       - assertVisible: Today
       - assertVisible: Knowledge
       - assertVisible: Me
+      # Settings is the 我 tab.
       - tapOn:
-          id: open-settings
+          id: tab-me
       - extendedWaitUntil:
           visible: Language · English
           timeout: 30000
@@ -121,7 +122,8 @@ appId: ${APP_ID}
       - extendedWaitUntil:
           visible: 語言 · 繁體中文
           timeout: 30000
-      - back
+      - tapOn:
+          id: tab-collection
       - extendedWaitUntil:
           visible:
             id: collection-add-item

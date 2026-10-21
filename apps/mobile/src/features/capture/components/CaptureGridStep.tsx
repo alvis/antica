@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ActionButton, colors, styles } from '@antica/ui';
+import { ActionButton, colors, styles, theme } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -56,7 +56,7 @@ const layout = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  name: { color: colors.jade, fontSize: 20, fontWeight: '700' },
+  name: { color: colors.jade, fontSize: 20, ...theme.font.face('sans', '700') },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

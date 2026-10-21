@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ActionButton, TextField, colors, styles } from '@antica/ui';
+import { ActionButton, TextField, colors, styles, theme } from '@antica/ui';
 
 import { BusyButton } from '../../../components/BusyButton';
 import { Screen } from '../../../components/Screen';
@@ -57,7 +57,11 @@ function verifyFailureKey(failure: AuthFailure): MessageKey | null {
 
 const layout = StyleSheet.create({
   language: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 4 },
-  languageText: { color: colors.jade, fontSize: 16, fontWeight: '700' },
+  languageText: {
+    color: colors.jade,
+    fontSize: 16,
+    ...theme.font.face('sans', '700'),
+  },
 });
 
 export const LoginContainer: FC = () => {

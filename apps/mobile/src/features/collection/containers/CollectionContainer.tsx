@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useRouter } from 'expo-router';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { FlatList, Image, Pressable, Text, View } from 'react-native';
 
@@ -13,9 +13,9 @@ import {
 } from '@antica/contracts';
 import { ActionButton, TextField, styles } from '@antica/ui';
 
+import { IconButton } from '../../../components/IconButton';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { SettingsAction } from '../../../components/SettingsAction';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -25,12 +25,15 @@ import { FreshnessOption } from '../components/FreshnessOption';
 
 import type { FC } from 'react';
 
+import type { TextInput } from 'react-native';
+
 type Freshness = 'all' | 'unanalyzed' | 'outdated';
 
 export const CollectionContainer: FC = () => {
   const router = useRouter();
   const { api } = useAuth();
   const { t } = useLocale();
+  const searchField = useRef<TextInput>(null);
   const [text, setText] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
@@ -167,8 +170,15 @@ export const CollectionContainer: FC = () => {
   return (
     <Screen
       title={t('collection')}
-      scrollable={false}
-      action={<SettingsAction />}>
+      action={
+        <IconButton
+          testID="collection-search"
+          icon="search"
+          label={t('collectionSearch')}
+          onPress={() => searchField.current?.focus()}
+        />
+      }
+      scrollable={false}>
       <FlatList
         style={styles.screen}
         data={page.isPending || page.error ? [] : page.data.items}
@@ -298,6 +308,7 @@ export const CollectionContainer: FC = () => {
             </View>
             <View style={{ gap: styles.card.gap }}>
               <TextField
+                inputRef={searchField}
                 label={t('search')}
                 value={text}
                 onChangeText={(value) => {

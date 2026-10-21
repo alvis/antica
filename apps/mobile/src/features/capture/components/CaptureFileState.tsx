@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, styles } from '@antica/ui';
+import { colors, styles, theme } from '@antica/ui';
 
 import { localizeStatus } from '../../../i18n/messages';
 import { useLocale } from '../../../providers/LocaleProvider';
@@ -40,7 +40,11 @@ const layout = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  retryText: { color: colors.jade, fontSize: 16, fontWeight: '600' },
+  retryText: {
+    color: colors.jade,
+    fontSize: 16,
+    ...theme.font.face('sans', '600'),
+  },
 });
 
 /**

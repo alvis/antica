@@ -3,7 +3,7 @@ import { Text, TextInput, View } from 'react-native';
 
 import { styles, theme } from './theme.js';
 
-import type { FC } from 'react';
+import type { FC, Ref } from 'react';
 import type { KeyboardTypeOptions, StyleProp, TextStyle } from 'react-native';
 
 /** properties for a labeled controlled native text field */
@@ -22,6 +22,8 @@ export type TextFieldProps = {
   onBlur?: () => void;
   /** stable automation identifier for the input */
   testID?: string;
+  /** handle for focusing the input from elsewhere, such as a search button */
+  inputRef?: Ref<TextInput>;
 };
 
 const input = theme.state.textInput;
@@ -75,6 +77,7 @@ function fieldStyle(state: {
  * @param root0.onFocus called when the field gains focus
  * @param root0.onBlur called when the field loses focus
  * @param root0.testID stable automation identifier
+ * @param root0.inputRef handle for focusing the input
  * @returns the labeled native input
  */
 export const TextField: FC<TextFieldProps> = ({
@@ -90,6 +93,7 @@ export const TextField: FC<TextFieldProps> = ({
   onFocus,
   onBlur,
   testID,
+  inputRef,
 }) => {
   const [focused, setFocused] = useState(false);
   const disabled = editable === false;
@@ -98,6 +102,7 @@ export const TextField: FC<TextFieldProps> = ({
     <View style={{ gap: theme.space[6] }}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        ref={inputRef}
         testID={testID}
         accessibilityLabel={label}
         accessibilityState={{ disabled }}

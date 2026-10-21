@@ -9,7 +9,6 @@ import { ActionButton, styles } from '@antica/ui';
 
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { SettingsAction } from '../../../components/SettingsAction';
 import { localizeStatus } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
@@ -27,7 +26,7 @@ export const TasksContainer: FC = () => {
   });
 
   return (
-    <Screen title={t('tabToday')} action={<SettingsAction />}>
+    <Screen title={t('tabToday')}>
       <QueryState
         loading={tasks.isPending}
         error={tasks.error}

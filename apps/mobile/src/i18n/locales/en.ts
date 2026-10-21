@@ -114,6 +114,11 @@ export const en = {
   tasks: 'Tasks',
   pendingTaskCount_one: '{{count}} Task',
   pendingTaskCount_other: '{{count}} Tasks',
+  collectionSearch: 'Search the collection',
+  knowledgeOverline_one:
+    '{{count}} entry · three museums and Wikidata · every line cited',
+  knowledgeOverline_other:
+    '{{count}} entries · three museums and Wikidata · every line cited',
   knowledge: 'Knowledge',
   research: 'Research',
   settings: 'Settings',

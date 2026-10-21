@@ -74,8 +74,8 @@ export const componentStates = {
     borderTop: border.hairline,
     fontSize: 12,
     pill: { width: 56, height: 30, radius: 15, bg: color.nav.tabPill },
-    default: { fg: color.text.tertiary, fontWeight: '500' },
-    current: { fg: color.text.primary, fontWeight: '700' },
+    default: { fg: color.text.tertiary, weight: '500' },
+    current: { fg: color.text.primary, weight: '700' },
   },
   segmentControl: {
     bg: color.bg.sunken,

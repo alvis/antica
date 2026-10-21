@@ -19,6 +19,16 @@ export type AskAssistantPillProps = {
 
 /** the assistant's seal character; a mark, not text, so it stays the same in every language */
 const sealMark = '鑑';
+
+/** the seal's sizes: on the pill, beside the assistant's voice, and inline in a row */
+const sealSizes = {
+  pill: { box: 26, font: 15, line: 18 },
+  voice: { box: 28, font: 16, line: 20 },
+  mini: { box: 16, font: 10, line: 12 },
+} as const;
+
+/** which of the seal's sizes to draw */
+export type AssistantSealSize = keyof typeof sealSizes;
 const pill = theme.state.askPill;
 
 const layout = StyleSheet.create({
@@ -47,32 +57,46 @@ const layout = StyleSheet.create({
   },
   sealText: {
     color: pill.seal.fg,
-    fontFamily: theme.font.family.serif,
+    ...theme.font.face('serif', '700'),
     fontSize: 15,
     lineHeight: 18,
-    fontWeight: '700',
   },
   label: {
-    fontFamily: theme.font.family.sans,
+    ...theme.font.face('sans', '600'),
     fontSize: 14,
-    fontWeight: '600',
   },
 });
 
 /**
  * renders the assistant's red seal, the mark it carries on the pill and in its replies
+ * @param root0 seal properties
+ * @param root0.size pill, voice or inline size
  * @returns the seal, hidden from assistive technology because the label beside it speaks
  */
-export const AssistantSeal: FC = () => (
-  <View style={layout.seal}>
-    <Text
-      accessibilityElementsHidden
-      importantForAccessibility="no"
-      style={layout.sealText}>
-      {sealMark}
-    </Text>
-  </View>
-);
+export const AssistantSeal: FC<{ size?: AssistantSealSize }> = ({
+  size = 'pill',
+}) => {
+  const { box, font, line } = sealSizes[size];
+
+  return (
+    <View
+      style={[
+        layout.seal,
+        {
+          width: box,
+          height: box,
+          borderRadius: size === 'mini' ? 4 : pill.seal.radius,
+        },
+      ]}>
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+        style={[layout.sealText, { fontSize: font, lineHeight: line }]}>
+        {sealMark}
+      </Text>
+    </View>
+  );
+};
 
 /**
  * renders the 48 dp 「鑑 問助理」 pill that opens the context ask sheet
