@@ -1,3 +1,5 @@
+import { isProposalCurrent } from '@antica/contracts';
+
 import type {
   AnalysisRunDetail,
   InspectionTask,
@@ -148,21 +150,28 @@ export function pendingEditChanges(
 }
 
 /**
- * marks the fields something waits on: a pending analysis suggestion, else an edit-card row
+ * marks the fields something waits on: a pending analysis suggestion, else an edit-card row;
+ * an outdated proposal marks nothing, as it can no longer be applied
+ * @param record the record as it is now
  * @param suggestions the run's waiting proposals
  * @param editChanges the conversation's waiting edit changes
  * @returns the badge of each field that has one
  */
 export function fieldBadges(
+  record: RecordDetail,
   suggestions: readonly ProposedChange[],
   editChanges: readonly ProposedChange[],
 ): ReadonlyMap<ProposedChange['field'], FieldBadge> {
   const badges = new Map<ProposedChange['field'], FieldBadge>();
   for (const change of editChanges) {
-    badges.set(change.field, 'edit');
+    if (isProposalCurrent(record, change)) {
+      badges.set(change.field, 'edit');
+    }
   }
   for (const proposal of suggestions) {
-    badges.set(proposal.field, 'suggestion');
+    if (isProposalCurrent(record, proposal)) {
+      badges.set(proposal.field, 'suggestion');
+    }
   }
 
   return badges;

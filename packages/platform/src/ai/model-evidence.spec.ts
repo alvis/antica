@@ -33,6 +33,7 @@ const context = {
     tags: [],
     description: '',
     collectorJudgment: null,
+    condition: null,
   }),
   versions: { recordRevision: 3, analysisInputVersion: 2, evidenceVersion: 1 },
 };

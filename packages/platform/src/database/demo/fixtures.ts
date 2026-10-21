@@ -23,6 +23,8 @@ export const emulatorUtcOffset = '+01:00';
 /** collector vocabulary created through the knowledge API, one entry per selectable term */
 export const vocabularyTerms: readonly VocabularyTerm[] = [
   { title: '陶瓷', aliases: [], kind: 'object_type' },
+  { title: '盤', aliases: [], kind: 'object_type' },
+  { title: '圈足', aliases: [], kind: 'object_type' },
   { title: '家具', aliases: [], kind: 'object_type' },
   { title: '玉器', aliases: [], kind: 'object_type' },
   { title: '炻器', aliases: [], kind: 'material' },

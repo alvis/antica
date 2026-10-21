@@ -57,6 +57,25 @@ describe('fn:recordMeta', () => {
       ),
     ).toContain('家具·高 102 公分');
   });
+
+  it('should lead a seat with its seat height while the 尺寸 tile keeps the overall height', () => {
+    const chair = {
+      ...vessel,
+      dimensions: {
+        height: { value: 102, unit: 'cm' as const },
+        seatHeight: { value: 51, unit: 'cm' as const },
+      },
+    };
+
+    expect(recordMeta(chair, labelsFor('家具'), zh, 'zh-Hant')).toContain(
+      '家具·座高 51 公分·',
+    );
+    expect(
+      recordFacts(chair, labelsFor('家具'), new Map(), zh, 'zh-Hant').find(
+        (fact) => fact.key === 'size',
+      )?.value,
+    ).toBe('高 102 公分');
+  });
 });
 
 describe('fn:recordFacts', () => {
@@ -75,6 +94,45 @@ describe('fn:recordFacts', () => {
     expect(facts.find((fact) => fact.key === 'size')?.value).toBe(
       '口徑 21.8 公分',
     );
+  });
+
+  it('should show 品相 as the fourth tile, marked while a suggestion waits on it, and leave tags out', () => {
+    const facts = recordFacts(
+      { ...vessel, condition: '椅面藤屜已換', tags: ['圈椅'] },
+      labelsFor('家具'),
+      new Map([
+        ['condition', 'suggestion'],
+        ['dimensions', 'edit'],
+      ]),
+      zh,
+      'zh-Hant',
+    );
+
+    expect(facts.map((fact) => [fact.key, fact.label])).toEqual([
+      ['period', '年代'],
+      ['material', '材質'],
+      ['size', '尺寸'],
+      ['condition', '品相'],
+    ]);
+    expect(facts[3]).toMatchObject({
+      value: '椅面藤屜已換',
+      badge: 'suggestion',
+    });
+    expect(facts[2]?.badge).toBe('edit');
+  });
+
+  it('should leave 品相 unknown until the collector notes it', () => {
+    const facts = recordFacts(
+      { ...vessel, condition: null },
+      labelsFor('陶瓷'),
+      new Map(),
+      zh,
+      'zh-Hant',
+    );
+
+    expect(
+      facts.find((fact) => fact.key === 'condition')?.value,
+    ).toBeUndefined();
   });
 });
 

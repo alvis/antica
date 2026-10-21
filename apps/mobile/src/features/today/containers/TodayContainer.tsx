@@ -15,10 +15,11 @@ import {
   formatRelativeDay,
   formatTimeOfDay,
 } from '../../../utils/calendar';
+import { recordTitle } from '../../../utils/record-title';
 import { quoteFields } from '../../../utils/quote-fields';
 
 import { useRecordCoverPhoto } from '../../collection/hooks/useRecordCoverPhoto';
-import { editFieldName } from '../../collection/record-edit-display';
+import { proposalFieldName } from '../../collection/record-edit-display';
 
 import { InboxFeatureCard } from '../components/InboxFeatureCard';
 import { InboxRowCard } from '../components/InboxRowCard';
@@ -139,7 +140,7 @@ export const TodayContainer: FC<TodayContainerProps> = ({ now: fixedNow }) => {
               <RecentShelf
                 items={inbox.records.map(({ summary, createdAt }) => ({
                   recordId: summary.id,
-                  name: summary.name ?? summary.code,
+                  name: recordTitle(summary.name, t('unnamed')),
                   photoUri: summary.coverThumbnail,
                   when: createdAt
                     ? formatRelativeDay(createdAt, now, locale, {
@@ -228,7 +229,7 @@ const InboxCard: FC<{ item: TodayInboxItem }> = ({ item }) => {
           chipTone="danger"
           why={t('todayEditCardWhy', {
             fields: quoteFields(
-              item.fields.map((field) => editFieldName(field, t)),
+              item.fields.map((field) => proposalFieldName(field, t)),
               t,
             ),
           })}

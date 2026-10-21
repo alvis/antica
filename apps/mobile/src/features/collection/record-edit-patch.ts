@@ -17,7 +17,7 @@ import type {
 } from './record-edit-draft';
 import type { RecordEditValue, RecordFieldsPatch } from './record-edit-values';
 
-type Dimensions = RecordFields['dimensions'];
+type Dimensions = NonNullable<RecordFieldsPatch['dimensions']>;
 type Acquisition = RecordFields['acquisition'];
 
 /** acquisition fields saved as optional text */
@@ -119,7 +119,7 @@ function withMeasurement(
 ): Dimensions {
   const { [entry.field]: _replaced, ...rest } = dimensions;
   if (entry.value === null) {
-    return rest;
+    return { ...rest, [entry.field]: null };
   }
   const componentId = latest[entry.field]?.componentId;
 

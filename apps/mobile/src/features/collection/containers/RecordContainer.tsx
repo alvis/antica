@@ -39,6 +39,7 @@ import { AskPill, Screen } from '../../../components/Screen';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
+import { recordTitle } from '../../../utils/record-title';
 
 import { useStartAnalysis } from '../../analysis/hooks/useStartAnalysis';
 import { RecordUploadsContainer } from '../../capture/containers/RecordUploadsContainer';
@@ -239,7 +240,7 @@ const RecordHubScreen: FC<{
     editChanges: hub.editChanges,
     tasks: hub.tasks,
   });
-  const badges = fieldBadges(hub.suggestions, hub.editChanges);
+  const badges = fieldBadges(record, hub.suggestions, hub.editChanges);
   const recordPath = `/collection/${encodeURIComponent(recordId)}`;
   const openEditor = (): void => router.push(`${recordPath}/edit`);
   const openMessages = (): void => router.push(`${recordPath}/messages`);
@@ -471,7 +472,7 @@ const RecordHubScreen: FC<{
         </View>
         <View style={layout.heading}>
           <Text accessibilityRole="header" style={layout.title}>
-            {record.name ?? record.code}
+            {recordTitle(record.name, t('unnamed'))}
           </Text>
           <Text style={layout.meta}>
             {recordMeta(record, labels, t, locale)}

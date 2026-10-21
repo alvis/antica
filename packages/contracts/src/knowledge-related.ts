@@ -27,9 +27,13 @@ export const relatedKnowledgeQuerySchema = z.strictObject({
 });
 export type RelatedKnowledgeQuery = z.infer<typeof relatedKnowledgeQuerySchema>;
 
-/** identifies the explicit record field and the saved term that matched */
+/**
+ * identifies the record field and the term that matched; `suggestion` marks a value the assistant
+ * suggested and the collector has not yet decided, which is never a saved fact of the record
+ */
 export const relatedKnowledgeMatchSchema = z.strictObject({
   field: z.enum(['category', 'material', 'period', 'name']),
+  source: z.enum(['record', 'suggestion']).default('record'),
   value: textSchema,
   topicId: entityIdSchema.nullable(),
   label: textSchema,

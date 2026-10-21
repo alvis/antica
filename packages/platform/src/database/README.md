@@ -31,9 +31,10 @@ database or a configured connection URL.
 
 `pnpm seed:demo` (root alias of `@antica/platform seed:demo`) fills the demo
 collector's catalogue with the five objects of the approved mobile design: the
-records and their six angle photos, the dish's analysis with five undecided
-suggestions, the jar's retake request, the chair's edit card and the saved
-knowledge entries. It resets that collector's record-side rows first, so a rerun
+records with their condition (品相) and six angle photos, the dish's analysis
+with six undecided suggestions (its 尺寸 suggestion already outdated by the
+measured 口徑, and its 名稱、材質、年代、表面 left 未填寫 for the suggestions to fill), the jar's
+retake request, the chair's synthetic voice message, exact transcript, edit card and the saved knowledge entries. Suggestions carry optional high/medium/low field confidence, independently of authenticity; older proposals may omit it. It resets that collector's record-side rows first, so a rerun
 recreates the same state. It is development-only, and it refuses the end-to-end
 owner and every phone but the demo owner `+15550100002`.
 
@@ -55,7 +56,7 @@ The photos and their licence notes live in `demo/images/`.
 
 ## Native SQL and baseline
 
-`migrations/0_init/migration.sql` reproduces main's schema from migrations 0000–0008: 102 tables, 20 check constraints and 168 foreign keys. `1_edit_draft_adoption_events/migration.sql` adds adoption history and its owner-scoped draft identity; `2_record_messages/migration.sql` adds record messages, bringing the chain to 104 tables, 24 checks and 172 foreign keys. Native SQL retains partial indexes, composite owner identities, cascading authentication ownership, defaults and foreign keys.
+`migrations/0_init/migration.sql` reproduces main's schema from migrations 0000–0008: 102 tables, 20 check constraints and 168 foreign keys. `1_edit_draft_adoption_events/migration.sql` adds adoption history and its owner-scoped draft identity; `2_record_messages/migration.sql` adds record messages, bringing the chain to 104 tables, 24 checks and 172 foreign keys. `6_record_condition_seat_height/migration.sql` adds the record's condition (品相) column and admits a seat height (座高) among the length measurements. `7_record_surface/migration.sql` adds the separate 表面 column without changing saved 觀察 text. Native SQL retains partial indexes, composite owner identities, cascading authentication ownership, defaults and foreign keys.
 Prisma's partial-index support is enabled by introspection; check constraints
 remain native SQL in the migration. The actual schema contains no generated
 columns, extensions, or triggers. The previous `generated.spec.int.ts` tests

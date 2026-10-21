@@ -28,7 +28,8 @@
         },
         "tags": ["青花", "瓷器"],
         "description": "青花瓷碗，外壁繪纏枝花卉，口沿有一處小磕，碗底有青花款識。",
-        "collectorJudgment": null
+        "collectorJudgment": null,
+        "condition": null
       }
     },
     {
@@ -62,7 +63,8 @@
         },
         "tags": ["銅器"],
         "description": "三足銅香爐，雙耳，爐身有使用痕跡與局部銅鏽。",
-        "collectorJudgment": "我認為是老件，但未經鑑定。"
+        "collectorJudgment": "我認為是老件，但未經鑑定。",
+        "condition": null
       }
     }
   ],

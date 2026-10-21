@@ -21,6 +21,7 @@ const fields = {
   tags: [],
   description: '',
   collectorJudgment: null,
+  condition: null,
 } as const;
 
 describe('record period validation', () => {

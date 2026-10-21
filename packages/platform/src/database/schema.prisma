@@ -1125,6 +1125,10 @@ model records {
   locationDetail                                             String                    @default("") @map("location_detail")
   description                                                String                    @default("")
   collectorJudgment                                          String?                   @map("collector_judgment")
+  /// the piece's condition (品相) in the collector's words; null until noted
+  condition                                                  String?
+  /// surface appearance (表面), separate from collector observations
+  surface                                                    String?
   recordRevision                                             Int                       @default(1) @map("record_revision")
   analysisInputVersion                                       Int                       @default(1) @map("analysis_input_version")
   evidenceVersion                                            Int                       @default(1) @map("evidence_version")

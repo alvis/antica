@@ -52,6 +52,7 @@ const fields: RecordFields = {
   tags: [],
   description: '',
   collectorJudgment: null,
+  condition: null,
 };
 const result: EditDraftResult = {
   editDraftId: draftId,

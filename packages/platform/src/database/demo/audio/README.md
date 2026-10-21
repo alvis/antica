@@ -1,0 +1,1 @@
+The chair message is a synthetic demo recording generated with the macOS Shelley (Chinese Taiwan) system voice. It reads the approved prototype collector message, padded to 14 seconds. It is a demo fixture, not a collector recording or a speech-provider output. The seed labels its transcript with the antica-demo-seed invocation.

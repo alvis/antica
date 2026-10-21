@@ -75,6 +75,7 @@ function record(): RecordDetail {
     tags: [],
     description: '',
     collectorJudgment: null,
+    condition: null,
     recordRevision: 1,
     analysisInputVersion: 1,
     evidenceVersion: 1,

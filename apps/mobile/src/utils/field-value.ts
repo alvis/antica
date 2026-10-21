@@ -5,6 +5,9 @@ import type { Locale, PlainMessageKey, Translate } from '../i18n/messages';
 /** candidate period as the record stores it */
 export type PeriodValue = NonNullable<RecordFields['period']>;
 
+/** a record's set of measurements, as a size suggestion proposes it */
+export type DimensionsValue = RecordFields['dimensions'];
+
 /** historical purchase amount with its currency; a transaction record, never a valuation */
 export type PurchaseValue = {
   readonly amount: string;
@@ -23,7 +26,8 @@ export type FieldDisplayValue =
   | readonly string[]
   | PeriodValue
   | Measurement
-  | PurchaseValue;
+  | PurchaseValue
+  | DimensionsValue;
 
 const periodStatusKeys = {
   collectorClaim: 'periodCollectorClaim',
@@ -50,6 +54,69 @@ function formatPeriod(period: PeriodValue, t: Translate): string {
     period: label,
     status: t(periodStatusKeys[period.status]),
   });
+}
+
+/** how each measurement of a set is named, in the order a set reads */
+const dimensionKeys = {
+  height: 'recordDimensionHeight',
+  seatHeight: 'recordDimensionSeatHeight',
+  width: 'recordDimensionWidth',
+  depth: 'recordDimensionDepth',
+  diameter: 'recordDimensionDiameter',
+  weight: 'weight',
+} as const satisfies Record<keyof DimensionsValue, PlainMessageKey>;
+
+/** length units spelled out with their number, such as 21.8 公分 */
+const lengthUnitKeys = {
+  mm: 'recordLengthMm',
+  cm: 'recordLengthCm',
+  m: 'recordLengthM',
+} as const;
+
+/**
+ * formats one measurement with its unit, spelling out lengths the way the record hub does
+ * @param measurement measured value
+ * @param locale active interface locale
+ * @param t translation function for message keys
+ * @returns the number and its unit
+ */
+function formatMeasurement(
+  measurement: Measurement,
+  locale: Locale,
+  t: Translate,
+): string {
+  const value = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 6,
+  }).format(measurement.value);
+
+  return measurement.unit in lengthUnitKeys
+    ? t(lengthUnitKeys[measurement.unit as keyof typeof lengthUnitKeys], {
+        value,
+      })
+    : `${value} ${measurement.unit}`;
+}
+
+/**
+ * formats a set of measurements as named lengths, such as 高 102 公分 · 座高 51 公分
+ * @param dimensions measurements of the set
+ * @param locale active interface locale
+ * @param t translation function for message keys
+ * @returns the named measurements, or a placeholder when the set is empty
+ */
+function formatDimensions(
+  dimensions: DimensionsValue,
+  locale: Locale,
+  t: Translate,
+): string {
+  const parts = Object.entries(dimensionKeys).flatMap(([field, key]) => {
+    const measurement = dimensions[field as keyof DimensionsValue];
+
+    return measurement
+      ? [`${t(key)} ${formatMeasurement(measurement, locale, t)}`]
+      : [];
+  });
+
+  return parts.length ? parts.join(t('metaSeparator')) : t('noValue');
 }
 
 /**
@@ -98,6 +165,9 @@ export function formatFieldValue(
   if ('currency' in value) {
     return `${value.amount} ${value.currency}`;
   }
+  if ('status' in value) {
+    return formatPeriod(value, t);
+  }
 
-  return formatPeriod(value, t);
+  return formatDimensions(value, locale, t);
 }

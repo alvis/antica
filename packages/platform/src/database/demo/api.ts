@@ -24,7 +24,7 @@ export interface DemoApiParams {
 /** one photo or receipt to send through the upload pipeline */
 export interface DemoUpload {
   readonly recordId: string;
-  readonly purpose: Extract<MediaPurpose, 'object' | 'receipt'>;
+  readonly purpose: Extract<MediaPurpose, 'object' | 'receipt' | 'voice_note'>;
   readonly fileName: string;
   readonly bytes: Buffer;
 }
@@ -170,11 +170,11 @@ async function uploadMedia(
       body: {
         requestKey: randomUUID(),
         target: { kind: 'record', recordId: input.recordId },
-        kind: 'photo',
+        kind: input.purpose === 'voice_note' ? 'audio' : 'photo',
         purpose: input.purpose,
         componentIds: [],
         fileName: input.fileName,
-        mimeType: 'image/jpeg',
+        mimeType: input.purpose === 'voice_note' ? 'audio/mp4' : 'image/jpeg',
         byteLength: input.bytes.byteLength,
         sha256: createHash('sha256').update(input.bytes).digest('hex'),
       },

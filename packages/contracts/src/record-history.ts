@@ -76,6 +76,30 @@ export const recordHistoryEntrySchema = z.discriminatedUnion('field', [
     before: recordFieldsSchema.shape.collectorJudgment,
     after: recordFieldsSchema.shape.collectorJudgment,
   }),
+  z.strictObject({
+    ...entryBase,
+    field: z.literal('surface'),
+    before: recordFieldsSchema.shape.surface,
+    after: recordFieldsSchema.shape.surface,
+  }),
+  z.strictObject({
+    ...entryBase,
+    field: z.literal('categoryIds'),
+    before: recordFieldsSchema.shape.categoryIds,
+    after: recordFieldsSchema.shape.categoryIds,
+  }),
+  z.strictObject({
+    ...entryBase,
+    field: z.literal('condition'),
+    before: recordFieldsSchema.shape.condition,
+    after: recordFieldsSchema.shape.condition,
+  }),
+  z.strictObject({
+    ...entryBase,
+    field: z.literal('dimensions'),
+    before: recordFieldsSchema.shape.dimensions,
+    after: recordFieldsSchema.shape.dimensions,
+  }),
 ]);
 export type RecordHistoryEntry = z.infer<typeof recordHistoryEntrySchema>;
 export const recordHistoryPageSchema = cursorPageSchema(

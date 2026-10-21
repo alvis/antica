@@ -21,6 +21,7 @@ import {
   transactionTimeoutMs,
 } from './provenance.js';
 import { deleteCascade } from './reset.js';
+import { seedVoiceMessage } from './voice.js';
 
 import type {
   EditDraftResult,
@@ -65,8 +66,13 @@ const settleTimeoutMs = 120_000;
 export async function postConversation(
   params: DemoConversationParams,
 ): Promise<DemoConversationResult> {
+  const transcriptionId = await seedVoiceMessage(params.context, params.api, {
+    recordId: params.recordId,
+    text: params.conversation.collectorMessage,
+    createdAt: params.conversation.createdAt,
+  });
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
-    const posted = await postMessage(params);
+    const posted = await postMessage(params, transcriptionId);
     const replyId = await completeDraft(params, posted);
     if (replyId) {
       return {
@@ -89,6 +95,7 @@ export async function postConversation(
  */
 async function postMessage(
   params: DemoConversationParams,
+  transcriptionId: string,
 ): Promise<RecordMessagePosted> {
   const { api, conversation, recordId, context } = params;
   const record = await api.request(
@@ -104,7 +111,7 @@ async function postMessage(
       body: {
         requestKey: randomUUID(),
         body: conversation.collectorMessage,
-        transcriptionIds: [],
+        transcriptionIds: [transcriptionId],
         expectedRecordRevision: record.recordRevision,
         knowledgeAttachments: conversation.reply.flatMap((segment) =>
           segment.evidence.map((reference) => attachmentOf(context, reference)),
@@ -140,7 +147,14 @@ async function completeDraft(
         !draft ||
         !(await editDrafts.saveResult(
           posted.editDraftId,
-          draftResult(params, record, posted.editDraftId),
+          draftResult(
+            params,
+            record,
+            posted.editDraftId,
+            draft.detail.snapshot.transcriptionVersions.map(
+              (source) => source.id,
+            ),
+          ),
           seedInvocation('recordEditing'),
           draft.detail.revision,
           repliedAt,
@@ -285,6 +299,7 @@ function draftResult(
   params: DemoConversationParams,
   record: RecordDetail,
   editDraftId: string,
+  sourceTranscriptionIds: string[],
 ): EditDraftResult {
   const { context, conversation } = params;
 
@@ -296,7 +311,7 @@ function draftResult(
       analysisInputVersion: record.analysisInputVersion,
       evidenceVersion: record.evidenceVersion,
     },
-    sourceTranscriptionIds: [],
+    sourceTranscriptionIds,
     sourceObservationIds: [],
     replyZhHant: replyText(conversation),
     answerSegments: conversation.reply.map((segment) => ({

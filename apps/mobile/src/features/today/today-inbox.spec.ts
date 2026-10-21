@@ -10,7 +10,7 @@ import {
   tagsChange,
 } from '../collection/messages/containers/record-messages.spec.fixtures';
 
-import { buildTodayInbox } from './today-inbox';
+import { buildTodayInbox as buildInbox } from './today-inbox';
 
 import type { InspectionTask, RecordSummary } from '@antica/contracts';
 
@@ -87,7 +87,7 @@ describe('fn:buildTodayInbox', () => {
       { summary: summary(3), run, runCompletedAt: completedAt, entries: [] },
     ];
 
-    const items = buildTodayInbox(records, [request(summary(1).id)]);
+    const items = buildInboxForTest(records, [request(summary(1).id)]);
 
     expect(items.map(({ kind, recordId }) => [kind, recordId])).toEqual([
       ['analysis', summary(3).id],
@@ -95,8 +95,8 @@ describe('fn:buildTodayInbox', () => {
       ['action', summary(1).id],
     ]);
     expect(items[0]).toMatchObject({
-      // a record without a name shows its code
-      name: 'AC-000003',
+      // a record without a saved name keeps an explicit unnamed heading
+      name: 'Unnamed item',
       runId,
       suggestionCount: 2,
       totalCount: 2,
@@ -110,7 +110,7 @@ describe('fn:buildTodayInbox', () => {
   });
 
   it('should give a record one card, for its most pressing item', () => {
-    const items = buildTodayInbox(
+    const items = buildInboxForTest(
       [
         {
           summary: summary(1),
@@ -129,10 +129,18 @@ describe('fn:buildTodayInbox', () => {
 
   it('should leave out records that wait on nobody and requests other than photos', () => {
     expect(
-      buildTodayInbox(
+      buildInboxForTest(
         [{ summary: summary(1), entries: [] }],
         [request(summary(1).id, 'describe'), request(summary(2).id)],
       ),
     ).toEqual([]);
   });
 });
+
+/** builds fixture cards with an explicit localized unnamed label */
+function buildInboxForTest(
+  records: Parameters<typeof buildInbox>[0],
+  tasks: Parameters<typeof buildInbox>[1],
+): ReturnType<typeof buildInbox> {
+  return buildInbox(records, tasks, 'Unnamed item');
+}

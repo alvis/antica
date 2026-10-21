@@ -27,7 +27,10 @@ export type DemoAcquisition = Omit<
 /** one design object, its record fields and its photos */
 export interface DemoRecord {
   readonly key: DemoRecordKey;
+  /** object name printed on its demo receipt */
   readonly name: string;
+  /** saved record title, before any pending name proposal is confirmed */
+  readonly savedName: RecordFields['name'];
   /** vocabulary title of the category */
   readonly category: string;
   /** vocabulary titles of the materials */
@@ -43,6 +46,8 @@ export interface DemoRecord {
   /** text of the record's 觀察 row */
   readonly description: string;
   readonly period: RecordFields['period'];
+  /** text of the 品相 tile, or null where the design leaves it 未填寫 */
+  readonly condition: RecordFields['condition'];
   /** source image under ./images without extension */
   readonly image: string;
   readonly angles: readonly PhotoAngle[];
@@ -71,6 +76,7 @@ export const demoRecords: readonly DemoRecord[] = [
   {
     key: 'bi',
     name: '穀紋玉璧',
+    savedName: '穀紋玉璧',
     category: '玉器',
     materials: ['玉'],
     dimensions: { diameter: { value: 14.8, unit: 'cm' } },
@@ -80,12 +86,14 @@ export const demoRecords: readonly DemoRecord[] = [
     hasReceipt: false,
     description: '滿布穀紋，一面有沁色。',
     period: null,
+    condition: '邊緣小缺',
     image: 'grain-bi',
     angles: recordAngles,
   },
   {
     key: 'cup',
     name: '斗彩嬰戲杯',
+    savedName: '斗彩嬰戲杯',
     category: '陶瓷',
     materials: ['瓷', '斗彩'],
     dimensions: { diameter: { value: 6.8, unit: 'cm' } },
@@ -95,12 +103,14 @@ export const demoRecords: readonly DemoRecord[] = [
     hasReceipt: false,
     description: '外壁嬰戲圖，底有青花六字款。',
     period: null,
+    condition: '完整',
     image: 'chenghua-cup',
     angles: recordAngles,
   },
   {
     key: 'jar',
     name: '青花纏枝蓮紋罐',
+    savedName: '青花纏枝蓮紋罐',
     category: '陶瓷',
     materials: ['瓷', '青花'],
     dimensions: { height: { value: 29, unit: 'cm' } },
@@ -110,15 +120,21 @@ export const demoRecords: readonly DemoRecord[] = [
     hasReceipt: false,
     description: '纏枝蓮紋，發色濃處有黑斑。',
     period: null,
+    condition: '肩部一道沖線',
     image: 'yuan-jar',
     angles: recordAngles,
   },
   {
     key: 'chair',
     name: '黃花梨圈椅',
+    savedName: '紅木圈椅',
     category: '家具',
     materials: ['紅木'],
-    dimensions: { height: { value: 102, unit: 'cm' } },
+    // the meta line reads the seat height (座高 51 公分), the 尺寸 tile the overall height
+    dimensions: {
+      height: { value: 102, unit: 'cm' },
+      seatHeight: { value: 51, unit: 'cm' },
+    },
     createdAt: `2026-10-19T18:30:00${emulatorUtcOffset}`,
     location: { label: '書房', detail: '窗邊' },
     acquisition: {
@@ -130,15 +146,17 @@ export const demoRecords: readonly DemoRecord[] = [
     description: '椅背三彎，扶手出頭；背板素面無雕。',
     // the corpus period topic is labelled 清, which the related-knowledge match compares exactly
     period: { label: '清', status: 'collectorClaim' },
+    condition: '椅面藤屜已換',
     image: 'lohan-chair',
     angles: recordAngles,
   },
   {
     key: 'dish',
     name: '青釉開片盤',
+    savedName: null,
     category: '陶瓷',
-    // the related-knowledge match needs a corpus material term; the analysis adds 青釉
-    materials: ['炻器'],
+    // left 未填寫 as the design has it: related knowledge matches the analysis's suggested 炻器 and 青釉
+    materials: [],
     dimensions: { diameter: { value: 21.8, unit: 'cm' } },
     createdAt: `2026-10-20T10:05:00${emulatorUtcOffset}`,
     location: { label: '主陳列室玻璃櫃', detail: '第二層右上角' },
@@ -150,6 +168,7 @@ export const demoRecords: readonly DemoRecord[] = [
     hasReceipt: true,
     description: '釉色青灰，燈下可見通體開片；口沿露胎呈灰褐。',
     period: null,
+    condition: null,
     image: 'met-guan-dish',
     angles: dishAngles,
   },

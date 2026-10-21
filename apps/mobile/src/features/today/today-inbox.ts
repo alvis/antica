@@ -1,3 +1,5 @@
+import { recordTitle } from '../../utils/record-title';
+
 import { pendingEditChanges, pendingProposals } from '../collection/record-hub';
 
 import type {
@@ -23,7 +25,7 @@ export interface TodayRecordState {
 /** fields shared by every inbox card */
 interface InboxRecord {
   readonly recordId: string;
-  /** the record's name, or its code while it has none */
+  /** the saved record name or a localized unnamed label */
   readonly name: string;
   readonly coverThumbnail: string | null;
 }
@@ -61,14 +63,16 @@ const kindOrder = { analysis: 0, editCard: 1, action: 2 } as const;
  * builds 等您處理 from the recent records, one card per record for its most pressing item
  * @param records recent records with their run and conversation, newest first
  * @param tasks pending inspection tasks of the collector
+ * @param unnamed localized title for records without a saved name
  * @returns inbox cards in display order
  */
 export function buildTodayInbox(
   records: readonly TodayRecordState[],
   tasks: readonly InspectionTask[],
+  unnamed: string,
 ): TodayInboxItem[] {
   const items = records.flatMap((state) => {
-    const item = recordInboxItem(state, tasks);
+    const item = recordInboxItem(state, tasks, unnamed);
 
     return item ? [item] : [];
   });
@@ -82,15 +86,17 @@ export function buildTodayInbox(
  * picks the most pressing item of one record: suggestions, then edit cards, then a capture request
  * @param state the record with its run and conversation
  * @param tasks pending inspection tasks of the collector
+ * @param unnamed localized title for records without a saved name
  * @returns the record's card, or nothing when it waits on nobody
  */
 function recordInboxItem(
   { summary, run, runCompletedAt, entries }: TodayRecordState,
   tasks: readonly InspectionTask[],
+  unnamed: string,
 ): TodayInboxItem | null {
   const base: InboxRecord = {
     recordId: summary.id,
-    name: summary.name ?? summary.code,
+    name: recordTitle(summary.name, unnamed),
     coverThumbnail: summary.coverThumbnail,
   };
   const suggestionCount = run ? pendingProposals(run).length : 0;

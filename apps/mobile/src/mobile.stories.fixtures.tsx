@@ -33,6 +33,7 @@ export const storyRecord = recordDetailSchema.parse({
   tags: ['ceramic', 'blue-and-white'],
   description: 'Porcelain bowl with a hand-painted floral border.',
   collectorJudgment: 'The foot shows light wear consistent with age.',
+  condition: null,
   recordRevision: 3,
   analysisInputVersion: 2,
   evidenceVersion: 2,

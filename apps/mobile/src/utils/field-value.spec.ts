@@ -35,6 +35,24 @@ describe('fn:formatFieldValue', () => {
     ).toBe('1200.50 HKD');
   });
 
+  it('should name each measurement of a size suggestion and mark an empty set as empty', () => {
+    const zh = translator('zh-Hant');
+
+    expect(
+      formatFieldValue(
+        {
+          diameter: { value: 21.5, unit: 'cm' },
+          height: { value: 102, unit: 'cm' },
+          seatHeight: { value: 51, unit: 'cm' },
+          weight: { value: 2, unit: 'kg' },
+        },
+        'zh-Hant',
+        zh,
+      ),
+    ).toBe('高 102 公分·座高 51 公分·徑 21.5 公分·重量 2 kg');
+    expect(formatFieldValue({}, 'zh-Hant', zh)).toBe(zh('noValue'));
+  });
+
   it('should show a period with its years and whose judgment it is', () => {
     const t = translator('en');
 

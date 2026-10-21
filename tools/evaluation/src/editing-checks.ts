@@ -96,9 +96,13 @@ export const fieldLabels: Readonly<
   name: ['名稱', '名字', '品名'],
   description: ['描述', '說明'],
   materialIds: ['材質', '材料'],
+  categoryIds: ['器類', '分類'],
+  surface: ['表面'],
   period: ['年代', '時代', '年份', '朝代'],
   tags: ['標籤'],
   collectorJudgment: ['判斷', '看法', '意見'],
+  condition: ['品相', '狀況', '保存狀況'],
+  dimensions: ['尺寸', '大小', '口徑', '高度', '座高'],
 };
 
 const latinRun = /[A-Za-z]{2,}/u;

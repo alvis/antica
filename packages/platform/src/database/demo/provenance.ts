@@ -132,6 +132,7 @@ export function recordFieldsOf(record: RecordDetail): RecordFields {
     tags: record.tags,
     description: record.description,
     collectorJudgment: record.collectorJudgment,
+    condition: record.condition,
   });
 }
 

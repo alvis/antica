@@ -269,11 +269,60 @@ describe('fn:pendingEditChanges', () => {
 
 describe('fn:fieldBadges', () => {
   it('should mark a field the analysis suggests over one an edit card changes', () => {
-    const badges = fieldBadges([nameChange], [nameChange, tagsChange]);
+    const badges = fieldBadges(
+      collectionRecord,
+      [nameChange],
+      [nameChange, tagsChange],
+    );
 
     expect(badges.get('name')).toBe('suggestion');
     expect(badges.get('tags')).toBe('edit');
     expect(badges.has('period')).toBe(false);
+  });
+
+  it('should leave a field unmarked when its suggestion is outdated by a later edit', () => {
+    const measured = {
+      ...collectionRecord,
+      dimensions: { diameter: { value: 21.8, unit: 'cm' as const } },
+    };
+
+    const badges = fieldBadges(
+      measured,
+      [
+        {
+          id: nameChangeId,
+          field: 'dimensions',
+          before: {},
+          proposed: { diameter: { value: 21.5, unit: 'cm' } },
+          findingIds: [],
+        },
+      ],
+      [],
+    );
+
+    expect(badges.has('dimensions')).toBe(false);
+  });
+
+  it('should mark a size suggestion made against the same measurements in any key order', () => {
+    const height = { value: 4.2, unit: 'cm' as const };
+    const diameter = { value: 21.8, unit: 'cm' as const };
+    const measured = { ...collectionRecord, dimensions: { height, diameter } };
+
+    const badges = fieldBadges(
+      measured,
+      [
+        {
+          id: nameChangeId,
+          field: 'dimensions',
+          before: { diameter, height },
+          proposed: { diameter: { value: 22, unit: 'cm' } },
+          findingIds: [],
+        },
+      ],
+      [],
+    );
+
+    expect(badges.get('dimensions')).toBe('suggestion');
   });
 });
 

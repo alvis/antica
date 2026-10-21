@@ -16,6 +16,7 @@ export const relatedCard = {
   matches: [
     {
       field: 'category' as const,
+      source: 'record' as const,
       value: 'ceramics',
       topicId: topic.id,
       label: 'Ceramics',

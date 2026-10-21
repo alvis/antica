@@ -19,9 +19,11 @@ import { createLocalSettings } from '../fixtures/runtime.js';
 
 import {
   citedEnvelope,
+  completeSuggestions,
   createRelatedEntry,
   createRelatedRecord,
   relatedContent,
+  skipSuggestion,
   snapshotRelatedRows,
 } from './knowledge-search/related.spec.helpers.js';
 
@@ -442,6 +444,213 @@ describe('Record-related saved knowledge', () => {
     expect(limited.cards[0]).toMatchObject({ language: 'en', fallback: false });
     expect(limited.contextHash).toBe(page.contextHash);
     expect(await snapshotRelatedRows(db)).toEqual(before);
+  });
+
+  it('should match undecided suggestions as suggestions, after every saved-field match, until the collector decides them', async ({
+    fixture,
+  }) => {
+    const identity = randomUUID();
+    const savedTitle = `Celadon ${identity}`;
+    const suggestedTitle = `Stoneware ${identity}`;
+    const outdatedTitle = `Guan ${identity}`;
+    // entry ids are random, so the saved match must rank first whichever id sorts first
+    const suggestedEntry = await createRelatedEntry(
+      fixture,
+      relatedContent(suggestedTitle),
+    );
+    const savedEntry = await createRelatedEntry(
+      fixture,
+      relatedContent(savedTitle),
+    );
+    await createRelatedEntry(fixture, relatedContent(outdatedTitle));
+    const record = await createRelatedRecord(fixture, { name: savedTitle });
+    const { runId, proposalIds } = await completeSuggestions(fixture, record, [
+      {
+        id: randomUUID(),
+        field: 'name',
+        before: savedTitle,
+        proposed: suggestedTitle,
+        findingIds: [],
+      },
+      {
+        id: randomUUID(),
+        field: 'name',
+        before: savedTitle,
+        // a suggestion that repeats the saved value adds no second reason
+        proposed: savedTitle,
+        findingIds: [],
+      },
+      {
+        id: randomUUID(),
+        field: 'name',
+        // made against a name the record no longer holds, so it can no longer be applied
+        before: `Earlier ${identity}`,
+        proposed: outdatedTitle,
+        findingIds: [],
+      },
+    ]);
+    const path = `/v1/records/${record.id}/related-knowledge?locale=en`;
+
+    const page = relatedKnowledgePageSchema.parse(
+      await (await fixture.request(path)).json(),
+    );
+
+    expect(page.cards.map((card) => card.entryId)).toEqual([
+      savedEntry,
+      suggestedEntry,
+    ]);
+    expect(page.cards.map((card) => card.matches)).toEqual([
+      [expect.objectContaining({ field: 'name', source: 'record' })],
+      [
+        expect.objectContaining({
+          field: 'name',
+          source: 'suggestion',
+          value: suggestedTitle,
+        }),
+      ],
+    ]);
+    await skipSuggestion(fixture, runId, proposalIds[0]!);
+    const decided = relatedKnowledgePageSchema.parse(
+      await (await fixture.request(path)).json(),
+    );
+
+    expect(decided.cards.map((card) => card.entryId)).toEqual([savedEntry]);
+    expect(decided.contextHash).not.toBe(page.contextHash);
+  });
+
+  it('should match a suggested material and period through reviewed topics while none is saved', async ({
+    fixture,
+  }) => {
+    const db = fixture.runtime.database.db;
+    const { userId: ownerId } = await db.session.findFirstOrThrow();
+    const reviewed = {
+      state: 'reviewed' as const,
+      actor: ownerId,
+      at: '2026-10-19T00:00:00.000Z',
+    };
+    const topicFor = async (
+      facet: 'material' | 'period',
+    ): Promise<{
+      readonly topicId: string;
+      readonly label: string;
+    }> => {
+      const topicId = randomUUID();
+      const label = `Term ${topicId}`;
+      await db.topic.create({
+        data: { id: topicId, ownerId, contentId: `test:${topicId}`, facet },
+      });
+      await db.topicLabel.create({
+        data: {
+          id: randomUUID(),
+          ownerId,
+          topicId,
+          language: 'en',
+          text: label,
+          normalizedText: label.toLowerCase(),
+          kind: 'alias',
+        },
+      });
+
+      return { topicId, label };
+    };
+    const material = await topicFor('material');
+    const period = await topicFor('period');
+    const materialEntry = await createRelatedEntry(fixture, {
+      ...relatedContent(`Reference ${randomUUID()}`, [material.topicId]),
+      editorialReview: reviewed,
+    });
+    const periodEntry = await createRelatedEntry(fixture, {
+      ...relatedContent(`Reference ${randomUUID()}`, [period.topicId]),
+      editorialReview: reviewed,
+    });
+    const vocabularyInput = knowledgeInput();
+    const vocabulary = knowledgeDetailSchema.parse(
+      await (
+        await fixture.request('/v1/knowledge', 'POST', {
+          ...vocabularyInput,
+          status: 'saved',
+          methodWrites: [],
+          content: {
+            ...vocabularyInput.content,
+            titleZhHant: `汝窯 ${randomUUID()}`,
+            aliases: [material.label],
+            kinds: ['material'],
+          },
+        })
+      ).json(),
+    );
+    const unmatched = knowledgeDetailSchema.parse(
+      await (
+        await fixture.request('/v1/knowledge', 'POST', {
+          ...vocabularyInput,
+          requestKey: randomUUID(),
+          status: 'saved',
+          methodWrites: [],
+          content: {
+            ...vocabularyInput.content,
+            titleZhHant: `青瓷 ${randomUUID()}`,
+            aliases: [],
+            kinds: ['material'],
+          },
+        })
+      ).json(),
+    );
+    const record = await createRelatedRecord(fixture, {
+      name: `Unnamed ${randomUUID()}`,
+    });
+    await completeSuggestions(fixture, record, [
+      {
+        id: randomUUID(),
+        field: 'materialIds',
+        before: [],
+        proposed: [unmatched.entry.id, vocabulary.entry.id],
+        findingIds: [],
+      },
+      {
+        id: randomUUID(),
+        field: 'period',
+        before: null,
+        // an assistant's period is unconfirmed, yet still names what to read about
+        proposed: { label: period.label, status: 'unconfirmed' },
+        findingIds: [],
+      },
+    ]);
+
+    const response = await fixture.request(
+      `/v1/records/${record.id}/related-knowledge?locale=en`,
+    );
+
+    expect(response.status).toBe(200);
+    const page = relatedKnowledgePageSchema.parse(await response.json());
+    expect(page.cards.map((card) => card.entryId).toSorted()).toEqual(
+      [materialEntry, periodEntry].toSorted(),
+    );
+    expect(page.cards.flatMap((card) => card.matches)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'material',
+          source: 'suggestion',
+          topicId: material.topicId,
+          value: material.label,
+        }),
+        expect.objectContaining({
+          field: 'period',
+          source: 'suggestion',
+          topicId: period.topicId,
+        }),
+      ]),
+    );
+    expect(
+      page.cards
+        .flatMap((card) => card.matches)
+        .filter((match) => match.field === 'material')
+        .map((match) => match.value),
+    ).toEqual([material.label]);
+    expect(
+      page.cards
+        .flatMap((card) => card.matches)
+        .every((match) => match.source === 'suggestion'),
+    ).toBe(true);
   });
 
   it('should normalize compatibility width, combining marks and Unicode whitespace using the search tokenizer', async ({

@@ -67,7 +67,7 @@ export async function createCollection(
       method: 'POST',
       body: {
         unitKind: 'single',
-        name: demo.name,
+        name: demo.savedName,
         categoryIds: [vocabularyEntryId(vocabulary, demo.category)],
         materialIds: demo.materials.map((term) =>
           vocabularyEntryId(vocabulary, term),
@@ -79,6 +79,7 @@ export async function createCollection(
         tags: [],
         description: demo.description,
         collectorJudgment: null,
+        condition: demo.condition,
       },
     });
     created.set(demo.key, await attachMedia(api, demo, record));

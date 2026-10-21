@@ -1277,6 +1277,7 @@ describe(
               tags: [],
               description: '',
               collectorJudgment: null,
+              condition: null,
             },
             transcriptionVersions: [],
             observationIds: [],

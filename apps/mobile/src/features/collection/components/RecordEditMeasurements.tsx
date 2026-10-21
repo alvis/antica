@@ -70,18 +70,35 @@ const MeasurementRow: FC<MeasurementRowProps> = ({
 };
 
 /**
- * edits the record's dimensions and weight, each with its own unit
+ * edits the record's dimensions and weight, each with its own unit, then its condition (品相),
+ * which the design lists right after the size
  * @param props section properties
  * @returns the measurements card
  */
 export const RecordEditMeasurements: FC<RecordEditSectionProps> = (props) => {
   const { t } = useLocale();
+  const { draft, update } = props;
 
   return (
     <RecordEditCard testID="record-edit-measurements" title={t('measurements')}>
       {measurementFields.map((field) => (
         <MeasurementRow key={field} field={field} {...props} />
       ))}
+      <FormField
+        testID="record-edit-field-condition"
+        label={t('condition')}
+        hint={t('conditionHint')}
+        value={draft.condition}
+        multiline
+        onChangeText={(condition) => update({ condition })}
+      />
+      <FormField
+        testID="record-edit-field-surface"
+        label={t('surface')}
+        value={draft.surface}
+        multiline
+        onChangeText={(surface) => update({ surface })}
+      />
     </RecordEditCard>
   );
 };

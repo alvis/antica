@@ -379,7 +379,11 @@ type DevelopmentDraft = Pick<
 >;
 
 /** names the targeted fields in development replies */
-const developmentFieldNames = { name: '名稱', period: '年代' } as const;
+const developmentFieldNames = {
+  name: '名稱',
+  period: '年代',
+  condition: '品相',
+} as const;
 
 /** maps allowlisted message labels to the field they name */
 const allowlistedFieldLabels = {
@@ -390,6 +394,7 @@ const allowlistedFieldLabels = {
   年代: 'period',
   標籤: 'tags',
   判斷: 'collectorJudgment',
+  品相: 'condition',
 } as const satisfies Record<string, ProposedChange['field']>;
 /** explains why a restricted field gets no proposal */
 const restrictedReply = '這個欄位無法透過訊息修改';
@@ -567,7 +572,7 @@ function draftDevelopmentEdit(
 }
 
 /**
- * proposes the first quoted value per name or period, or the text as the description
+ * proposes the first quoted value per name, period or condition, or the text as the description
  * @param requestKey frozen request identity that seeds the proposal IDs
  * @param fields frozen record fields
  * @param target quoted values with their fields, and the fallback description text
@@ -587,6 +592,13 @@ function proposeAllowlisted(
   for (const { value, field } of target.quoted) {
     if (field === 'name' && !targeted.has(field)) {
       targeted.set(field, { field, before: fields.name, proposed: value });
+    }
+    if (field === 'condition' && !targeted.has(field)) {
+      targeted.set(field, {
+        field,
+        before: fields.condition ?? null,
+        proposed: value,
+      });
     }
     if (field === 'period' && !targeted.has(field)) {
       targeted.set(field, {
@@ -637,7 +649,7 @@ function proposeDescription(
 }
 
 /**
- * proposes the changed name or period values and names their waiting cards in the reply
+ * proposes the changed name, period or condition values and names their waiting cards in the reply
  * @param requestKey frozen request identity that seeds the proposal IDs
  * @param fields frozen record fields
  * @param changes targeted fields in message order with exact before and proposed values

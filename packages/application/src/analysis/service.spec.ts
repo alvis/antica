@@ -66,6 +66,7 @@ const record: RecordDetail = {
   tags: [],
   description: '',
   collectorJudgment: null,
+  condition: null,
   recordRevision: 1,
   analysisInputVersion: 2,
   evidenceVersion: 3,
@@ -304,6 +305,12 @@ function fixture(
         ? {
             ...current.record,
             ...input.fields,
+            dimensions: Object.fromEntries(
+              Object.entries({
+                ...current.record.dimensions,
+                ...input.fields.dimensions,
+              }).filter(([, value]) => value !== null),
+            ),
             ...versions,
           }
         : null;
@@ -899,7 +906,7 @@ describe('fn:createAnalysisService', () => {
   it('should apply each supported proposed field with its typed value', async () => {
     const ids = [
       proposalId,
-      ...[7, 8, 9, 10, 11].map(
+      ...[7, 8, 9, 10, 11, 12, 13].map(
         (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
       ),
     ];
@@ -946,6 +953,20 @@ describe('fn:createAnalysisService', () => {
         proposed: 'Likely antique',
         findingIds: [],
       },
+      {
+        id: ids[6]!,
+        field: 'condition',
+        before: record.condition ?? null,
+        proposed: 'Chipped rim',
+        findingIds: [],
+      },
+      {
+        id: ids[7]!,
+        field: 'dimensions',
+        before: record.dimensions,
+        proposed: { diameter: { value: 21.5, unit: 'cm' } },
+        findingIds: [],
+      },
     ];
     const run = {
       ...completedRun(),
@@ -977,6 +998,16 @@ describe('fn:createAnalysisService', () => {
           period: null,
           tags: ['blue'],
           collectorJudgment: 'Likely antique',
+          condition: 'Chipped rim',
+          // the whole set is replaced, so every measurement the proposal leaves out is cleared
+          dimensions: {
+            height: null,
+            width: null,
+            depth: null,
+            diameter: { value: 21.5, unit: 'cm' },
+            seatHeight: null,
+            weight: null,
+          },
         },
       },
       { recordRevision: 2, analysisInputVersion: 2, evidenceVersion: 3 },
@@ -1452,6 +1483,50 @@ describe('fn:createAnalysisService adoption guardrails', () => {
     expect(ports.patch).not.toHaveBeenCalled();
     expect(ports.adoptions).toEqual([]);
   });
+
+  it.each<ProposedChange>([
+    {
+      id: proposalId,
+      field: 'condition',
+      before: null,
+      proposed: 'Chipped rim',
+      findingIds: [],
+    },
+    {
+      id: proposalId,
+      field: 'dimensions',
+      before: {},
+      proposed: { diameter: { value: 21.5, unit: 'cm' } },
+      findingIds: [],
+    },
+  ])(
+    'should reject a stale $field proposal even when the displayed revision matches',
+    async (change) => {
+      const ports = fixture({
+        run: {
+          ...completedRun(),
+          output: { ...output, proposedChanges: [change] },
+        },
+        record: {
+          ...record,
+          recordRevision: 4,
+          condition: 'Collector edit',
+          dimensions: { height: { value: 4.2, unit: 'cm' } },
+        },
+        proposalStates: [pending(proposalId)],
+      });
+
+      expect(
+        await ports.service.apply(ownerId, runId, 'apply-stale', {
+          expectedRecordRevision: 4,
+          selectedProposalIds: [proposalId],
+        }),
+      ).toMatchObject({ success: false, error: { code: 'REVISION_CONFLICT' } });
+      expect(ports.patch).not.toHaveBeenCalled();
+      expect(ports.adoptions).toEqual([]);
+      expect(ports.receipts.size).toBe(0);
+    },
+  );
 
   it('should adopt unchanged fields while unadopted fields changed after the analysis (A7)', async () => {
     const ports = fixture({

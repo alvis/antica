@@ -32,6 +32,7 @@ export const filledRecord: RecordDetail = recordDetailSchema.parse({
     status: 'collectorClaim',
   },
   collectorJudgment: 'Foot ring looks period',
+  condition: 'Hairline crack at the rim',
   dimensions: {
     height: { value: 8.4, unit: 'cm', componentId },
     diameter: { value: 160, unit: 'mm' },

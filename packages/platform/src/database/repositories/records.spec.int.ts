@@ -9,6 +9,8 @@ import { createTransactionPort } from '../transaction.js';
 
 import { createLocationRepository, createRecordRepository } from './records.js';
 
+import { recordFieldsSchema, recordPatchSchema } from '@antica/contracts';
+
 import type { RecordDetail } from '@antica/contracts';
 
 const databaseUrl = process.env.ANTICA_TEST_DATABASE_URL;
@@ -170,6 +172,94 @@ describe('fn:createRecordRepository', { timeout: 30_000 }, () => {
       await database.close();
     }
   });
+  it('should clear only a seat height through a serialized PATCH and preserve overall height and surface', async () => {
+    const database = await createIsolatedDatabase();
+    try {
+      await database.db.$transaction(async (tx) => {
+        const repository = createRecordRepository(tx, database.ownerId);
+        const id = randomUUID();
+        await repository.create({
+          ...recordDetail(id, await repository.allocateCode()),
+          surface: '冰裂紋開片，釉面溫潤',
+          dimensions: {
+            height: { value: 102, unit: 'cm' },
+            seatHeight: { value: 51, unit: 'cm' },
+          },
+        });
+        const patch = recordPatchSchema.parse(
+          JSON.parse(
+            JSON.stringify({
+              expectedRevision: 1,
+              fields: { dimensions: { seatHeight: null } },
+            }),
+          ),
+        );
+        const changed = await repository.patch(id, patch, {
+          recordRevision: 2,
+          analysisInputVersion: 2,
+          evidenceVersion: 1,
+        });
+        expect(changed?.dimensions).toEqual({
+          height: { value: 102, unit: 'cm' },
+        });
+        expect(changed?.surface).toBe('冰裂紋開片，釉面溫潤');
+      });
+    } finally {
+      await database.close();
+    }
+  });
+
+  it('should keep a condition and a seat height, and clear every measurement an adopted size set leaves out', async () => {
+    const database = await createIsolatedDatabase();
+    try {
+      await database.db.$transaction(async (tx) => {
+        const repository = createRecordRepository(tx, database.ownerId);
+        const id = randomUUID();
+        await repository.create({
+          ...recordDetail(id, await repository.allocateCode()),
+          condition: '椅面藤屜已換',
+          dimensions: {
+            height: { value: 102, unit: 'cm' },
+            seatHeight: { value: 51, unit: 'cm' },
+          },
+        });
+
+        expect(await repository.get(id)).toMatchObject({
+          condition: '椅面藤屜已換',
+          dimensions: {
+            height: { value: 102, unit: 'cm' },
+            seatHeight: { value: 51, unit: 'cm' },
+          },
+        });
+
+        // an adopted size suggestion names every measurement, as adoption writes it through the schema
+        const fields = recordFieldsSchema.partial().parse({
+          dimensions: {
+            height: undefined,
+            width: undefined,
+            depth: undefined,
+            diameter: { value: 21.5, unit: 'cm' },
+            seatHeight: undefined,
+            weight: undefined,
+          },
+        });
+        const patched = await repository.patch(
+          id,
+          { expectedRevision: 1, fields },
+          { recordRevision: 2, analysisInputVersion: 2, evidenceVersion: 1 },
+        );
+
+        expect(patched?.condition).toBe('椅面藤屜已換');
+        // toEqual treats a key read back as undefined as absent, so this asserts every other kind is gone
+        expect(patched?.dimensions).toEqual({
+          diameter: { value: 21.5, unit: 'cm' },
+        });
+      });
+    } finally {
+      await database.close();
+    }
+  });
+
   it('should preserve a component still used by a measurement when removal rolls back', async () => {
     const database = await createIsolatedDatabase();
     const id = randomUUID();
@@ -760,6 +850,7 @@ function recordDetail(id: string, code: string): RecordDetail {
     tags: [],
     description: '',
     collectorJudgment: null,
+    condition: null,
     recordRevision: 1,
     analysisInputVersion: 1,
     evidenceVersion: 1,

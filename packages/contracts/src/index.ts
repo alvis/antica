@@ -136,6 +136,7 @@ export {
   editDraftResultSchema,
   findingSchema,
   inspectionTaskSchema,
+  isProposalCurrent,
   modelCapabilitiesSchema,
   modelFailureAuditSchema,
   modelInvocationSchema,

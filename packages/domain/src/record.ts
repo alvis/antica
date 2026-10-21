@@ -12,6 +12,8 @@ const analysisRelevantFields = new Set([
   'tags',
   'description',
   'collectorJudgment',
+  'condition',
+  'surface',
 ]);
 
 /**

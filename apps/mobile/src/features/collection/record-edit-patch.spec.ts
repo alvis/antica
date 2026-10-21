@@ -165,6 +165,7 @@ describe('fn:patchFields', () => {
       {
         dimensions: {
           height: { value: 9, unit: 'cm', componentId },
+          diameter: null,
           width: { value: 15, unit: 'cm' },
           depth: { value: 4, unit: 'cm' },
           weight: { value: 320, unit: 'g' },

@@ -283,6 +283,7 @@ function analysisOutput(
     })),
     proposedChanges: analysis.proposals.map((proposal) => ({
       ...proposedValues(proposal, record, context.vocabulary),
+      confidence: proposal.confidence,
       id: randomUUID(),
       findingIds: proposal.findingKeys.map((key) => findingIds.get(key)!),
     })),
@@ -302,10 +303,11 @@ function proposedValues(
   vocabulary: ReadonlyMap<string, string>,
 ): ProposedValues {
   switch (proposal.field) {
+    case 'categoryIds':
     case 'materialIds':
       return {
-        field: 'materialIds',
-        before: record.materialIds,
+        field: proposal.field,
+        before: record[proposal.field],
         proposed: proposal.proposedTerms.map((term) =>
           vocabularyEntryId(vocabulary, term),
         ),
@@ -316,17 +318,23 @@ function proposedValues(
         before: record.period,
         proposed: proposal.proposed,
       };
-    case 'tags':
+    case 'surface':
       return {
-        field: 'tags',
-        before: record.tags,
-        proposed: [...proposal.proposed],
+        field: 'surface',
+        before: record.surface ?? null,
+        proposed: proposal.proposed,
       };
     case 'description':
       return {
         field: 'description',
         before: record.description,
         proposed: `${record.description}${proposal.appendedText}`,
+      };
+    case 'dimensions':
+      return {
+        field: 'dimensions',
+        before: proposal.staleBefore,
+        proposed: proposal.proposed,
       };
     default:
       return {
