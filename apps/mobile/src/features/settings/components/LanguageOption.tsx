@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, styles } from '@antica/ui';
+import { colors, styles, theme } from '@antica/ui';
 
 import type { FC } from 'react';
 
@@ -40,7 +40,11 @@ const layout = StyleSheet.create({
   },
   dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.jade },
   text: { flex: 1 },
-  label: { color: colors.text, fontSize: 18, fontWeight: '600' },
+  label: {
+    color: colors.text,
+    fontSize: 18,
+    ...theme.font.face('sans', '600'),
+  },
 });
 
 /**

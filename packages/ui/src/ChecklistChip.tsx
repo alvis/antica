@@ -41,8 +41,8 @@ const layout = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dotMark: { fontSize: 12, fontWeight: '700' },
-  label: { fontFamily: theme.font.family.sans, fontSize: 14 },
+  dotMark: { ...theme.font.face('sans', '700'), fontSize: 12 },
+  label: { fontSize: 14 },
 });
 
 /**
@@ -107,7 +107,7 @@ export const ChecklistChip: FC<ChecklistChipProps> = ({
             layout.label,
             {
               color: tone.fg,
-              fontWeight: status === 'current' ? '700' : '500',
+              ...theme.font.face('sans', status === 'current' ? '700' : '500'),
             },
           ]}>
           {label}

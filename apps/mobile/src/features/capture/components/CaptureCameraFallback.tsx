@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ActionButton, colors, styles } from '@antica/ui';
+import { ActionButton, colors, styles, theme } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -30,8 +30,16 @@ const layout = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerText: { color: colors.card, fontSize: 18, fontWeight: '700' },
-  title: { color: colors.card, fontSize: 20, fontWeight: '700' },
+  headerText: {
+    color: colors.card,
+    fontSize: 18,
+    ...theme.font.face('sans', '700'),
+  },
+  title: {
+    color: colors.card,
+    fontSize: 20,
+    ...theme.font.face('sans', '700'),
+  },
   body: { padding: 16, gap: 16 },
 });
 

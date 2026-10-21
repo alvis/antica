@@ -13,6 +13,7 @@
     "dev": "pnpm --parallel --filter @antica/api --filter @antica/mobile run dev",
     "install": "presetter bootstrap --projects . --projects 'packages/*' --projects 'apps/*' --projects 'tools/*'",
     "jobs:drain": "pnpm --filter @antica/api run jobs:drain",
+    "seed:demo": "pnpm --filter @antica/platform run seed:demo",
     "lint": "prettier --check package.json pnpm-workspace.yaml presetter.config.ts tooling && eslint --flag v10_config_lookup_from_file --format stylish --max-warnings 0 presetter.config.ts tooling && pnpm -r run lint",
     "test": "vitest run --passWithNoTests --configLoader runner --project='*:UNIT' && pnpm run test:tooling && pnpm --filter @antica/ui test && pnpm --filter @antica/mobile test",
     "test:coverage": "vitest run --passWithNoTests --configLoader runner --project='*:UNIT' --project='*:INT' --coverage --coverage.provider=istanbul --coverage.thresholds.perFile --coverage.thresholds.statements=100 --coverage.thresholds.branches=100 --coverage.thresholds.functions=100 --coverage.thresholds.lines=100 && pnpm --filter @antica/ui test:coverage && pnpm --filter @antica/mobile test:coverage",

@@ -5,7 +5,6 @@ import { knowledgeSearchQuerySchema } from '@antica/contracts';
 import { ActionButton, TextField } from '@antica/ui';
 
 import { Screen } from '../../../components/Screen';
-import { SettingsAction } from '../../../components/SettingsAction';
 import { useLocale } from '../../../providers/LocaleProvider';
 
 import { KnowledgeBrowse } from '../components/KnowledgeBrowse';
@@ -17,6 +16,14 @@ import { useKnowledgeTopics } from '../hooks/useKnowledgeTopics';
 
 import type { FC } from 'react';
 
+import type { KnowledgeSearchSelection } from '../hooks/useKnowledgeSearch';
+
+/** the whole saved library, unfiltered */
+const librarySelection: KnowledgeSearchSelection = {
+  query: '',
+  view: 'saved',
+};
+
 /**
  * keeps browse choices and results mounted while a detail route is pushed
  * @returns the knowledge discovery screen
@@ -27,9 +34,18 @@ export const KnowledgeContainer: FC = () => {
   const state = useKnowledgeSelection();
   const entries = useKnowledgeSearch(state.selection);
   const taxonomy = useKnowledgeTopics(state.topicId, state.filtersOpen);
+  // the saved library's size, from the same unfiltered search the screen opens with
+  const library = useKnowledgeSearch(librarySelection);
+  const libraryTotal = library.data?.pages[0]?.total;
 
   return (
-    <Screen title={t('tabKnowledge')} action={<SettingsAction />}>
+    <Screen
+      title={t('tabKnowledge')}
+      overline={
+        libraryTotal === undefined
+          ? undefined
+          : t('knowledgeOverline', { count: libraryTotal })
+      }>
       <View testID="knowledge-search">
         <TextField
           label={t('search')}

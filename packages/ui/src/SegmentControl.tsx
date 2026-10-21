@@ -48,7 +48,7 @@ const layout = StyleSheet.create({
     backgroundColor: segment.current.bg,
     ...theme.elevation.segActive,
   },
-  label: { fontFamily: theme.font.family.sans, fontSize: segment.fontSize },
+  label: { fontSize: segment.fontSize },
   badge: {
     minWidth: 20,
     height: 20,
@@ -60,9 +60,12 @@ const layout = StyleSheet.create({
   },
   badgeText: {
     color: segment.badge.fg,
-    fontFamily: theme.font.family.sans,
+    ...theme.font.face('sans', '700'),
     fontSize: 12,
-    fontWeight: '700',
+    // Noto Sans TC's tall ascent and descent, plus Android's font padding, overflow the 20 dp pill
+    lineHeight: 16,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 });
 
@@ -115,7 +118,7 @@ export const SegmentControl = <Value extends string>({
               layout.label,
               {
                 color: selected ? segment.current.fg : segment.default.fg,
-                fontWeight: selected ? '700' : '500',
+                ...theme.font.face('sans', selected ? '700' : '500'),
               },
             ]}>
             {option.label}

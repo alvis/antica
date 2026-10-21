@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 
+import { bundledFaces } from './faces.js';
+
 import type { TextStyle, ViewStyle } from 'react-native';
 
 /**
@@ -63,28 +65,85 @@ export const color = {
   input: { errorBorder: '#9E3620', errorText: '#9E3620' },
 } as const;
 
+/** a numeric weight the type scale uses */
+export type FontWeight = '400' | '500' | '600' | '700';
+
+/** a family the type scale names: sans for interface text, serif for display and reading */
+export type FaceFamily = 'sans' | 'serif';
+
 /**
- * system CJK families only: iOS names its Traditional Chinese faces, Android resolves CJK
- * through its generic families (Noto Sans / Serif CJK where the system ships them)
+ * the bundled Android face for a family and weight; Noto Sans TC has no semibold and Noto Serif TC
+ * no medium, so 600 takes bold and 500 serif takes regular
+ * @param family family the text renders in
+ * @param weight numeric weight
+ * @returns the face's family name
+ */
+function androidFace(family: FaceFamily, weight: FontWeight): string {
+  const heavy = weight === '600' || weight === '700';
+  if (family === 'serif') {
+    return heavy ? bundledFaces.serif.bold : bundledFaces.serif.regular;
+  }
+
+  return heavy
+    ? bundledFaces.sans.bold
+    : weight === '500'
+      ? bundledFaces.sans.medium
+      : bundledFaces.sans.regular;
+}
+
+/**
+ * fonts per `tokens.json › type.families`: iOS names its Traditional Chinese system faces, Android
+ * uses the bundled Noto Sans TC and Noto Serif TC (system CJK fallback follows the device locale and
+ * draws Simplified or Japanese forms), and web keeps the generic families
  */
 export const font = {
   family: {
-    sans: Platform.select({ ios: 'PingFang TC', default: 'sans-serif' }),
-    serif: Platform.select({ ios: 'Songti TC', default: 'serif' }),
+    sans: Platform.select({
+      ios: 'PingFang TC',
+      android: bundledFaces.sans.regular,
+      default: 'sans-serif',
+    }),
+    serif: Platform.select({
+      ios: 'Songti TC',
+      android: bundledFaces.serif.regular,
+      default: 'serif',
+    }),
     latinSerif: Platform.select({ ios: 'Georgia', default: 'serif' }),
+  },
+  weight: {
+    /**
+     * the sheet's 600 where a system face renders it; on Android a weight never travels alone, so
+     * pair it with a family through `face`
+     */
+    semibold: Platform.select({ android: '700', default: '600' } as const),
+  },
+  /**
+   * the family and weight a text style needs: on Android the weight's own bundled face at regular
+   * weight, elsewhere the family with the weight
+   * @param family family the text renders in
+   * @param weight numeric weight
+   * @returns the style's font family and weight
+   */
+  face(
+    family: FaceFamily,
+    weight: FontWeight,
+  ): Required<Pick<TextStyle, 'fontFamily' | 'fontWeight'>> {
+    return Platform.OS === 'android'
+      ? { fontFamily: androidFace(family, weight), fontWeight: '400' }
+      : { fontFamily: font.family[family], fontWeight: weight };
   },
 } as const;
 
 /** one row of the sheet's type scale */
 interface TypeRole {
   /** family the role renders in */
-  family: string;
+  family: FaceFamily;
   /** size in dp */
   size: number;
   /** line height as a multiple of the size */
   ratio: number;
   /** numeric weight */
-  weight: '400' | '500' | '600' | '700';
+  weight: FontWeight;
   /** letter spacing as a fraction of the size */
   tracking?: number;
 }
@@ -110,17 +169,17 @@ function role({
   tracking = 0,
 }: TypeRole): TextStyle {
   return {
-    fontFamily: family,
+    ...font.face(family, weight),
     fontSize: size,
     lineHeight:
       Math.round(size * ratio * precision.lineHeight) / precision.lineHeight,
-    fontWeight: weight,
     letterSpacing:
       Math.round(size * tracking * precision.tracking) / precision.tracking,
   };
 }
 
-const { sans, serif } = font.family;
+const sans = 'sans';
+const serif = 'serif';
 /** display roles track at 0.02 em, labels at 0.04 em */
 const tracking = { display: 0.02, label: 0.04 } as const;
 
@@ -213,12 +272,11 @@ export const border = {
  * (shadowRadius = blur / 2) and Android uses an elevation, to be checked by eye on a device
  */
 export const elevation = {
+  // the sheet's two soft layers drawn as they are (New Architecture boxShadow): Android's
+  // elevation 2 approximation drew a darker, harder bottom edge than the design
   card: {
-    shadowColor: '#3C3018',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
-    elevation: 2,
+    boxShadow:
+      '0px 1px 2px rgba(60,48,24,0.06), 0px 4px 16px rgba(60,48,24,0.07)',
   },
   float: {
     shadowColor: '#141E18',

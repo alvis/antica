@@ -5,12 +5,18 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { getItemAsync } from 'expo-secure-store';
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 import {
   recordDetailSchema,
   transcriptionConfirmedSchema,
 } from '@antica/contracts';
 
-import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
+import {
+  collectionRecord,
+  deviceMetrics,
+  renderMobile,
+} from '../../../mobile.spec.fixtures';
 import { LocaleProvider } from '../../../providers/LocaleProvider';
 
 import { CaptureContainer } from './CaptureContainer';
@@ -62,11 +68,13 @@ it.each(['response', 'failure'])(
       .mocked(useLocalSearchParams)
       .mockReturnValue({ recordId: nextRecord.id });
     await screen.rerender(
-      <QueryClientProvider client={view.client}>
-        <LocaleProvider>
-          <CaptureContainer />
-        </LocaleProvider>
-      </QueryClientProvider>,
+      <SafeAreaProvider initialMetrics={deviceMetrics}>
+        <QueryClientProvider client={view.client}>
+          <LocaleProvider>
+            <CaptureContainer />
+          </LocaleProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>,
     );
     await waitFor(() => expect(screen.getByText(nextRecord.code)).toBeTruthy());
     await act(async () => {
@@ -117,11 +125,13 @@ it('should not restore another record voice notes after navigating during secure
     .mocked(useLocalSearchParams)
     .mockReturnValue({ recordId: nextRecord.id });
   await screen.rerender(
-    <QueryClientProvider client={view.client}>
-      <LocaleProvider>
-        <CaptureContainer />
-      </LocaleProvider>
-    </QueryClientProvider>,
+    <SafeAreaProvider initialMetrics={deviceMetrics}>
+      <QueryClientProvider client={view.client}>
+        <LocaleProvider>
+          <CaptureContainer />
+        </LocaleProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>,
   );
   await waitFor(() => expect(screen.getByText(nextRecord.code)).toBeTruthy());
   await act(async () => previous.resolve(jobId));

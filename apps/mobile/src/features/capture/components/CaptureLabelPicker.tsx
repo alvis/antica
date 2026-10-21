@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { ActionButton, colors, styles } from '@antica/ui';
+import { ActionButton, colors, styles, theme } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
@@ -52,7 +52,11 @@ const layout = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  optionText: { color: colors.jade, fontSize: 16, fontWeight: '600' },
+  optionText: {
+    color: colors.jade,
+    fontSize: 16,
+    ...theme.font.face('sans', '600'),
+  },
   chosen: { backgroundColor: colors.jade },
   chosenText: { color: colors.card },
 });

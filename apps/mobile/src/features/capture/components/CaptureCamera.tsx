@@ -55,13 +55,17 @@ const layout = StyleSheet.create({
     borderRadius: 24,
     paddingHorizontal: 8,
   },
-  headerText: { color: colors.card, fontSize: 18, fontWeight: '700' },
+  headerText: {
+    color: colors.card,
+    fontSize: 18,
+    ...theme.font.face('sans', '700'),
+  },
   title: {
     flex: 1,
     textAlign: 'center',
     color: colors.card,
     fontSize: 20,
-    fontWeight: '700',
+    ...theme.font.face('sans', '700'),
   },
   viewfinder: { flex: 1, backgroundColor: '#000' },
   recordChip: {
@@ -73,7 +77,11 @@ const layout = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 6,
   },
-  recordChipText: { color: colors.card, fontSize: 16 },
+  recordChipText: {
+    ...theme.font.face('sans', '400'),
+    color: colors.card,
+    fontSize: 16,
+  },
   panel: {
     backgroundColor: colors.canvas,
     borderTopLeftRadius: 20,
@@ -93,7 +101,11 @@ const layout = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chipText: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  chipText: {
+    color: colors.text,
+    fontSize: 16,
+    ...theme.font.face('sans', '600'),
+  },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -125,7 +137,12 @@ const layout = StyleSheet.create({
     justifyContent: 'center',
   },
   switchText: { color: colors.jade, fontSize: 32 },
-  hint: { color: colors.muted, fontSize: 15, textAlign: 'center' },
+  hint: {
+    ...theme.font.face('sans', '400'),
+    color: colors.muted,
+    fontSize: 15,
+    textAlign: 'center',
+  },
 });
 
 /**

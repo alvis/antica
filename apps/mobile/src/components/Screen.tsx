@@ -16,18 +16,21 @@ import { useLocale } from '../providers/LocaleProvider';
 import type { FC, PropsWithChildren, ReactNode, Ref } from 'react';
 
 import type { AskContext } from '../features/assistant/ask-context';
-import type { AskAssistantState } from '../providers/AskAssistantProvider';
 
 export type ScreenProps = PropsWithChildren<{
   title?: string;
+  /** small meta line above the title, such as today's date on 今天 */
+  overline?: string;
   subtitle?: string;
   scrollable?: boolean;
   /** optional handle for scrolling to content after layout */
   scrollRef?: Ref<ScrollView>;
-  /** optional top-bar control left of the assistant pill, such as the Settings gear */
+  /** optional top-bar controls left of the assistant pill, such as search */
   action?: ReactNode;
   /** what the assistant pill attaches when it opens the ask sheet; nothing by default */
   askContext?: AskContext;
+  /** the primary action docked under the content, above the tab bar */
+  dock?: ReactNode;
 }>;
 
 const layout = StyleSheet.create({
@@ -37,10 +40,25 @@ const layout = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: theme.space[4],
-    paddingHorizontal: theme.space.page,
+    // the pill's face ends 10 dp from the edge, as in the sheet's top bar
+    paddingLeft: theme.space[4],
+    paddingRight: theme.space[10],
   },
   heading: { gap: theme.space[4] },
+  // the large-head sits directly under the 56 dp top bar, as in the sheet
+  underBar: { paddingTop: 0 },
+  fixedHeading: { paddingHorizontal: theme.space.page },
+  fixedHeadingAlone: { paddingTop: theme.space[8] },
+  overline: { ...theme.type.small, color: theme.color.text.tertiary },
   keyboard: { flex: 1 },
+  dock: {
+    gap: theme.space[6],
+    paddingHorizontal: theme.space.page,
+    paddingVertical: theme.space[12],
+    backgroundColor: theme.color.bg.dock,
+    borderTopWidth: theme.border.hairline.width,
+    borderTopColor: theme.border.hairline.color,
+  },
 });
 
 const noContext: AskContext = { kind: 'none' };
@@ -48,14 +66,35 @@ const noContext: AskContext = { kind: 'none' };
 /**
  * the assistant pill, labelled in the interface language and attached to its screen
  * @param props pill properties
+ * @param props.context what the pill attaches
+ * @param props.variant light on paper, or glass over a photo
+ * @returns the 48 dp entry that opens the ask sheet, or nothing outside the ask provider
+ */
+export const AskPill: FC<{
+  context: AskContext;
+  variant?: 'light' | 'onPhoto';
+}> = ({ context, variant }) => {
+  const ask = useAskAssistant();
+
+  // a screen outside the ask provider, such as sign-in, has no assistant to label
+  return ask ? (
+    <LabelledAskPill ask={ask} context={context} variant={variant} />
+  ) : null;
+};
+
+/**
+ * the pill once the ask sheet exists, labelled in the interface language
+ * @param props pill properties
  * @param props.ask the shared ask sheet
  * @param props.context what the pill attaches
- * @returns the 48 dp entry that opens the ask sheet
+ * @param props.variant light on paper, or glass over a photo
+ * @returns the pill
  */
-const AskPill: FC<{ ask: AskAssistantState; context: AskContext }> = ({
-  ask,
-  context,
-}) => {
+const LabelledAskPill: FC<{
+  ask: NonNullable<ReturnType<typeof useAskAssistant>>;
+  context: AskContext;
+  variant?: 'light' | 'onPhoto';
+}> = ({ ask, context, variant }) => {
   const { t } = useLocale();
 
   return (
@@ -63,6 +102,7 @@ const AskPill: FC<{ ask: AskAssistantState; context: AskContext }> = ({
       testID="ask-assistant"
       label={t('askAssistant')}
       expanded={ask.context !== null}
+      variant={variant}
       onPress={() => ask.open(context)}
     />
   );
@@ -87,7 +127,7 @@ const AppBar: FC<Pick<ScreenProps, 'action' | 'askContext'>> = ({
   return (
     <View testID="screen-app-bar" style={layout.appBar}>
       {action}
-      {ask && <AskPill ask={ask} context={askContext} />}
+      <AskPill context={askContext} />
     </View>
   );
 };
@@ -95,14 +135,20 @@ const AppBar: FC<Pick<ScreenProps, 'action' | 'askContext'>> = ({
 export const Screen: FC<ScreenProps> = ({
   children,
   title,
+  overline,
   subtitle,
   scrollable = true,
   scrollRef,
   action,
   askContext,
+  dock,
 }) => {
+  const ask = useAskAssistant();
+  // the bar renders whenever the screen has a control or the assistant (see AppBar)
+  const underBar = Boolean(action ?? ask);
   const heading = (title || subtitle) && (
     <View style={layout.heading}>
+      {overline && <Text style={layout.overline}>{overline}</Text>}
       {title && (
         <Text accessibilityRole="header" style={styles.title}>
           {title}
@@ -125,7 +171,10 @@ export const Screen: FC<ScreenProps> = ({
           <ScrollView
             ref={scrollRef}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.content}>
+            contentContainerStyle={[
+              styles.content,
+              heading && underBar && layout.underBar,
+            ]}>
             {heading}
             {children}
           </ScrollView>
@@ -133,15 +182,20 @@ export const Screen: FC<ScreenProps> = ({
           <>
             {heading && (
               <View
-                style={{
-                  paddingHorizontal: theme.space.page,
-                  paddingTop: theme.space[8],
-                }}>
+                style={[
+                  layout.fixedHeading,
+                  !underBar && layout.fixedHeadingAlone,
+                ]}>
                 {heading}
               </View>
             )}
             {children}
           </>
+        )}
+        {dock && (
+          <View testID="screen-dock" style={layout.dock}>
+            {dock}
+          </View>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>

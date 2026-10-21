@@ -1,8 +1,11 @@
 import { ActivityIndicator, Pressable, Text } from 'react-native';
 
+import { Icon } from './Icon.js';
 import { styles, theme } from './theme.js';
 
 import type { FC } from 'react';
+
+import type { IconName } from './Icon.js';
 
 /** properties for an accessible collection action */
 export type ActionButtonProps = {
@@ -12,6 +15,8 @@ export type ActionButtonProps = {
   secondary?: boolean;
   /** shows a spinner and blocks presses while the action runs */
   loading?: boolean;
+  /** design icon shown before the label, such as the camera on 拍攝新藏品 */
+  icon?: IconName;
   /** stable automation identifier for native tests and end-to-end flows */
   testID?: string;
 };
@@ -26,6 +31,7 @@ const button = theme.state.button;
  * @param root0.disabled prevents interaction when true
  * @param root0.secondary uses the outlined presentation when true
  * @param root0.loading shows progress and prevents interaction when true
+ * @param root0.icon design icon before the label
  * @param root0.testID stable automation identifier
  * @returns the native button
  */
@@ -35,6 +41,7 @@ export const ActionButton: FC<ActionButtonProps> = ({
   disabled,
   secondary,
   loading,
+  icon,
   testID,
 }) => {
   const blocked = Boolean(disabled) || Boolean(loading);
@@ -63,6 +70,7 @@ export const ActionButton: FC<ActionButtonProps> = ({
       {loading && (
         <ActivityIndicator size={button.spinner} color={resting.fg} />
       )}
+      {icon && !loading && <Icon name={icon} color={resting.fg} />}
       <Text
         style={[
           secondary ? styles.secondaryButtonText : styles.buttonText,

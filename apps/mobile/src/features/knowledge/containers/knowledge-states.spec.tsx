@@ -272,3 +272,16 @@ it('should retry a facet, clear filters, and open import from the knowledge tab'
   );
   expect(view.router.push).toHaveBeenCalledWith('/sources/new');
 });
+
+it('should head the knowledge tab with the saved library size', async () => {
+  await renderMobile(<KnowledgeRoute />, {
+    get: async (path) =>
+      path.includes('/topics?') ? topicsPage : { ...searchPage, total: 56 },
+  });
+
+  expect(
+    await screen.findByText(
+      '56 entries · three museums and Wikidata · every line cited',
+    ),
+  ).toBeTruthy();
+});

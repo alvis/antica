@@ -4,6 +4,8 @@ import { render } from '@testing-library/react-native';
 
 import { useRouter } from 'expo-router';
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 import { ApiTransport } from '@antica/client';
 import { recordDetailSchema } from '@antica/contracts';
 
@@ -32,6 +34,12 @@ export interface MobileResponses {
   post?: (path: string) => Promise<unknown>;
   patch?: (path: string) => Promise<unknown>;
 }
+
+/** a phone's frame and status-bar inset, so edge-to-edge screens can lay out their controls */
+export const deviceMetrics = {
+  frame: { x: 0, y: 0, width: 411, height: 914 },
+  insets: { top: 24, left: 0, right: 0, bottom: 0 },
+};
 
 /** device-local state a journey starts from */
 export interface MobileDevice {
@@ -109,6 +117,27 @@ function AfterLanguageLoads({
 }
 
 /**
+ * a navigation stack that records where the journey goes
+ * @returns the router the journey's screens read
+ */
+function navigationStack(): ReturnType<typeof useRouter> {
+  return {
+    replace: jest.fn(),
+    back: jest.fn(),
+    canGoBack: () => false,
+    push: jest.fn(),
+    navigate: jest.fn(),
+    dismiss: jest.fn(),
+    dismissTo: jest.fn(),
+    dismissAll: jest.fn(),
+    canDismiss: () => false,
+    setParams: jest.fn(),
+    reload: jest.fn(),
+    prefetch: jest.fn(),
+  };
+}
+
+/**
  * renders a native journey with isolated API, navigation, and query state
  * @param element native route or feature to render.
  * @param responses API replies for this journey.
@@ -135,20 +164,7 @@ export async function renderMobile(
   const patches = jest
     .spyOn(api, 'patch')
     .mockImplementation(responses.patch ?? (async () => collectionRecord));
-  const router = {
-    replace: jest.fn(),
-    back: jest.fn(),
-    canGoBack: () => false,
-    push: jest.fn(),
-    navigate: jest.fn(),
-    dismiss: jest.fn(),
-    dismissTo: jest.fn(),
-    dismissAll: jest.fn(),
-    canDismiss: () => false,
-    setParams: jest.fn(),
-    reload: jest.fn(),
-    prefetch: jest.fn(),
-  } satisfies ReturnType<typeof useRouter>;
+  const router = navigationStack();
   jest.mocked(useRouter).mockReturnValue(router);
   jest.mocked(useAuth).mockReturnValue({
     api,
@@ -167,11 +183,13 @@ export async function renderMobile(
     },
   });
   await render(
-    <QueryClientProvider client={client}>
-      <LocaleProvider preferences={preferences}>
-        <AfterLanguageLoads>{element}</AfterLanguageLoads>
-      </LocaleProvider>
-    </QueryClientProvider>,
+    <SafeAreaProvider initialMetrics={deviceMetrics}>
+      <QueryClientProvider client={client}>
+        <LocaleProvider preferences={preferences}>
+          <AfterLanguageLoads>{element}</AfterLanguageLoads>
+        </LocaleProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>,
   );
 
   return { api, commands, patches, reads, relatedReads, router, client };

@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { StatusBar } from 'react-native';
+import { StatusBar, View } from 'react-native';
 
 import { colors } from '@antica/ui';
 
 import { AskSheetContainer } from '../features/assistant/containers/AskSheetContainer';
 import { SessionNavigator } from '../features/auth/containers/SessionNavigator';
+import { useBundledFaces } from '../hooks/useBundledFaces';
 import { DevLocaleLink } from '../i18n/DevLocaleLink';
 import { AskAssistantProvider } from '../providers/AskAssistantProvider';
 import { AuthProvider } from '../providers/AuthProvider';
@@ -18,6 +19,13 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout(): ReactElement {
+  // Android draws only the page colour until its Traditional Chinese faces are in, so no text
+  // renders in the device locale's fallback forms first and no blank frame flashes after the splash
+  const facesReady = useBundledFaces();
+  if (!facesReady) {
+    return <View style={{ flex: 1, backgroundColor: colors.canvas }} />;
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.canvas} />

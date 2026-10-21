@@ -1,7 +1,10 @@
 export { ActionButton } from './ActionButton.js';
 export type { ActionButtonProps } from './ActionButton.js';
 export { AskAssistantPill, AssistantSeal } from './AskAssistantPill.js';
-export type { AskAssistantPillProps } from './AskAssistantPill.js';
+export type {
+  AskAssistantPillProps,
+  AssistantSealSize,
+} from './AskAssistantPill.js';
 export { Badge } from './Badge.js';
 export type { BadgeProps, BadgeTone } from './Badge.js';
 export { BottomSheet } from './BottomSheet.js';
@@ -12,6 +15,8 @@ export { ChecklistChip } from './ChecklistChip.js';
 export type { ChecklistChipProps, ChecklistStatus } from './ChecklistChip.js';
 export { CitationFootnote } from './CitationFootnote.js';
 export type { CitationFootnoteProps } from './CitationFootnote.js';
+export { Icon } from './Icon.js';
+export type { IconName, IconProps, IconSize } from './Icon.js';
 export { SegmentControl } from './SegmentControl.js';
 export type { SegmentControlProps, SegmentOption } from './SegmentControl.js';
 export { TextField } from './TextField.js';
@@ -20,3 +25,5 @@ export { ThumbnailStrip } from './ThumbnailStrip.js';
 export type { ThumbnailItem, ThumbnailStripProps } from './ThumbnailStrip.js';
 export { colors, styles, theme } from './theme.js';
 export type { Theme } from './theme.js';
+export { bundledFaces } from './faces.js';
+export type { FaceFamily, FontWeight } from './tokens.js';
