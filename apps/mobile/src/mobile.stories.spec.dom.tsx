@@ -66,7 +66,8 @@ describe('Mobile container story interactions', () => {
       await play({ canvasElement: canvas });
 
       expect(
-        canvas.querySelector('[data-testid="record-fields"]')?.textContent,
+        canvas.querySelector('[data-testid="record-collection-data"]')
+          ?.textContent,
       ).toContain('Study cabinet, shelf 2');
       expect(canvas.querySelector('input[aria-label="Name"]')).toBeNull();
     });

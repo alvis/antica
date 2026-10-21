@@ -61,3 +61,32 @@ export const WithFindSimilar: Story = {
     await expect(args.onFindSimilar).toHaveBeenCalledTimes(1);
   },
 };
+
+const six = [
+  ...items,
+  { id: 'mark', uri: photo, label: '款識' },
+  { id: 'rim', uri: photo, label: '口沿' },
+  { id: 'foot', uri: photo, label: '圈足' },
+];
+
+/** six photos: four show, the rest are counted, and 找相似 carries its icon */
+export const CountsTheRest: Story = {
+  render: ({ onFindSimilar }) => (
+    <ThumbnailStrip
+      items={six}
+      selectedId="front"
+      limit={4}
+      onSelect={fn<(id: string) => void>()}
+      action={{ label: '找相似', icon: 'imageSearch', onPress: onFindSimilar }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText('+2')).toBeInTheDocument();
+    await expect(canvas.queryByRole('button', { name: '口沿' })).toBeNull();
+    await expect(
+      canvas.getByRole('button', { name: '找相似' }),
+    ).toBeInTheDocument();
+  },
+};

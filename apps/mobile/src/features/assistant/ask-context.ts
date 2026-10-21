@@ -24,6 +24,8 @@ export type AskContext =
       readonly entryId: string;
       /** the entry's title in the interface language */
       readonly title: string;
+      /** a question already asked from the screen, such as 今日知識's, answered on opening */
+      readonly question?: string;
     }
   | {
       readonly kind: 'capture';
@@ -257,6 +259,21 @@ export function signInHelpQuestions(t: Translate): readonly AskQuestion[] {
 }
 
 /**
+ * finds the question a screen asked when it opened the sheet, answered without another tap
+ * @param context the screen's attachment
+ * @param questions the questions suggested for it
+ * @returns the asked question, or null when the collector has not asked one
+ */
+export function askedQuestion(
+  context: AskContext | null,
+  questions: readonly AskQuestion[],
+): AskQuestion | null {
+  return context?.kind === 'knowledge' && context.question
+    ? (questions.find((question) => question.id === 'asked') ?? null)
+    : null;
+}
+
+/**
  * writes two or three questions for the attached context; none of them changes a record
  * @param context the screen's attachment
  * @param t translator for the interface language
@@ -273,6 +290,16 @@ export function suggestAskQuestions(
       return suggestionQuestions(context, t);
     case 'knowledge':
       return [
+        ...(context.question
+          ? [
+              {
+                id: 'asked',
+                text: context.question,
+                kind: 'search',
+                query: context.title,
+              } as const,
+            ]
+          : []),
         {
           id: 'related',
           text: t('askEntryRelated'),

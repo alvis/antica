@@ -10,6 +10,7 @@ import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
 import {
+  askedQuestion,
   signInHelpQuestions,
   summarizeAskContext,
   suggestAskQuestions,
@@ -161,17 +162,19 @@ export const AskSheetContainer: FC = () => {
   const { t } = useLocale();
   const { authenticated } = useAuth();
   const context = ask?.context ?? null;
-  const [chosen, setChosen] = useState<AskQuestion | null>(null);
-  // each opening starts from the questions, not the last answer
-  useEffect(() => setChosen(null), [context]);
-  if (!ask) {
-    return null;
-  }
+  const [chosenId, setChosenId] = useState<string | null>(null);
   const questions = !context
     ? []
     : context.kind === 'none' && !authenticated
       ? signInHelpQuestions(t)
       : suggestAskQuestions(context, t);
+  // each opening starts from the questions, or from the answer to the one the screen asked
+  const openedId = askedQuestion(context, questions)?.id ?? null;
+  useEffect(() => setChosenId(openedId), [context, openedId]);
+  const chosen = questions.find((question) => question.id === chosenId) ?? null;
+  if (!ask) {
+    return null;
+  }
 
   const pick = (question: AskQuestion): void => {
     if (question.kind === 'message') {
@@ -182,7 +185,7 @@ export const AskSheetContainer: FC = () => {
 
       return;
     }
-    setChosen(question);
+    setChosenId(question.id);
   };
 
   return (

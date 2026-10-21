@@ -1,3 +1,7 @@
+import { useEffect } from 'react';
+
+import type { EffectCallback } from 'react';
+
 const storyRouter = {
   back: () => undefined,
   canDismiss: () => false,
@@ -29,4 +33,12 @@ export function useLocalSearchParams<
   Params extends Record<string, string | undefined>,
 >(): Partial<Params> {
   return {};
+}
+
+/**
+ * runs the effect once, because an isolated story screen is always the focused one
+ * @param effect focus effect, returning an optional blur cleanup
+ */
+export function useFocusEffect(effect: EffectCallback): void {
+  useEffect(effect, [effect]);
 }

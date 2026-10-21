@@ -14,6 +14,7 @@ import type { RecordDetail } from '@antica/contracts';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({
+  useFocusEffect: jest.fn(),
   useRouter: jest.fn(),
   useLocalSearchParams: jest.fn(),
 }));
@@ -254,16 +255,14 @@ it.each([
     await waitFor(() =>
       expect(screen.getByTestId('record-analysis-status-unknown')).toBeTruthy(),
     );
-    expect(screen.getByTestId('record-analysis-badge')).toHaveTextContent(
-      'Analysis status unavailable',
-    );
     expect(
       screen.getByText(
         'The latest analysis could not be loaded. Retry, or open it.',
       ),
     ).toBeTruthy();
     expect(screen.queryByTestId('record-analyse')).toBeNull();
-    await fireEvent.press(screen.getByTestId('record-open-run'));
+    // the run the record names stays one tap away under 建議, though it could not be read
+    await fireEvent.press(screen.getByRole('link', { name: 'Suggestions' }));
     expect(view.router.push).toHaveBeenCalledWith(`/analysis/${runId}`);
 
     unreadable = false;

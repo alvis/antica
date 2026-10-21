@@ -46,7 +46,10 @@ it('should render local loading, empty, failed and saved container stories', asy
   jest.useFakeTimers();
   try {
     for (const [story, id] of [
-      [stories.Saved, 'record-related-00000000-0000-4000-8000-000000000068'],
+      [
+        stories.Saved,
+        'record-related-open-00000000-0000-4000-8000-000000000068',
+      ],
       [stories.Loading, 'record-related-loading'],
       [stories.NoMatch, 'record-related-empty'],
       [stories.Failure, 'record-related-error'],

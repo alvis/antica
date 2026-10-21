@@ -11,6 +11,8 @@ export type SegmentOption<Value extends string> = {
   disabled?: boolean;
   /** count shown beside the label, such as pending suggestions */
   badge?: number;
+  /** opens another screen instead of becoming the current segment, so it reads as a link */
+  navigates?: boolean;
   testID?: string;
 };
 
@@ -70,7 +72,8 @@ const layout = StyleSheet.create({
 });
 
 /**
- * renders a tab-like segment bar; the current segment is not pressable again
+ * renders a tab-like segment bar; the current segment is not pressable again, and a segment that
+ * opens another screen is announced as a link
  * @param root0 segment bar properties
  * @param root0.accessibilityLabel spoken name of the bar
  * @param root0.value selected value
@@ -98,9 +101,9 @@ export const SegmentControl = <Value extends string>({
         <Pressable
           key={option.value}
           testID={option.testID}
-          accessibilityRole="tab"
+          accessibilityRole={option.navigates ? 'link' : 'tab'}
           accessibilityLabel={option.label}
-          aria-selected={selected}
+          aria-selected={option.navigates ? undefined : selected}
           accessibilityState={{ disabled: Boolean(option.disabled) }}
           accessibilityValue={
             option.badge ? { text: String(option.badge) } : undefined

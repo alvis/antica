@@ -1,5 +1,5 @@
 import { expect, it, jest } from '@jest/globals';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen } from '@testing-library/react-native';
 
 import RecordRoute from '../../../../app/(private)/collection/[recordId]';
 import RecordMessagesRoute from '../../../../app/(private)/collection/[recordId]/messages';
@@ -29,6 +29,7 @@ jest.mock(
   'expo-router',
   () =>
     ({
+      useFocusEffect: jest.fn<typeof import('expo-router').useFocusEffect>(),
       useRouter: jest.fn<typeof import('expo-router').useRouter>(),
       useLocalSearchParams: jest.fn<
         typeof import('expo-router').useLocalSearchParams
@@ -77,19 +78,13 @@ it('should invite the first message and open the area from the record screen', a
       path === `/v1/records/${recordId}` ? collectionRecord : emptyList,
   });
 
+  // the record hub's 對話 segment opens the conversation
   const opener = await screen.findByTestId('record-messages-entry');
-  expect(opener).toHaveAccessibleName(
-    'Open messages: Ask the assistant about this item by typing or speaking.',
-  );
+  expect(opener).toHaveAccessibleName('Chat');
   await fireEvent.press(opener);
 
   expect(view.router.push).toHaveBeenCalledWith(
     `/collection/${recordId}/messages`,
-  );
-  expect(view.reads).toHaveBeenCalledWith(
-    `${messagesPath}?limit=1`,
-    expect.anything(),
-    expect.anything(),
   );
   await screen.unmount();
 
@@ -102,24 +97,6 @@ it('should invite the first message and open the area from the record screen', a
     'Ask the assistant about this item by typing or speaking.',
   );
   expect(screen.getByTestId('record-message-send')).toBeDisabled();
-});
-
-it('should preview the newest message on the record screen', async () => {
-  await renderMobile(<RecordRoute />, {
-    get: async (path) =>
-      path === `/v1/records/${recordId}`
-        ? collectionRecord
-        : path === `${messagesPath}?limit=1`
-          ? page([entry('assistant', 'The glaze looks even.')])
-          : emptyList,
-  });
-
-  // the entry shows its empty prompt until the newest message has loaded
-  await waitFor(() =>
-    expect(screen.getByTestId('record-messages-entry')).toHaveAccessibleName(
-      'Open messages: The glaze looks even.',
-    ),
-  );
 });
 
 it('should show the newest page first and load older messages on request and on scroll-up', async () => {

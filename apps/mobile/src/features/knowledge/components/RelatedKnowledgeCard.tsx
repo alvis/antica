@@ -4,6 +4,8 @@ import { ActionButton, styles } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
+import { knowledgeKindKeys, relatedMatchFieldKeys } from '../related-match';
+
 import { KnowledgeCitations } from './KnowledgeCitations';
 
 import type { FC } from 'react';
@@ -20,17 +22,6 @@ export type RelatedKnowledgeCardProps = {
   onAttach?: (attachment: KnowledgeAttachment, title: string) => void;
   attachDisabled?: boolean;
 };
-const kindKeys = {
-  concept: 'knowledgeConcept',
-  method: 'knowledgeMethod',
-  object_example: 'knowledgeExample',
-} as const;
-const fieldKeys = {
-  category: 'knowledgeFacetCategory',
-  material: 'material',
-  period: 'period',
-  name: 'name',
-} as const;
 
 /**
  * Shows the server's match reasons and cited excerpt beside an explicit open action.
@@ -58,7 +49,7 @@ export const RelatedKnowledgeCard: FC<RelatedKnowledgeCardProps> = ({
         secondary
       />
       <Text style={styles.secondary}>
-        {t(kindKeys[card.kind])} ·{' '}
+        {t(knowledgeKindKeys[card.kind])} ·{' '}
         {card.category.map((category) => category.label).join(' · ')}
       </Text>
       {card.fallback && (
@@ -69,7 +60,7 @@ export const RelatedKnowledgeCard: FC<RelatedKnowledgeCardProps> = ({
       {card.matches.map((match, index) => (
         <Text key={index} style={styles.body}>
           {t('knowledgeMatchReason', {
-            reason: `${t(fieldKeys[match.field])}: ${match.label} (${match.value})`,
+            reason: `${t(relatedMatchFieldKeys[match.field])}: ${match.label} (${match.value})`,
           })}
         </Text>
       ))}

@@ -17,6 +17,8 @@ export { CitationFootnote } from './CitationFootnote.js';
 export type { CitationFootnoteProps } from './CitationFootnote.js';
 export { Icon } from './Icon.js';
 export type { IconName, IconProps, IconSize } from './Icon.js';
+export { PhotoScrim } from './PhotoScrim.js';
+export type { PhotoScrimProps } from './PhotoScrim.js';
 export { SegmentControl } from './SegmentControl.js';
 export type { SegmentControlProps, SegmentOption } from './SegmentControl.js';
 export { TextField } from './TextField.js';

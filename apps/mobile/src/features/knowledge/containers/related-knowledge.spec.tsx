@@ -57,7 +57,7 @@ it('should recover a local failure with retry', async () => {
   await fireEvent.press(screen.getByTestId('record-related-retry'));
 
   expect(
-    await screen.findByTestId(`record-related-${relatedCard.entryId}`),
+    await screen.findByTestId(`record-related-open-${relatedCard.entryId}`),
   ).toHaveTextContent(new RegExp(relatedCard.title));
 });
 
@@ -69,16 +69,14 @@ it('should show saved card context and open its exact revision without writing',
     />,
     { relatedKnowledge: async () => relatedPage },
   );
+  // the record hub's strip card names the entry and why it relates to this record
   const card = await screen.findByTestId(
-    `record-related-${relatedCard.entryId}`,
+    `record-related-open-${relatedCard.entryId}`,
   );
 
-  expect(card).toHaveTextContent(/Ceramics/);
-  expect(card).toHaveTextContent(/Cleveland Museum of Art/);
-  expect(card).toHaveTextContent(/The surface is dark/);
-  await fireEvent.press(
-    screen.getByTestId(`record-related-open-${relatedCard.entryId}`),
-  );
+  expect(card).toHaveTextContent(new RegExp(relatedCard.title));
+  expect(card).toHaveTextContent(/Related: Category ?“Ceramics”/);
+  await fireEvent.press(card);
 
   expect(view.router.push).toHaveBeenCalledWith(
     `/knowledge/${relatedCard.entryId}?view=revision&revision=3`,
@@ -178,10 +176,13 @@ it.each([
   { kind: 'method' as const, label: 'Method' },
   { kind: 'object_example' as const, label: 'Museum example' },
 ])(
-  'should display the saved $kind with its original-language fallback',
+  'should display the saved $kind with its original-language fallback in the composer tray',
   async ({ kind, label }) => {
     await renderMobile(
-      <RelatedKnowledgeContainer recordId={collectionRecord.id} />,
+      <RelatedKnowledgeContainer
+        recordId={collectionRecord.id}
+        onAttach={jest.fn()}
+      />,
       {
         relatedKnowledge: async () => ({
           ...relatedPage,

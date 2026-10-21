@@ -116,7 +116,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** the saved details, both location fields, and the way into the manual editor */
+/** the saved facts, both location fields, and 編輯 in the 資料 header */
 export const SavedRecord = {
   render: (args) => (
     <MobileStoryShell responses={readyResponses}>
@@ -127,7 +127,7 @@ export const SavedRecord = {
     await findStoryElement(canvasElement, '[data-testid="record-fields"]');
     await findStoryText(canvasElement, 'Study cabinet, shelf 2');
     await findStoryText(canvasElement, '8.4 cm');
-    (await findStoryButton(canvasElement, 'Edit details')).click();
+    (await findStoryButton(canvasElement, 'Edit')).click();
   },
 } satisfies Story;
 
@@ -176,10 +176,8 @@ export const SavedNotYetAnalysedInTraditionalChinese = {
       canvasElement,
       '[data-testid="record-analysis-status-unanalysed"]',
     );
-    await findStoryText(canvasElement, '✓ 已儲存');
-    await findStoryText(canvasElement, '尚未分析');
     await findStoryText(canvasElement, '資料已儲存，可隨時開始分析。');
-    (await findStoryButton(canvasElement, '分析')).click();
+    (await findStoryButton(canvasElement, '開始分析')).click();
     await findStoryText(
       canvasElement,
       `POST /v1/records/${storyRecord.id}/analyses`,
@@ -187,7 +185,7 @@ export const SavedNotYetAnalysedInTraditionalChinese = {
   },
 } satisfies Story;
 
-/** a run of the current input is still in progress, so the record links to it instead of starting another */
+/** a run of the current input is still in progress, so the record waits on it and 建議 links to it */
 export const Analysing = {
   render: (args) => (
     <MobileStoryShell
@@ -204,7 +202,10 @@ export const Analysing = {
       '[data-testid="record-analysis-status-running"]',
     );
     await findStoryText(canvasElement, 'Analyzing');
-    await findStoryButton(canvasElement, 'View analysis');
+    await findStoryElement(
+      canvasElement,
+      '[role="link"][data-testid="record-open-run-segment"]',
+    );
   },
 } satisfies Story;
 
@@ -224,8 +225,14 @@ export const NewEvidenceNotYetAnalysed = {
       canvasElement,
       '[data-testid="record-analysis-status-outdated"]',
     );
-    await findStoryText(canvasElement, 'New evidence not analyzed');
+    await findStoryText(
+      canvasElement,
+      'New evidence was added after the last analysis. Uploading never starts an analysis.',
+    );
     await findStoryButton(canvasElement, 'Analyze again');
-    await findStoryButton(canvasElement, 'View analysis');
+    await findStoryElement(
+      canvasElement,
+      '[role="link"][data-testid="record-open-run-segment"]',
+    );
   },
 } satisfies Story;

@@ -113,6 +113,17 @@ appId: ${APP_ID}
     element:
       id: record-field-location-detail
     direction: DOWN
+# The hub shows the headline facts; every other field is one tap away.
+- scrollUntilVisible:
+    element:
+      id: record-fields-toggle
+    direction: DOWN
+- tapOn:
+    id: record-fields-toggle
+- scrollUntilVisible:
+    element:
+      id: record-field-height
+    direction: DOWN
 - assertVisible:
     id: record-field-height
     text: ${HEIGHT} mm

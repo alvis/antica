@@ -203,7 +203,7 @@ describe('rc:AskSheet gaps and sign-in', () => {
     ).toEqual(['ask-question-code', 'ask-question-approved']);
     await fireEvent.press(screen.getByTestId('ask-question-approved'));
     expect(screen.getByTestId('ask-answer')).toHaveTextContent(
-      /操作說明 · 不涉及館藏知識/,
+      /操作說明·不涉及館藏知識/,
     );
   });
 

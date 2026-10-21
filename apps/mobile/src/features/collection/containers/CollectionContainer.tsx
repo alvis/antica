@@ -20,6 +20,7 @@ import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
 
 import { UploadResumeContainer } from '../../capture/containers/UploadResumeContainer';
+import { useTodayInbox } from '../../today/hooks/useTodayInbox';
 
 import { FreshnessOption } from '../components/FreshnessOption';
 
@@ -34,6 +35,9 @@ export const CollectionContainer: FC = () => {
   const { api } = useAuth();
   const { t } = useLocale();
   const searchField = useRef<TextInput>(null);
+  // the same counts 今天 shows: records on the first page, and how many of them wait on the collector
+  const inbox = useTodayInbox();
+  const waiting = new Set(inbox.items.map((item) => item.recordId)).size;
   const [text, setText] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
@@ -170,6 +174,16 @@ export const CollectionContainer: FC = () => {
   return (
     <Screen
       title={t('collection')}
+      overline={
+        // counts show only once every read behind them has settled, so neither undercounts
+        inbox.loading ||
+        inbox.error ||
+        inbox.settling ||
+        inbox.partialError ||
+        inbox.recordCount === null
+          ? undefined
+          : t('collectionOverline', { count: inbox.recordCount, waiting })
+      }
       action={
         <IconButton
           testID="collection-search"

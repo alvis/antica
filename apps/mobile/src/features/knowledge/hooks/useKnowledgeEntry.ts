@@ -47,6 +47,58 @@ interface KnowledgeEntryState {
   reload: () => Promise<void>;
 }
 const revisionConflictStatus = 409;
+/** what one knowledge detail read is keyed on */
+export interface KnowledgeDetailRead {
+  readonly api: ReturnType<typeof useAuth>['api'];
+  readonly userId: ReturnType<typeof useAuth>['userId'];
+  readonly locale: string;
+  readonly entryId: string;
+  readonly view: 'saved' | 'working' | 'revision';
+  /** immutable revision required by historical reads */
+  readonly revision?: number;
+}
+
+/**
+ * describes one knowledge detail read, shared by the entry screen and the cards that preview it
+ * @param read who reads which entry, in which view and language
+ * @param read.api
+ * @param read.userId
+ * @param read.locale
+ * @param read.entryId
+ * @param read.view
+ * @param read.revision
+ * @returns query options keyed on the owner, entry, view, language and revision
+ */
+export function knowledgeDetailQuery({
+  api,
+  userId,
+  locale,
+  entryId,
+  view,
+  revision,
+}: KnowledgeDetailRead): FetchQueryOptions<KnowledgeEntryDetailV2, Error> {
+  return {
+    queryKey: ['knowledge-detail', userId, entryId, view, locale, revision],
+    queryFn: async ({ signal }: QueryFunctionContext) => {
+      const read = knowledgeReadV2Schema.parse({
+        view,
+        locale,
+        revision: view === 'revision' ? revision : undefined,
+      });
+      const parameters = new URLSearchParams({ view, locale });
+      if (read.revision !== undefined) {
+        parameters.set('revision', String(read.revision));
+      }
+
+      return api.get(
+        `/v1/knowledge/${entryId}?${parameters}`,
+        knowledgeEntryDetailV2Schema,
+        signal,
+      );
+    },
+  };
+}
+
 /**
  * reads explicitly selected revisions and saves only after collector action
  * @param entryId owner-scoped entry identity
@@ -66,33 +118,15 @@ export function useKnowledgeEntry(
   const client = useQueryClient();
   const queryOptions = (
     selectedView: typeof view,
-  ): FetchQueryOptions<KnowledgeEntryDetailV2, Error> => ({
-    queryKey: [
-      'knowledge-detail',
+  ): FetchQueryOptions<KnowledgeEntryDetailV2, Error> =>
+    knowledgeDetailQuery({
+      api,
       userId,
-      entryId,
-      selectedView,
       locale,
+      entryId,
+      view: selectedView,
       revision,
-    ],
-    queryFn: async ({ signal }: QueryFunctionContext) => {
-      const read = knowledgeReadV2Schema.parse({
-        view: selectedView,
-        locale,
-        revision: selectedView === 'revision' ? revision : undefined,
-      });
-      const parameters = new URLSearchParams({ view: selectedView, locale });
-      if (read.revision !== undefined) {
-        parameters.set('revision', String(read.revision));
-      }
-
-      return api.get(
-        `/v1/knowledge/${entryId}?${parameters}`,
-        knowledgeEntryDetailV2Schema,
-        signal,
-      );
-    },
-  });
+    });
   const detail = useQuery(queryOptions(readView));
   const reload = async (): Promise<void> => {
     if (view === 'revision') {
