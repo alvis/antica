@@ -11,24 +11,27 @@ import {
   useState,
 } from 'react';
 
-import { ApiTransport } from '@antica/client';
-
 import { expoClient } from '@better-auth/expo/client';
 import { phoneNumberClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 
 import { readApiOrigin } from '../adapters/api-origin';
+import { createCookieStorage } from '../adapters/cookie-storage';
+import { MobileApiTransport } from '../adapters/mobile-api-transport';
 
 import type { FC, PropsWithChildren } from 'react';
 
+import type { ApiTransport } from '@antica/client';
+
 export const apiUrl = readApiOrigin(process.env.EXPO_PUBLIC_API_URL, __DEV__);
+const cookieStorage = createCookieStorage(SecureStore, 'antica_cookie');
 export const authClient = createAuthClient({
   baseURL: apiUrl,
   plugins: [
     expoClient({
       scheme: 'antica',
       storagePrefix: 'antica',
-      storage: SecureStore,
+      storage: cookieStorage,
     }),
     phoneNumberClient(),
   ],
@@ -68,17 +71,24 @@ const authContext = createContext<AuthContextValue | null>(null);
  * clears cached private data whenever a signed-in collector becomes signed out, however the
  * session ends: sign-out, expiry, a rejected cookie or a restore that no longer finds it
  * @param authenticated whether a collector is signed in now
+ * @param userId current owner, so switching accounts also discards private queries
  */
-function useClearCacheWhenSessionEnds(authenticated: boolean): void {
+function useClearCacheWhenSessionEnds(
+  authenticated: boolean,
+  userId: string | null,
+): void {
   const queryClient = useQueryClient();
-  const wasAuthenticated = useRef(false);
+  const previous = useRef({ authenticated: false, userId });
 
   useEffect(() => {
-    if (wasAuthenticated.current && !authenticated) {
+    if (
+      previous.current.authenticated &&
+      (!authenticated || previous.current.userId !== userId)
+    ) {
       queryClient.clear();
     }
-    wasAuthenticated.current = authenticated;
-  }, [authenticated, queryClient]);
+    previous.current = { authenticated, userId };
+  }, [authenticated, userId, queryClient]);
 }
 
 /** who is signed in, as the session reports them */
@@ -105,19 +115,28 @@ export const AuthProvider: FC<AuthProviderProps> = ({
   children,
   client = authClient,
 }) => {
+  const signedIn = useRef(false);
+  const sessionVersion = useRef(0);
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [identity, setIdentity] = useState(nobody);
-  useClearCacheWhenSessionEnds(authenticated);
+  useClearCacheWhenSessionEnds(authenticated, identity.userId);
 
   const refresh = async (): Promise<boolean> => {
+    const version = ++sessionVersion.current;
+    cookieStorage.clear();
     const result = await client.getSession();
-    const signedIn = Boolean(result.data?.session);
-    setAuthenticated(signedIn);
+    if (sessionVersion.current !== version) {
+      setLoading(false);
+      return false;
+    }
+    const restored = Boolean(result.data?.session);
+    signedIn.current = restored;
+    setAuthenticated(restored);
     setIdentity(identityOf(result.data?.user));
     setLoading(false);
 
-    return signedIn;
+    return restored;
   };
 
   useEffect(() => {
@@ -126,8 +145,12 @@ export const AuthProvider: FC<AuthProviderProps> = ({
 
   const value = useMemo<AuthContextValue>(() => {
     const forget = (): void => {
+      sessionVersion.current += 1;
+      signedIn.current = false;
+      cookieStorage.clear();
       setAuthenticated(false);
       setIdentity(nobody);
+      setLoading(false);
     };
 
     return {
@@ -141,13 +164,24 @@ export const AuthProvider: FC<AuthProviderProps> = ({
         } finally {
           // the device forgets the collector even when the server cannot be told
           forget();
+          await cookieStorage.remove();
         }
       },
       expire: forget,
-      api: new ApiTransport({
+      api: new MobileApiTransport({
+        refreshCookie: cookieStorage.clear,
+        getSessionVersion: () => sessionVersion.current,
         baseUrl: apiUrl,
         session: {
-          getCookie: async (): Promise<string> => client.getCookie(),
+          getCookie: async (): Promise<string> => {
+            if (!signedIn.current) {
+              return '';
+            }
+            const version = sessionVersion.current;
+            const cookie = await client.getCookie();
+
+            return sessionVersion.current === version ? cookie : '';
+          },
           onUnauthorized: forget,
         },
       }),

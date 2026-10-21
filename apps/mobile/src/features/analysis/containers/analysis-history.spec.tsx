@@ -11,6 +11,7 @@ import {
   secondProposalId,
 } from '../../../saved-analysis.spec.fixtures';
 
+import { withFinishedJob } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
@@ -28,8 +29,9 @@ const historyKey = ['record', collectionRecord.id, 'history'];
 const rowY = 200;
 const sectionY = 900;
 const contentGap = 24;
-const reads = async (path: string): Promise<unknown> =>
-  path.startsWith('/v1/analyses/') ? run : collectionRecord;
+const reads = withFinishedJob(async (path) =>
+  path.startsWith('/v1/analyses/') ? run : collectionRecord,
+);
 
 /**
  * lays out an element as the native renderer would
@@ -52,9 +54,7 @@ it('should leave every proposal unselected on first render', async () => {
     expect(checkbox).not.toBeChecked();
   }
   await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Apply selected changes (0)' }),
-    ).toBeDisabled(),
+    expect(screen.getByRole('button', { name: 'Apply 0' })).toBeDisabled(),
   );
   expect(view.commands).not.toHaveBeenCalled();
 });
@@ -64,9 +64,10 @@ it('should open the record the analysis belongs to', async () => {
     get: reads,
   });
 
-  await fireEvent.press(await screen.findByTestId('analysis-open-record'));
+  // the header's 資料 segment returns to the record hub rather than stacking another copy
+  await fireEvent.press(await screen.findByTestId('record-segment-data'));
 
-  expect(view.router.push).toHaveBeenCalledWith(
+  expect(view.router.dismissTo).toHaveBeenCalledWith(
     `/collection/${collectionRecord.id}`,
   );
 });
@@ -81,22 +82,18 @@ it('should confirm an apply, refresh the record history, and link to it', async 
 
   await fireEvent.press(screen.getAllByRole('checkbox')[0]);
   await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Apply selected changes (1)' }),
-    ).toBeEnabled(),
+    expect(screen.getByRole('button', { name: 'Apply 1' })).toBeEnabled(),
   );
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Apply selected changes (1)' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Apply 1' }));
 
-  expect(await screen.findByRole('alert')).toHaveTextContent(
-    'Applied to the record. The change is in its history.',
+  // 套用 shows what it wrote: the 紀錄 segment replaces the 建議 segment
+  await waitFor(() =>
+    expect(view.router.replace).toHaveBeenCalledWith(
+      `/collection/${collectionRecord.id}/history`,
+    ),
   );
   expect(view.client.getQueryState(historyKey)?.isInvalidated).toBe(true);
-  await fireEvent.press(screen.getByTestId('analysis-applied-history'));
-  expect(view.router.push).toHaveBeenCalledWith(
-    `/collection/${collectionRecord.id}/history`,
-  );
+  expect(view.router.push).not.toHaveBeenCalled();
 });
 
 it('should mark and scroll to the proposal opened from the change history without selecting it', async () => {
@@ -115,11 +112,10 @@ it('should mark and scroll to the proposal opened from the change history withou
   expect(focused).not.toBeSelected();
   expect(focused.props.accessibilityHint).toBe('Opened from change history');
   expect(focused).not.toBeChecked();
-  expect(screen.getByText('Opened from change history')).toBeTruthy();
   const other = screen.getByTestId(`analysis-proposal-${firstProposalId}`);
   expect(other.props.accessibilityHint).toBeUndefined();
 
-  await layOut(`analysis-proposal-${secondProposalId}`, rowY);
+  await layOut(`analysis-suggestion-${secondProposalId}`, rowY);
   expect(scrollTo).not.toHaveBeenCalled();
   await layOut('analysis-proposals', sectionY);
   await layOut('analysis-proposals', sectionY + rowY);
@@ -141,7 +137,7 @@ it('should scroll to the top when the focused proposal sits above the content ga
   await screen.findByTestId(`analysis-proposal-${firstProposalId}`);
 
   await layOut('analysis-proposals', 0);
-  await layOut(`analysis-proposal-${firstProposalId}`, 0);
+  await layOut(`analysis-suggestion-${firstProposalId}`, 0);
 
   await waitFor(() =>
     expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: false }),
@@ -151,21 +147,21 @@ it('should scroll to the top when the focused proposal sits above the content ga
 it('should wait for the record before scrolling, because its arrival moves the proposals', async () => {
   const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo');
   let finishRecord: () => void = () => undefined;
+  const recordRead = new Promise((resolve) => {
+    finishRecord = () => resolve(collectionRecord);
+  });
   await renderMobile(
     <AnalysisContainer runId={runId} proposalId={secondProposalId} />,
     {
-      get: async (path) =>
-        path.startsWith('/v1/analyses/')
-          ? run
-          : new Promise((resolve) => {
-              finishRecord = () => resolve(collectionRecord);
-            }),
+      get: withFinishedJob(async (path) =>
+        path.startsWith('/v1/analyses/') ? run : recordRead,
+      ),
     },
   );
   await screen.findByTestId(`analysis-proposal-${secondProposalId}`);
 
   await layOut('analysis-proposals', sectionY);
-  await layOut(`analysis-proposal-${secondProposalId}`, rowY);
+  await layOut(`analysis-suggestion-${secondProposalId}`, rowY);
   expect(scrollTo).not.toHaveBeenCalled();
   await act(async () => finishRecord());
 

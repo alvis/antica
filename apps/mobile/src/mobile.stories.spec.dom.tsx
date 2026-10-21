@@ -82,7 +82,7 @@ describe('Mobile container story interactions', () => {
 
       await play({ canvasElement: canvas });
 
-      await findStoryText(canvas, 'Apply selected changes (0)');
+      await findStoryText(canvas, 'Apply 0');
 
       expect(canvas.textContent).toContain('POST /v1/analyses/');
       expect(

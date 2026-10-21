@@ -1,3 +1,5 @@
+import { useRouter } from 'expo-router';
+
 import { useAuth } from '../../../../providers/AuthProvider';
 import { useLocale } from '../../../../providers/LocaleProvider';
 
@@ -6,7 +8,7 @@ import { useEditCard } from '../hooks/useEditCard';
 
 import type { FC } from 'react';
 
-import type { RecordMessageEntry } from '@antica/contracts';
+import type { RecordDetail, RecordMessageEntry } from '@antica/contracts';
 
 import type { EditCardState, EditCardUpdate } from '../hooks/useEditCardStates';
 
@@ -14,8 +16,8 @@ import type { EditCardState, EditCardUpdate } from '../hooks/useEditCardStates';
 export type EditCardContainerProps = {
   recordId: string;
   entry: RecordMessageEntry;
-  /** revision of the record the screen currently shows */
-  recordRevision: number | undefined;
+  /** record the screen currently shows */
+  record: RecordDetail | undefined;
   /** the card's state, held above the virtualised list */
   state: EditCardState;
   update: EditCardUpdate;
@@ -26,7 +28,7 @@ export type EditCardContainerProps = {
  * @param props card properties
  * @param props.recordId record the proposals change
  * @param props.entry assistant reply whose draft proposes the changes
- * @param props.recordRevision revision of the shown record
+ * @param props.record record currently shown
  * @param props.state the card's lifted state
  * @param props.update replaces the card's lifted state
  * @returns the card wired to the apply endpoint
@@ -34,17 +36,18 @@ export type EditCardContainerProps = {
 export const EditCardContainer: FC<EditCardContainerProps> = ({
   recordId,
   entry,
-  recordRevision,
+  record,
   state,
   update,
 }) => {
+  const router = useRouter();
   const { api } = useAuth();
   const { t } = useLocale();
   const card = useEditCard({
     api,
     recordId,
     entry,
-    recordRevision,
+    record,
     state,
     update,
     t,
@@ -56,11 +59,19 @@ export const EditCardContainer: FC<EditCardContainerProps> = ({
       editDraftId={entry.editDraftId}
       draft={entry.draft}
       decisions={card.decisions}
-      decisionCount={card.confirmedIds.length + card.rejectedIds.length}
+      counts={{
+        confirmed: card.confirmedIds.length,
+        rejected: card.rejectedIds.length,
+        undecided: card.undecidedIds.length,
+      }}
       applying={card.applying}
       error={card.error}
+      staleIds={card.staleIds}
       onDecide={card.decide}
       onApply={apply && (() => void apply())}
+      onOpenHistory={() =>
+        router.replace(`/collection/${encodeURIComponent(recordId)}/history`)
+      }
     />
   );
 };

@@ -177,6 +177,18 @@ export function distinctCardImages(
 }
 
 /**
+ * names a corpus provider in the interface language
+ * @param provider the provider's id, such as met
+ * @param t translator
+ * @returns the museum's name, else the id itself
+ */
+export function providerName(provider: string, t: LocaleState['t']): string {
+  return provider in providerNameKeys
+    ? t(providerNameKeys[provider as keyof typeof providerNameKeys])
+    : provider;
+}
+
+/**
  * names who holds the image and under what terms, such as 圖：克里夫蘭藝術博物館 · 開放館藏
  * @param image the shown image
  * @param t translator
@@ -184,10 +196,7 @@ export function distinctCardImages(
  */
 function creditLine(image: KnowledgeImage, t: LocaleState['t']): string {
   const rights = image.observedRights;
-  const provider =
-    image.provider in providerNameKeys
-      ? t(providerNameKeys[image.provider as keyof typeof providerNameKeys])
-      : image.provider;
+  const provider = providerName(image.provider, t);
 
   return t('knowledgePhotoCredit', {
     holder: rights?.holder ?? rights?.attribution ?? provider,

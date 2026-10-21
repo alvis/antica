@@ -1,6 +1,6 @@
 import { expect, it, jest } from '@jest/globals';
 import { QueryClient } from '@tanstack/react-query';
-import { act, fireEvent, screen } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { useState } from 'react';
 
@@ -50,7 +50,7 @@ function LabelProbe(): ReactElement {
   );
 }
 
-it('should label identifiers it cannot read with a short identifier', async () => {
+it('should use a localized fallback for unread knowledge labels', async () => {
   await renderMobile(<LabelProbe />, {
     get: async (path) => {
       if (path === '/v1/locations') {
@@ -60,8 +60,10 @@ it('should label identifiers it cannot read with a short identifier', async () =
     },
   });
 
-  expect(await screen.findByTestId('labels')).toHaveTextContent(
-    '00000000 | 00000000 | 00000000',
+  await waitFor(() =>
+    expect(screen.getByTestId('labels')).toHaveTextContent(
+      '00000000 | Unknown | 00000000',
+    ),
   );
 });
 

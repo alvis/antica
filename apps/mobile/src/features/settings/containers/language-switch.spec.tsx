@@ -128,6 +128,8 @@ it('should change only app-owned copy, leaving stored content untouched without 
     },
     savedLanguage('zh-Hant'),
   );
+  // the stored findings sit behind the analysis details
+  await fireEvent.press(await screen.findByTestId('analysis-details-toggle'));
   await screen.findAllByText('釉面開片細密，圈足露胎處有自然磨損。');
   await screen.findAllByText('青花纏枝蓮紋碗');
   for (const text of storedText) {

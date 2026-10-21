@@ -1,17 +1,23 @@
 import { Image } from 'react-native';
 
+import arrow from './icons/arrow.png';
 import back from './icons/back.png';
 import book from './icons/book.png';
 import camera from './icons/camera.png';
 import chat from './icons/chat.png';
 import check from './icons/check.png';
 import chevron from './icons/chevron.png';
+import close from './icons/close.png';
 import edit from './icons/edit.png';
 import grid from './icons/grid.png';
 import imageSearch from './icons/image-search.png';
+import info from './icons/info.png';
+import mic from './icons/mic.png';
+import ruler from './icons/ruler.png';
 import search from './icons/search.png';
 import spark from './icons/spark.png';
 import today from './icons/today.png';
+import undo from './icons/undo.png';
 import user from './icons/user.png';
 import { toImageSource } from './image-source.js';
 import { theme } from './theme.js';
@@ -20,18 +26,24 @@ import type { FC } from 'react';
 
 /** the approved sheet's stroke icons, rendered from its 24 dp symbols at 1.75 dp strokes */
 const glyphs = {
+  arrow,
   back,
   book,
   camera,
   chat,
   check,
   chevron,
+  close,
   edit,
   grid,
   imageSearch,
+  info,
+  mic,
+  ruler,
   search,
   spark,
   today,
+  undo,
   user,
 } as const;
 

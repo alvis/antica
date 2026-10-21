@@ -23,6 +23,14 @@ import type {
 } from '../../../i18n/preferences';
 
 jest.mock('@better-auth/expo/client', () => ({ expoClient: () => ({}) }));
+jest.mock(
+  'expo-secure-store',
+  () =>
+    ({
+      getItemAsync: jest.fn(async () => null),
+      deleteItemAsync: jest.fn(async () => undefined),
+    }) satisfies Partial<typeof import('expo-secure-store')>,
+);
 jest.mock('better-auth/client/plugins', () => ({
   phoneNumberClient: () => ({}),
 }));

@@ -186,7 +186,9 @@ it('should post typed text once per send with a fresh request key and the shown 
     await screen.findByTestId('record-message-input'),
   ).toHaveAccessibleName('Message to the assistant');
   await fireEvent.changeText(screen.getByTestId('record-message-input'), '   ');
-  expect(screen.getByTestId('record-message-send')).toBeDisabled();
+  // blank text offers voice, never a send
+  expect(screen.queryByTestId('record-message-send')).toBeNull();
+  expect(screen.getByTestId('record-message-voice')).toBeEnabled();
   await typeAndSend('  Is this Kangxi?  ');
   await waitFor(() =>
     expect(screen.getByTestId('record-message-input')).toHaveDisplayValue(''),
@@ -363,6 +365,20 @@ it('should post reviewed speech with its ready transcription and the revision on
   expect(screen.queryByTestId('record-message-voice-status')).toBeNull();
 });
 
+it('should offer a new recording after the collector clears a ready transcript', async () => {
+  const view = await renderMobile(<RecordMessagesRoute />, { get: reads() });
+  await speak(view);
+  await fireEvent.changeText(screen.getByTestId('record-message-input'), '');
+
+  expect(screen.queryByTestId('record-message-send')).toBeNull();
+  expect(screen.getByTestId('record-message-voice')).toBeEnabled();
+  await fireEvent.press(screen.getByTestId('record-message-voice'));
+  expect(screen.getByTestId('record-message-voice')).toHaveAccessibleName(
+    'Stop and transcribe',
+  );
+  expect(sentTo(view.commands, messagesPath)).toHaveLength(0);
+});
+
 it('should repeat an interrupted spoken message under its key and rebuild it once the words change', async () => {
   const view = await renderMobile(<RecordMessagesRoute />, { get: reads() });
   await speak(view);
@@ -471,11 +487,7 @@ it('should lock the composer while the recording is transcribed', async () => {
   jest.mocked(uploadMedia).mockResolvedValueOnce(audioAssetId);
   view.commands.mockResolvedValue({ jobId, transcriptionId });
 
-  await fireEvent.changeText(
-    await screen.findByTestId('record-message-input'),
-    'Draft',
-  );
-  await fireEvent.press(screen.getByTestId('record-message-voice'));
+  await fireEvent.press(await screen.findByTestId('record-message-voice'));
   await fireEvent.press(screen.getByTestId('record-message-voice'));
 
   await waitFor(() =>
@@ -483,7 +495,7 @@ it('should lock the composer while the recording is transcribed', async () => {
       'Transcribing your voice…',
     ),
   );
-  expect(screen.getByTestId('record-message-send')).toBeDisabled();
+  expect(screen.queryByTestId('record-message-send')).toBeNull();
   expect(screen.getByTestId('record-message-voice')).toBeDisabled();
   expect(screen.getByTestId('record-message-input').props.editable).toBe(false);
 });

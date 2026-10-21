@@ -384,6 +384,13 @@ export const FailedReply = {
       canvasElement,
       'Sources must be reattached before sending again.',
     );
+    // the 相關知識 tray stays collapsed; reselecting sources is one tap away
+    (
+      await findStoryElement(
+        canvasElement,
+        `[data-testid="record-messages-related-toggle"]`,
+      )
+    ).click();
     await findStoryElement(
       canvasElement,
       '[data-testid="record-messages-related"]',
@@ -424,9 +431,13 @@ export const EditCardReady = {
       canvasElement,
       `[data-testid="record-message-card-apply-${draftId}"]`,
     );
-    await findStoryText(canvasElement, 'Apply decisions (2)');
+    await findStoryText(canvasElement, 'Write 1 confirmed change');
     apply.click();
-    await findStoryText(canvasElement, 'All changes decided; some not applied');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-status-resolved-${draftId}"]`,
+    );
+    await findStoryText(canvasElement, 'Wrote Name');
     await findStoryElement(
       canvasElement,
       `[data-testid="record-message-card-applied-name-${nameChangeId}"]`,
@@ -446,7 +457,15 @@ export const RejectOnly = {
       `[data-testid="record-message-card-reject-description-${descriptionChangeId}"]`,
     );
     reject.click();
-    await findStoryText(canvasElement, 'Apply decisions (1)');
+    // each row needs its own decision before anything is written
+    await findStoryText(canvasElement, '1 still to decide');
+    (
+      await findStoryElement(
+        canvasElement,
+        `[data-testid="record-message-card-reject-name-${nameChangeId}"]`,
+      )
+    ).click();
+    await findStoryText(canvasElement, 'Skip all · write nothing');
     (
       await findStoryElement(
         canvasElement,
@@ -457,7 +476,7 @@ export const RejectOnly = {
       canvasElement,
       `[data-testid="record-message-card-skipped-description-${descriptionChangeId}"]`,
     );
-    await findStoryText(canvasElement, 'Some changes decided');
+    await findStoryText(canvasElement, 'All skipped, nothing written');
   },
 } satisfies Story;
 
@@ -479,7 +498,15 @@ export const PartlyApplied = {
     />
   ),
   play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, 'Some changes applied');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-status-partly-applied-${draftId}"]`,
+    );
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-applied-name-${nameChangeId}"]`,
+    );
+    await findStoryText(canvasElement, '1 still to decide');
   },
 } satisfies Story;
 
@@ -501,7 +528,11 @@ export const AllApplied = {
     />
   ),
   play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, 'All changes applied');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-status-applied-${draftId}"]`,
+    );
+    await findStoryText(canvasElement, 'Wrote Name, Description');
   },
 } satisfies Story;
 
@@ -524,12 +555,15 @@ export const ResolvedWithSkipped = {
     />
   ),
   play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, 'All changes decided; some not applied');
+    await findStoryElement(
+      canvasElement,
+      `[data-testid="record-message-card-status-resolved-${draftId}"]`,
+    );
     await findStoryElement(
       canvasElement,
       `[data-testid="record-message-card-skipped-description-${descriptionChangeId}"]`,
     );
-    await findStoryText(canvasElement, 'Not applied');
+    await findStoryText(canvasElement, 'Skipped, not written');
   },
 } satisfies Story;
 
@@ -542,8 +576,8 @@ export const ResolvedWithSkippedInTraditionalChinese = {
     />
   ),
   play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, '所有變更均已處理，部分未套用');
-    await findStoryText(canvasElement, '未套用');
+    await findStoryText(canvasElement, '已處理');
+    await findStoryText(canvasElement, '已略過，不寫入');
   },
 } satisfies Story;
 
@@ -570,7 +604,13 @@ export const StaleChangeInTraditionalChinese = {
       `[data-testid="record-message-card-confirm-description-${descriptionChangeId}"]`,
     );
     confirm.click();
-    await findStoryText(canvasElement, '套用決定 (1)');
+    (
+      await findStoryElement(
+        canvasElement,
+        `[data-testid="record-message-card-reject-name-${nameChangeId}"]`,
+      )
+    ).click();
+    await findStoryText(canvasElement, '寫入 1 項確認的修改');
     (
       await findStoryElement(
         canvasElement,

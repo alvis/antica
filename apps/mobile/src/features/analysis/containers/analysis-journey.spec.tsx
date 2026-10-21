@@ -13,9 +13,10 @@ import {
   runId,
   firstProposalId,
   run,
+  secondProposalId,
 } from '../../../saved-analysis.spec.fixtures';
 
-import { conflictStatus } from './analysis.spec.fixtures';
+import { conflictStatus, withFinishedJob } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
@@ -27,21 +28,21 @@ jest.mock('expo-crypto', () => ({
 
 it('should apply only proposals the collector leaves selected', async () => {
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/') ? run : collectionRecord,
+    ),
   });
   await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2));
+  await waitFor(() => expect(screen.getAllByRole('checkbox')[0]).toBeEnabled());
   expect(view.commands).not.toHaveBeenCalled();
   await fireEvent.press(screen.getAllByRole('checkbox')[0]);
   await fireEvent.press(screen.getAllByRole('checkbox')[1]);
   await fireEvent.press(screen.getAllByRole('checkbox')[1]);
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Apply selected changes (1)' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Apply 1' }));
   await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Apply selected changes (0)' }),
-    ).toBeTruthy(),
+    expect(view.router.replace).toHaveBeenCalledWith(
+      `/collection/${collectionRecord.id}/history`,
+    ),
   );
   expect(
     view.commands.mock.calls.map(([path, , options]) => ({
@@ -67,13 +68,14 @@ it('should apply an unchanged field after unrelated manual edits advance the inp
     tags: ['manually edited'],
   };
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/') ? run : currentRecord,
+    ),
   });
   await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2));
   await fireEvent.press(screen.getAllByRole('checkbox')[0]);
   const apply = screen.getByRole('button', {
-    name: 'Apply selected changes (1)',
+    name: 'Apply 1',
   });
   await waitFor(() => expect(apply).toBeEnabled());
   await fireEvent.press(apply);
@@ -96,8 +98,9 @@ it('should preserve selection after a stale write and retry against the refreshe
     analysisInputVersion: run.snapshot.analysisInputVersion + 1,
   };
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/') ? run : currentRecord,
+    ),
   });
   await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2));
   view.commands.mockRejectedValueOnce(
@@ -112,22 +115,18 @@ it('should preserve selection after a stale write and retry against the refreshe
     recordRevision: 2,
   });
   await fireEvent.press(screen.getAllByRole('checkbox')[0]);
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Apply selected changes (1)' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Apply 1' }));
   await waitFor(() =>
     expect(screen.getByRole('alert')).toHaveTextContent(
       /Review the latest revision/,
     ),
   );
   expect(screen.getAllByRole('checkbox')[0]).toBeChecked();
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Apply selected changes (1)' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Apply 1' }));
   await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Apply selected changes (0)' }),
-    ).toBeTruthy(),
+    expect(view.router.replace).toHaveBeenCalledWith(
+      `/collection/${collectionRecord.id}/history`,
+    ),
   );
   expect(view.commands.mock.calls.map(([, , options]) => options.body)).toEqual(
     [
@@ -170,9 +169,11 @@ it.each(['Evidence supplied', 'Dismiss action'])(
       },
     });
     const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-      get: async (path) =>
+      get: withFinishedJob(async (path) =>
         path.startsWith('/v1/analyses/') ? actionable : collectionRecord,
+      ),
     });
+    await fireEvent.press(await screen.findByTestId('analysis-details-toggle'));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: label })).toBeTruthy(),
     );
@@ -214,12 +215,66 @@ it('should translate finding status and proposal labels while preserving source 
   await renderMobile(
     <AnalysisContainer runId={runId} />,
     {
-      get: async (path) =>
+      get: withFinishedJob(async (path) =>
         path.startsWith('/v1/analyses/') ? localized : collectionRecord,
+      ),
     },
     savedLanguage('zh-Hant'),
   );
-  await waitFor(() => expect(screen.getByText('直接觀察 · 支持')).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByRole('checkbox', { name: '套用名稱建議' })).toBeTruthy(),
+  );
+  await fireEvent.press(screen.getByTestId('analysis-details-toggle'));
+  expect(screen.getByText('直接觀察 · 支持')).toBeTruthy();
   expect(screen.getByText('Visible wear')).toBeTruthy();
-  expect(screen.getByText(/名稱 · 待處理/)).toBeTruthy();
+});
+
+it('should mark a proposal stale and refuse its tick once its field changed since', async () => {
+  const edited = {
+    ...collectionRecord,
+    name: 'Collector name',
+    latestRunId: runId,
+  };
+  const view = await renderMobile(<AnalysisContainer runId={runId} />, {
+    get: withFinishedJob(async (path) =>
+      path.startsWith('/v1/analyses/') ? run : edited,
+    ),
+  });
+
+  expect(
+    await screen.findByTestId(
+      `analysis-suggestion-state-stale-${firstProposalId}`,
+    ),
+  ).toBeTruthy();
+  const stale = screen.getByTestId(`analysis-proposal-${firstProposalId}`);
+  expect(stale).toBeDisabled();
+  await waitFor(() =>
+    expect(screen.getByTestId('record-segment-suggestions')).toHaveTextContent(
+      'Suggestions2',
+    ),
+  );
+  await fireEvent.press(stale);
+  expect(stale).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Apply 0' })).toBeDisabled();
+  expect(view.commands).not.toHaveBeenCalled();
+});
+
+it('should list a stale proposal after the ones that can still be applied', async () => {
+  const edited = { ...collectionRecord, name: 'Collector name' };
+  await renderMobile(<AnalysisContainer runId={runId} />, {
+    get: withFinishedJob(async (path) =>
+      path.startsWith('/v1/analyses/') ? run : edited,
+    ),
+  });
+
+  await screen.findByTestId(
+    `analysis-suggestion-state-stale-${firstProposalId}`,
+  );
+  const cards = screen
+    .getAllByTestId(/^analysis-suggestion-[0-9a-f]{8}-[0-9a-f-]{27}$/u)
+    .map((card) => card.props.testID as string);
+  expect(cards).toEqual([
+    `analysis-suggestion-${secondProposalId}`,
+    `analysis-suggestion-${firstProposalId}`,
+  ]);
 });

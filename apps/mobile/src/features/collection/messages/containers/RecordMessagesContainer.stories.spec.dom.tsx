@@ -29,7 +29,7 @@ describe('RecordMessagesContainer stories', () => {
     },
   );
 
-  it('should send nothing for an applied card and keep the composer disabled when empty', async () => {
+  it('should send nothing for an applied card and offer only voice when the composer is empty', async () => {
     await withCanvas(<composed.AllApplied />, async (canvas) => {
       await composed.AllApplied.play?.({ canvasElement: canvas });
 
@@ -37,10 +37,11 @@ describe('RecordMessagesContainer stories', () => {
         canvas.querySelector('[data-testid^="record-message-card-apply-"]'),
       ).toBeNull();
       expect(
-        canvas
-          .querySelector('[data-testid="record-message-send"]')
-          ?.getAttribute('aria-disabled'),
-      ).toBe('true');
+        canvas.querySelector('[data-testid="record-message-send"]'),
+      ).toBeNull();
+      expect(
+        canvas.querySelector('[data-testid="record-message-voice"]'),
+      ).not.toBeNull();
       expect(canvas.textContent).not.toContain('POST ');
     });
   });

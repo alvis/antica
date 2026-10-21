@@ -35,7 +35,7 @@ export type RecordFieldLabels = {
 
 /**
  * reads the labels behind a record's identifiers: knowledge titles, general
- * locations, and media file names, falling back to a short identifier while one loads
+ * locations, and media file names; unread knowledge uses localized placeholders
  * @param ids identifiers to label
  * @returns label lookups, the location options, and the loaded media
  */

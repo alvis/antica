@@ -6,8 +6,15 @@ import { analysisRunDetailSchema } from '@antica/contracts';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
 import { runId } from '../../../saved-analysis.spec.fixtures';
 
-import { actionId, actionableRun } from './analysis.spec.fixtures';
+import {
+  actionId,
+  actionableRun,
+  openAnalysisDetails,
+  withFinishedJob,
+} from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
+
+const applyAttempts = 3;
 
 jest.mock(
   '../../../providers/AuthProvider',
@@ -49,9 +56,11 @@ it.each([
   'should preserve a collector reason after failed $status resolution and apply it on retry',
   async ({ button, status }) => {
     const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-      get: async (path) =>
+      get: withFinishedJob(async (path) =>
         path.startsWith('/v1/analyses/') ? actionableRun : collectionRecord,
+      ),
     });
+    await openAnalysisDetails();
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: button })).toBeEnabled(),
@@ -112,10 +121,12 @@ it('should navigate method instructions and retry a check without duplicating it
     ],
   });
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/') ? suggested : collectionRecord,
+    ),
     post: async () => ({ id: checkId }),
   });
+  await openAnalysisDetails();
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Start check' })).toBeTruthy(),
   );
@@ -145,3 +156,96 @@ it('should navigate method instructions and retry a check without duplicating it
     suggestedByRunId: runId,
   });
 });
+
+it('should retry applying the same analysis selection and revision under the same key', async () => {
+  const view = await renderMobile(<AnalysisContainer runId={runId} />, {
+    get: withFinishedJob(async (path) =>
+      path.startsWith('/v1/analyses/') ? actionableRun : collectionRecord,
+    ),
+    post: async () => {
+      throw new TypeError('Network request failed');
+    },
+  });
+  const changes = actionableRun.result.output!.proposedChanges;
+  const proposal = await screen.findByTestId(
+    `analysis-proposal-${changes[0].id}`,
+  );
+  await waitFor(() => expect(proposal).toBeEnabled());
+  await fireEvent.press(proposal);
+
+  await fireEvent.press(screen.getByTestId('analysis-apply'));
+  await waitFor(() =>
+    expect(screen.getByTestId('analysis-apply')).toBeEnabled(),
+  );
+  await fireEvent.press(screen.getByTestId('analysis-apply'));
+  await waitFor(() =>
+    expect(screen.getByTestId('analysis-apply')).toBeEnabled(),
+  );
+
+  expect(view.commands).toHaveBeenCalledTimes(2);
+  const [first, retry] = view.commands.mock.calls.map(
+    ([, , options]) => options,
+  );
+  expect(first.idempotencyKey).toEqual(expect.any(String));
+  expect(retry).toEqual(first);
+  expect(view.router.replace).not.toHaveBeenCalled();
+});
+
+it.each(['selection', 'revision'] as const)(
+  'should start a new stable analysis apply key when the %s changes',
+  async (changed) => {
+    let record = { ...collectionRecord };
+    const view = await renderMobile(<AnalysisContainer runId={runId} />, {
+      get: withFinishedJob(async (path) =>
+        path.startsWith('/v1/analyses/') ? actionableRun : record,
+      ),
+      post: async () => {
+        throw new TypeError('Network request failed');
+      },
+    });
+    const changes = actionableRun.result.output!.proposedChanges;
+    const proposal = await screen.findByTestId(
+      `analysis-proposal-${changes[0].id}`,
+    );
+    await waitFor(() => expect(proposal).toBeEnabled());
+    await fireEvent.press(proposal);
+    if (changed === 'revision') {
+      record = { ...record, recordRevision: 2 };
+      view.commands.mockRejectedValueOnce(
+        Object.assign(new Error('Record changed elsewhere'), { status: 409 }),
+      );
+    }
+    await fireEvent.press(screen.getByTestId('analysis-apply'));
+    await waitFor(() =>
+      expect(screen.getByTestId('analysis-apply')).toBeEnabled(),
+    );
+
+    if (changed === 'selection') {
+      await fireEvent.press(
+        screen.getByTestId(`analysis-proposal-${changes[1].id}`),
+      );
+    }
+    await fireEvent.press(screen.getByTestId('analysis-apply'));
+    await waitFor(() =>
+      expect(screen.getByTestId('analysis-apply')).toBeEnabled(),
+    );
+    await fireEvent.press(screen.getByTestId('analysis-apply'));
+    await waitFor(() =>
+      expect(screen.getByTestId('analysis-apply')).toBeEnabled(),
+    );
+
+    expect(view.commands).toHaveBeenCalledTimes(applyAttempts);
+    const [first, changedRequest, retry] = view.commands.mock.calls.map(
+      ([, , options]) => options,
+    );
+    expect(changedRequest.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(changedRequest.body).toEqual({
+      expectedRecordRevision: changed === 'revision' ? 2 : 1,
+      selectedProposalIds:
+        changed === 'selection'
+          ? changes.map((change) => change.id)
+          : [changes[0].id],
+    });
+    expect(retry).toEqual(changedRequest);
+  },
+);

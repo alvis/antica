@@ -3,11 +3,9 @@ import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import type { FlatList } from 'react-native';
 
-import type { RecordMessageEntry } from '@antica/contracts';
-
 /** where the list stands while opening a message named by a deep link */
-export interface MessageFocus {
-  listRef: RefObject<FlatList<RecordMessageEntry> | null>;
+export interface MessageFocus<Row extends { id: string }> {
+  listRef: RefObject<FlatList<Row> | null>;
   /** moves near a message the list has not measured yet, then tries the exact position again */
   onScrollToIndexFailed: (info: {
     index: number;
@@ -28,11 +26,11 @@ const retryDelayMs = 50;
  * @param entries the shown messages in list order, newest first for the inverted list
  * @returns the list handle and its fallback for unmeasured rows
  */
-export function useMessageFocus(
+export function useMessageFocus<Row extends { id: string }>(
   messageId: string | undefined,
-  entries: readonly RecordMessageEntry[],
-): MessageFocus {
-  const listRef = useRef<FlatList<RecordMessageEntry>>(null);
+  entries: readonly Row[],
+): MessageFocus<Row> {
+  const listRef = useRef<FlatList<Row>>(null);
   const decided = useRef(false);
   const retries = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout>>(undefined);

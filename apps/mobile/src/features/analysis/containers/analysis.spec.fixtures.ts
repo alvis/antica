@@ -1,4 +1,9 @@
-import { analysisRunDetailSchema } from '@antica/contracts';
+import { fireEvent, screen } from '@testing-library/react-native';
+
+import {
+  analysisRunDetailSchema,
+  jobStatusEnvelopeSchema,
+} from '@antica/contracts';
 
 import { collectionRecord } from '../../../mobile.spec.fixtures';
 import { run, runId } from '../../../saved-analysis.spec.fixtures';
@@ -33,3 +38,33 @@ export const actionableRun = analysisRunDetailSchema.parse({
     },
   },
 });
+
+/** the finished job of the saved run, which dates the 建議 header */
+export const finishedJob = jobStatusEnvelopeSchema.parse({
+  id: runId,
+  kind: 'analysis',
+  resourceId: runId,
+  state: { kind: 'succeeded', completedAt: '2026-10-13T01:00:00.000Z' },
+  createdAt: '2026-10-13T00:00:00.000Z',
+  updatedAt: '2026-10-13T01:00:00.000Z',
+  result: null,
+});
+
+/**
+ * answers the job read the 建議 header makes, otherwise defers to the test's reads
+ * @param read the test's own reads
+ * @returns reads that also answer the run's job
+ */
+export function withFinishedJob(
+  read: (path: string) => Promise<unknown>,
+): (path: string) => Promise<unknown> {
+  return async (path) =>
+    path.startsWith('/v1/jobs/') ? finishedJob : read(path);
+}
+
+/**
+ * opens the full analysis behind the suggestions, where findings, methods and actions live
+ */
+export async function openAnalysisDetails(): Promise<void> {
+  await fireEvent.press(await screen.findByTestId('analysis-details-toggle'));
+}

@@ -99,6 +99,18 @@ export function formatDateTime(instant: string, locale: Locale): string {
 }
 
 /**
+ * formats a day and time without the year, such as 10月20日 下午 2:46 or October 20, 2:46 PM
+ * @param instant ISO instant
+ * @param locale active interface locale
+ * @returns month, day and time in the interface language
+ */
+export function formatMonthDayTime(instant: string, locale: Locale): string {
+  const separator = locale === 'zh-Hant' ? ' ' : ', ';
+
+  return `${monthDay(new Date(Date.parse(instant)), locale)}${separator}${formatTimeOfDay(instant, locale)}`;
+}
+
+/**
  * names the day of an instant relative to now: today, yesterday, or its month and day
  * @param instant ISO instant
  * @param now the current moment on the device

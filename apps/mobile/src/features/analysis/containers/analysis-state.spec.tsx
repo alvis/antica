@@ -18,6 +18,7 @@ import {
 import { media } from '../../media/containers/media.spec.fixtures';
 
 import { supported } from './analysis-reference.spec.fixtures';
+import { openAnalysisDetails, withFinishedJob } from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
@@ -40,17 +41,19 @@ it('should expose failed analysis recovery without automatically launching anoth
     result: { ...run.result, output: null },
   });
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/') ? failed : collectionRecord,
+    ),
   });
   await waitFor(() =>
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Analysis could not finish. Review this item and choose Analyze again when ready.',
     ),
   );
-  expect(screen.queryByText('Processing')).toBeNull();
-  await fireEvent.press(screen.getByRole('button', { name: 'Open record' }));
-  expect(view.router.push).toHaveBeenCalledWith(
+  expect(screen.queryByTestId('analysis-open-chat')).toBeNull();
+  // recovery is the record itself, reached through the header's 資料 segment
+  await fireEvent.press(screen.getByTestId('record-segment-data'));
+  expect(view.router.dismissTo).toHaveBeenCalledWith(
     `/collection/${collectionRecord.id}`,
   );
   expect(view.commands).not.toHaveBeenCalled();
@@ -79,9 +82,11 @@ it('should present hypotheses explicitly as pending research', async () => {
     },
   });
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/') ? hypotheses : collectionRecord,
+    ),
   });
+  await openAnalysisDetails();
   await waitFor(() =>
     expect(screen.getByText('Hypotheses pending research')).toBeTruthy(),
   );
@@ -92,13 +97,15 @@ it('should present hypotheses explicitly as pending research', async () => {
 
 it('should route mixed finding references by their individual reference kind', async () => {
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/')
         ? mixed
         : path.startsWith('/v1/media/')
           ? supported
           : collectionRecord,
+    ),
   });
+  await openAnalysisDetails();
   await waitFor(() =>
     expect(
       screen.getByRole('button', { name: 'Citation 30000000' }),

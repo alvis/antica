@@ -42,7 +42,7 @@ it('should show a just-saved record as saved and not yet analysed with an Analys
   expect(screen.queryByTestId('record-open-run')).toBeNull();
 });
 
-it('should start one analysis for repeated presses and open its run', async () => {
+it('should start one analysis for repeated presses and open its conversation', async () => {
   const view = await openRecord({
     latestRunId: null,
     analysisFreshness: 'unanalyzed',
@@ -70,7 +70,9 @@ it('should start one analysis for repeated presses and open its run', async () =
     expect.anything(),
     expect.objectContaining({ body: { expectedRecordRevision: 4 } }),
   ]);
-  expect(view.router.push).toHaveBeenCalledWith(`/analysis/${newRunId}`);
+  expect(view.router.push).toHaveBeenCalledWith(
+    `/collection/${collectionRecord.id}/messages?startedRunId=${newRunId}`,
+  );
 });
 
 it('should offer no analysis for a record without evidence', async () => {

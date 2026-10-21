@@ -171,46 +171,56 @@ function imageSources(node: HostNode): unknown[] {
 }
 
 /**
+ * finds the suggestion card a proposal checkbox belongs to
+ * @param proposal proposal checkbox
+ * @returns the card holding the proposal's field, values and reasons
+ */
+function suggestionCard(
+  proposal: Parameters<typeof within>[0],
+): Parameters<typeof within>[0] {
+  const testID = String(
+    (proposal as { props: { testID?: string } }).props.testID,
+  );
+
+  return screen.getByTestId(
+    testID.replace('analysis-proposal-', 'analysis-suggestion-'),
+  );
+}
+
+/**
  * verifies authored name content remains associated with the selected field
  * @param proposal name proposal checkbox
  * @param labels active locale labels
- * @param labels.previous previous-value label
- * @param labels.proposed proposed-value label
- * @param labels.empty shown for an empty value
+ * @param labels.current current-value line for an empty value
  */
 function expectNameContent(
   proposal: Parameters<typeof within>[0],
-  labels: { previous: string; proposed: string; empty: string },
+  labels: { current: string },
 ): void {
-  expect(within(proposal).getByText(labels.previous)).toBeTruthy();
-  expect(within(proposal).getByText(labels.empty)).toBeTruthy();
-  expect(within(proposal).getByText(labels.proposed)).toBeTruthy();
-  expect(within(proposal).getByText('Blue vase')).toBeTruthy();
-  expect(
-    within(proposal).getByText('Mixed supporting references'),
-  ).toBeTruthy();
+  const card = suggestionCard(proposal);
+  expect(within(card).getByText(labels.current)).toBeTruthy();
+  expect(within(card).getByText('Blue vase')).toBeTruthy();
+  expect(within(card).getByText('Mixed supporting references')).toBeTruthy();
 }
 
 it.each([
   {
     locale: 'en' as const,
     results: /^Review 2 suggestions$/,
+    title: 'Unnamed item',
     name: 'Name',
     description: 'Description',
-    previous: 'Previous',
-    proposed: 'Proposed',
-    empty: '(empty)',
-    apply: 'Apply selected changes',
+    current: 'Now: Not filled in',
+    apply: 'Apply 1',
   },
   {
     locale: 'zh-Hant' as const,
     results: /^檢閱 2 項建議$/,
+    title: '未命名藏品',
     name: '名稱',
     description: '描述',
-    previous: '目前內容',
-    proposed: '建議內容',
-    empty: '（空白）',
-    apply: '套用所選變更',
+    current: '目前：未填寫',
+    apply: '套用 1 項',
   },
 ])(
   'should reopen saved proposals in $locale and select without writing',
@@ -245,25 +255,24 @@ it.each([
       name: new RegExp(labels.description),
     });
     expectNameContent(nameProposal, labels);
+    expect(screen.getByRole('header', { name: labels.title })).toBeTruthy();
+    const descriptionCard = suggestionCard(descriptionProposal);
     // an empty description reads as empty rather than as quotes
-    expect(within(descriptionProposal).getByText(labels.empty)).toBeTruthy();
+    expect(within(descriptionCard).getByText(labels.current)).toBeTruthy();
+    expect(within(descriptionCard).getByText('Floral decoration')).toBeTruthy();
     expect(
-      within(descriptionProposal).getByText('Floral decoration'),
-    ).toBeTruthy();
-    expect(
-      within(descriptionProposal).queryByText('Mixed supporting references'),
+      within(descriptionCard).queryByText('Mixed supporting references'),
     ).toBeNull();
     expect(nameProposal).not.toBeChecked();
     expect(descriptionProposal).not.toBeChecked();
-    const applyButton = screen.getByRole('button', {
-      name: new RegExp(labels.apply),
-    });
+    const applyButton = screen.getByTestId('analysis-apply');
     expect(applyButton).toBeDisabled();
 
     await fireEvent.press(nameProposal);
     expect(nameProposal).toBeChecked();
     expect(descriptionProposal).not.toBeChecked();
     expect(applyButton).toBeEnabled();
+    expect(applyButton).toHaveAccessibleName(labels.apply);
     await fireEvent.press(nameProposal);
     expect(nameProposal).not.toBeChecked();
     expect(applyButton).toBeDisabled();

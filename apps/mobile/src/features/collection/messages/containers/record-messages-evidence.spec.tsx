@@ -81,14 +81,20 @@ jest.mock(
     }) satisfies Partial<typeof import('../../../../adapters/media-upload')>,
 );
 
+/**
+ * no current related candidates, so every knowledge read left is the one the frozen evidence makes
+ * (the 對話 screen otherwise reads current related entries for the 討論 example)
+ */
+const noRelated = { ...relatedPage, cards: [] };
+
 it('should render frozen historical citations and omit an answer-only edit card without fetching newer knowledge', async () => {
   const view = await renderMobile(
     <RecordMessagesContainer recordId={recordId} />,
     {
-      relatedKnowledge: async () => relatedPage,
+      relatedKnowledge: async () => noRelated,
       get: async (path) =>
         path.startsWith(relatedPath)
-          ? relatedPage
+          ? noRelated
           : path === `/v1/records/${recordId}`
             ? collectionRecord
             : page([answer]),
@@ -99,15 +105,24 @@ it('should render frozen historical citations and omit an answer-only edit card 
     `record-message-knowledge-${answer.id}-${claimId}`,
   );
   expect(evidence).toHaveTextContent(/Historical dark finish/);
-  expect(evidence).toHaveTextContent(/Qing/);
-  expect(evidence).toHaveTextContent(/Daylight/);
-  expect(evidence).toHaveTextContent(/Later finish may affect appearance/);
+  // scope and qualifiers live in the entry and citation panel, not inline
+  expect(evidence).not.toHaveTextContent(/Qing/);
+  expect(evidence).not.toHaveTextContent(/Daylight/);
+  expect(
+    screen.getByTestId(
+      `record-message-knowledge-open-${answer.id}-${relatedCard.entryId}`,
+    ),
+  ).toHaveTextContent(/Historical catalogue title/);
   expect(
     screen.queryByTestId(`record-message-card-${answer.editDraftId}`),
   ).toBeNull();
+  // the cite card may read only the revision frozen with the reply, never the current entry
   expect(
-    view.reads.mock.calls.some(([path]) => path.startsWith('/v1/knowledge/')),
-  ).toBe(false);
+    view.reads.mock.calls
+      .map(([path]) => path)
+      .filter((path) => path.startsWith('/v1/knowledge/'))
+      .every((path) => /[?&]revision=2(&|$)/.test(path)),
+  ).toBe(true);
   await fireEvent.press(
     screen.getByTestId(
       `record-message-knowledge-open-${answer.id}-${relatedCard.entryId}`,
@@ -122,13 +137,23 @@ it('should open and close frozen source metadata without reading current evidenc
   const view = await renderMobile(
     <RecordMessagesContainer recordId={recordId} />,
     {
-      relatedKnowledge: async () => relatedPage,
+      relatedKnowledge: async () => noRelated,
       get: async (path) =>
         path.startsWith(relatedPath)
-          ? relatedPage
+          ? noRelated
           : path === `/v1/records/${recordId}`
             ? collectionRecord
-            : page([answer]),
+            : page([
+                {
+                  ...answer,
+                  answerSegments: [
+                    {
+                      text: answer.body,
+                      evidenceRefs: [{ ...relatedAttachment, revision: 2 }],
+                    },
+                  ],
+                },
+              ]),
     },
   );
   await fireEvent.press(
@@ -150,9 +175,13 @@ it('should open and close frozen source metadata without reading current evidenc
       `knowledge-citation-panel-${relatedAttachment.citationIds[0]}`,
     ),
   ).toBeNull();
+  // the cite card may read only the revision frozen with the reply, never the current entry
   expect(
-    view.reads.mock.calls.some(([path]) => path.startsWith('/v1/knowledge/')),
-  ).toBe(false);
+    view.reads.mock.calls
+      .map(([path]) => path)
+      .filter((path) => path.startsWith('/v1/knowledge/'))
+      .every((path) => /[?&]revision=2(&|$)/.test(path)),
+  ).toBe(true);
 });
 
 it('should show only the citations referenced by answer segments', async () => {
@@ -232,7 +261,7 @@ it('should omit frozen claims that the answer does not cite', async () => {
             ]),
   });
 
-  await screen.findByText(answer.body);
+  await screen.findByText('No supported facts');
   expect(screen.queryByText('Historical catalogue title')).toBeNull();
   expect(
     screen.queryByTestId(`record-message-knowledge-${answer.id}-${claimId}`),

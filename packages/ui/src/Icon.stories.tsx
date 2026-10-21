@@ -26,6 +26,12 @@ const names: readonly IconName[] = [
   'imageSearch',
   'check',
   'chat',
+  'mic',
+  'arrow',
+  'undo',
+  'close',
+  'info',
+  'ruler',
 ];
 
 const meta = {

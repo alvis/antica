@@ -96,6 +96,7 @@ export function useRecordHub(recordId: string): RecordHub {
       job.data?.state.kind === 'succeeded'
         ? job.data.state.completedAt
         : undefined,
+    // Stale suggestions still need review, even though their checkboxes are disabled.
     suggestions: run.data ? pendingProposals(run.data) : [],
     editChanges: pendingEditChanges(conversation.data?.items ?? []),
     tasks: tasks.data?.items ?? [],

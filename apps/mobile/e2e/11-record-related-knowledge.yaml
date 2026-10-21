@@ -73,6 +73,15 @@ appId: ${APP_ID}
           timeout: 60000
       - tapOn:
           id: record-messages-entry
+      # the tray stays closed until asked for, so it never covers the thread's cards
+      - extendedWaitUntil:
+          visible:
+            id: record-messages-related-toggle
+          timeout: 60000
+      - assertNotVisible:
+          id: record-messages-related
+      - tapOn:
+          id: record-messages-related-toggle
       - extendedWaitUntil:
           visible:
             id: record-messages-related

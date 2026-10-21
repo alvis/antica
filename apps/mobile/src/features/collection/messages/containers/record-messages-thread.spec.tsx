@@ -96,7 +96,9 @@ it('should invite the first message and open the area from the record screen', a
   expect(await screen.findByTestId('record-messages-empty')).toHaveTextContent(
     'Ask the assistant about this item by typing or speaking.',
   );
-  expect(screen.getByTestId('record-message-send')).toBeDisabled();
+  // an empty composer offers voice, never a send
+  expect(screen.queryByTestId('record-message-send')).toBeNull();
+  expect(screen.getByTestId('record-message-voice')).toBeEnabled();
 });
 
 it('should show the newest page first and load older messages on request and on scroll-up', async () => {
@@ -158,6 +160,10 @@ it('should poll while a reply is pending and stop once it arrives', async () => 
     get: async (path) => {
       if (path === `/v1/records/${recordId}`) {
         return collectionRecord;
+      }
+      // only the thread read counts; the hub also reads the newest messages for its badge
+      if (path !== messagesPath) {
+        return page([]);
       }
       reads += 1;
 
@@ -260,6 +266,9 @@ it('should restore a failed message for an explicit send and explain source rese
   expect(screen.getByTestId('record-message-reattach-hint')).toHaveTextContent(
     'Sources must be reattached before sending again.',
   );
+  // the collapsed 相關知識 tray stays one tap away for reselecting sources
+  expect(screen.queryByTestId('record-messages-related')).toBeNull();
+  await fireEvent.press(screen.getByTestId('record-messages-related-toggle'));
   expect(screen.getByTestId('record-messages-related')).toBeVisible();
   expect(view.commands).not.toHaveBeenCalled();
 });
@@ -293,6 +302,10 @@ it('should retry a failed thread read', async () => {
     get: async (path) => {
       if (path === `/v1/records/${recordId}`) {
         return collectionRecord;
+      }
+      // only the thread read counts; the hub also reads the newest messages for its badge
+      if (path !== messagesPath) {
+        return page([]);
       }
       reads += 1;
       if (reads === 1) {

@@ -124,7 +124,9 @@ it('should send the revision on screen and retry once when only background proce
   await fireEvent.press(screen.getByTestId('record-analyse'));
 
   await waitFor(() =>
-    expect(view.router.push).toHaveBeenCalledWith(`/analysis/${newRunId}`),
+    expect(view.router.push).toHaveBeenCalledWith(
+      `/collection/${collectionRecord.id}/messages?startedRunId=${newRunId}`,
+    ),
   );
   expect(view.commands).toHaveBeenCalledTimes(2);
   const [first, second] = view.commands.mock.calls.map(
@@ -154,7 +156,9 @@ it('should retry a lost start reply with the same request key', async () => {
   await fireEvent.press(screen.getByTestId('record-analyse'));
 
   await waitFor(() =>
-    expect(view.router.push).toHaveBeenCalledWith(`/analysis/${newRunId}`),
+    expect(view.router.push).toHaveBeenCalledWith(
+      `/collection/${collectionRecord.id}/messages?startedRunId=${newRunId}`,
+    ),
   );
   const [first, second] = view.commands.mock.calls.map(
     (call) => (call[2] as { idempotencyKey: string }).idempotencyKey,
@@ -196,7 +200,9 @@ it.each([
     await fireEvent.press(screen.getByTestId('record-analyse'));
 
     await waitFor(() =>
-      expect(view.router.push).toHaveBeenCalledWith(`/analysis/${newRunId}`),
+      expect(view.router.push).toHaveBeenCalledWith(
+        `/collection/${collectionRecord.id}/messages?startedRunId=${newRunId}`,
+      ),
     );
     expect(view.commands.mock.calls[1]?.[2]).toMatchObject({
       body: { expectedRecordRevision: 7 },

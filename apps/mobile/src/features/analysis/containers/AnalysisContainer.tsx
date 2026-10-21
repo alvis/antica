@@ -6,7 +6,14 @@ import { useRouter } from 'expo-router';
 
 import { useRef, useState } from 'react';
 
-import { Linking, Pressable, Text, View } from 'react-native';
+import {
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import {
   actionResolutionRequestSchema,
@@ -16,51 +23,125 @@ import {
   mediaDetailSchema,
   recordCheckSchema,
   recordDetailSchema,
-  isProposalCurrent,
 } from '@antica/contracts';
-import { ActionButton, colors, styles } from '@antica/ui';
+import { ActionButton, styles, theme } from '@antica/ui';
 
-import { ProposalValues } from '../../../components/ProposalValues';
+import { jobStatusQuery } from '../../../adapters/transcription';
 import { QueryState } from '../../../components/QueryState';
 import { Screen } from '../../../components/Screen';
-import { localizeProposalField, localizeStatus } from '../../../i18n/messages';
+import { useKnowledgeTitles } from '../../../hooks/useKnowledgeTitles';
+import { localizeProposalField } from '../../../i18n/messages';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useLocale } from '../../../providers/LocaleProvider';
+import { formatMonthDayTime } from '../../../utils/calendar';
+import { proposalValueText } from '../../../utils/proposal-value';
+
+import { recordQuery } from '../../collection/api/record-query';
+import { RecordSegmentScreen } from '../../collection/components/RecordSegmentScreen';
+import { RecordSegmentHeaderContainer } from '../../collection/containers/RecordSegmentHeaderContainer';
 
 import { actionCaptureHref } from '../action-capture-href';
 import { analysisRunQuery } from '../api/analysis-run-query';
-import { ActionCard } from '../components/ActionCard';
+import { AnalysisDetails } from '../components/AnalysisDetails';
+import { NextStepCard } from '../components/NextStepCard';
+import { SuggestionCard } from '../components/SuggestionCard';
+import { useCitedEntries } from '../hooks/useCitedEntries';
 import { useProposalFocus } from '../hooks/useProposalFocus';
+import { currentFieldValue, runSuggestions } from '../suggestions';
 
 import type { FC } from 'react';
-
-import type { LayoutChangeEvent } from 'react-native';
 
 import type {
   ActionState,
   AnalysisRunDetail,
-  Finding,
-  ProposedChange,
+  NextAction,
+  RecordDetail,
 } from '@antica/contracts';
 
-import type { MessageKey } from '../../../i18n/messages';
 import type { LocaleState } from '../../../providers/LocaleProvider';
 
 import type { AskContext } from '../../assistant/ask-context';
+
+import type { ReferenceKind } from '../components/AnalysisDetails';
+import type { CitedEntry } from '../hooks/useCitedEntries';
 
 export type AnalysisContainerProps = {
   runId: string;
   /** proposal to scroll to and mark, when opened from a record's change history */
   proposalId?: string;
 };
-type ReferenceKind = 'evidence' | 'observation' | 'citation';
 
-/** button label of each kind of finding reference, followed by a short ID */
-const referenceLabelKeys = {
-  evidence: 'evidenceWithId',
-  observation: 'observationWithId',
-  citation: 'citationWithId',
-} as const satisfies Record<ReferenceKind, MessageKey>;
+const layout = StyleSheet.create({
+  content: { paddingBottom: theme.space[24] },
+  intro: {
+    ...theme.type.body2,
+    color: theme.color.text.secondary,
+    paddingTop: 14,
+    paddingHorizontal: theme.space.page,
+    paddingBottom: theme.space[4],
+  },
+  introStrong: {
+    ...theme.font.face('sans', '700'),
+    color: theme.color.text.primary,
+  },
+  sectionHeading: {
+    ...theme.type.section,
+    color: theme.color.text.primary,
+    paddingTop: theme.space.section,
+    paddingHorizontal: theme.space.page,
+  },
+  notice: {
+    ...theme.type.body2,
+    color: theme.color.text.secondary,
+    paddingTop: theme.space[16],
+    paddingHorizontal: theme.space.page,
+  },
+  inset: {
+    paddingHorizontal: theme.space.page,
+    paddingTop: theme.space[16],
+    gap: theme.space[12],
+  },
+  toggle: {
+    minHeight: theme.size.hitMin,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    marginHorizontal: theme.space.page,
+    marginTop: theme.space[16],
+  },
+  toggleText: {
+    ...theme.type.body2,
+    ...theme.font.face('sans', '600'),
+    color: theme.color.accent.default,
+  },
+  dock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space[12],
+    paddingVertical: theme.space[12],
+    paddingHorizontal: theme.space.page,
+    backgroundColor: theme.color.bg.dock,
+    borderTopWidth: theme.border.hairline.width,
+    borderTopColor: theme.border.hairline.color,
+  },
+  dockInfo: { flex: 1 },
+  dockTitle: {
+    ...theme.font.face('sans', '700'),
+    fontSize: 14,
+    lineHeight: 18.9,
+    color: theme.color.text.primary,
+  },
+  dockHint: {
+    ...theme.font.face('sans', '400'),
+    fontSize: 13,
+    lineHeight: 18.9,
+    color: theme.color.text.tertiary,
+  },
+  error: {
+    ...styles.error,
+    paddingHorizontal: theme.space.page,
+    paddingTop: theme.space[12],
+  },
+});
 
 /**
  * attaches the suggestion the collector is looking at, with its evidence, else the run's record
@@ -93,28 +174,37 @@ function analysisAskContext(
   };
 }
 
+/**
+ * the 建議 segment (v5 `suggestions`): each field suggestion with an empty tick, 討論這項, the next
+ * steps the analysis asks for, the full analysis on demand, and a dock that writes only the ticked
+ * suggestions before showing the change history
+ * @param props screen properties
+ * @param props.runId the analysis run whose suggestions are shown
+ * @param props.proposalId the suggestion opened from the change history, if any
+ * @returns the segment
+ */
 export const AnalysisContainer: FC<AnalysisContainerProps> = ({
   runId,
   proposalId,
 }) => {
   const router = useRouter();
   const { api } = useAuth();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
   const [actionText, setActionText] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [applied, setApplied] = useState(false);
+  const [details, setDetails] = useState(false);
   const checkRequestKeys = useRef(new Map<string, string>());
+  const applyRequestKeys = useRef(new Map<string, string>());
   const run = useQuery(analysisRunQuery(api, runId));
+  const recordId = run.data?.recordId;
   const record = useQuery({
-    queryKey: ['record', run.data?.recordId],
-    enabled: Boolean(run.data?.recordId),
-    queryFn: async ({ signal }) =>
-      api.get(`/v1/records/${run.data?.recordId}`, recordDetailSchema, signal),
+    ...recordQuery(api, recordId ?? ''),
+    enabled: Boolean(recordId),
   });
-  // the record's arrival moves the proposals, so the scroll waits for it
+  // the record's arrival moves the suggestions, so the scroll waits for it
   const focus = useProposalFocus(Boolean(record.data));
   const media = useQueries({
     queries: (run.data?.snapshot.assetIds ?? []).map((id) => ({
@@ -123,84 +213,138 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
         api.get(`/v1/media/${id}`, mediaDetailSchema, signal),
     })),
   });
+  const finished =
+    run.data?.status === 'completed' || run.data?.status === 'partial';
+  // the run carries no completion time; its job does
+  const job = useQuery({
+    ...jobStatusQuery(api, run.data?.jobId ?? null),
+    enabled: finished,
+  });
+  const cited = useCitedEntries(recordId, record.data?.recordRevision);
+  const output = run.data?.result.output;
+  const title = useKnowledgeTitles(
+    (output?.proposedChanges ?? []).flatMap((change) =>
+      change.field === 'materialIds' || change.field === 'categoryIds'
+        ? [
+            ...change.before,
+            ...change.proposed,
+            ...(record.data?.[change.field] ?? []),
+          ]
+        : [],
+    ),
+  );
+  const listed = run.data
+    ? runSuggestions(
+        run.data,
+        record.data,
+        media.flatMap((item) => (item.data ? [item.data] : [])),
+      )
+    : [];
+  // stale suggestions, which can no longer be applied, follow the rest (v5). The order is fixed once
+  // the record is first read: a card that moves while 套用 hands over to 紀錄 makes Android's renderer
+  // insert a view that still has a parent, so cards never move after that
+  const order = useRef<readonly string[]>(undefined);
+  if (!order.current && record.data && listed.length > 0) {
+    order.current = [
+      ...listed.filter((item) => item.state !== 'stale'),
+      ...listed.filter((item) => item.state === 'stale'),
+    ].map((item) => item.change.id);
+  }
+  const rank = (id: string): number => {
+    const index = order.current?.indexOf(id) ?? -1;
 
-  const openEvidence = (id: string): void => {
-    const detail = media.find((item) =>
-      item.data?.anchors.some((anchor) => anchor.id === id),
-    )?.data;
-    if (detail) {
-      router.push(`/media/${detail.asset.id}?anchorId=${id}`);
-    } else {
-      setError(t('sourceNeedsReview'));
-    }
+    return index === -1 ? Number.MAX_SAFE_INTEGER : index;
   };
+  const suggestions = [...listed].sort(
+    (left, right) => rank(left.change.id) - rank(right.change.id),
+  );
+  const openIds = new Set(
+    suggestions
+      .filter((suggestion) => suggestion.state === 'open')
+      .map((suggestion) => suggestion.change.id),
+  );
+  // a tick on a suggestion that went stale or was decided elsewhere no longer counts
+  const ticked = selected.filter((id) => openIds.has(id));
+  const staleSelection = suggestions.filter(
+    ({ change, state }) => state === 'stale' && selected.includes(change.id),
+  );
+  const recordPath = recordId
+    ? `/collection/${encodeURIComponent(recordId)}`
+    : '';
 
-  const openCitation = (id: string): void => {
-    const citation = run.data?.citations.find((item) => item.id === id);
-    if (!citation) {
-      setError(t('sourceNeedsReview'));
-
-      return;
-    }
-    if (citation.locator.kind === 'page') {
-      router.push(
-        `/sources/${citation.locator.sourceId}?versionId=${citation.locator.sourceVersionId}&pageId=${citation.locator.pageId}`,
-      );
-    } else {
-      void Linking.openURL(citation.locator.url);
-    }
+  const openEvidence = (assetId: string, anchorId: string): void => {
+    router.push(`/media/${assetId}?anchorId=${anchorId}`);
   };
 
   const openReference = (kind: ReferenceKind, id: string): void => {
     if (kind === 'evidence') {
-      openEvidence(id);
+      const detail = media.find((item) =>
+        item.data?.anchors.some((anchor) => anchor.id === id),
+      )?.data;
+      if (detail) {
+        openEvidence(detail.asset.id, id);
+      } else {
+        setError(t('sourceNeedsReview'));
+      }
     } else if (kind === 'observation') {
-      router.push(`/collection/${run.data?.recordId}?observationId=${id}`);
+      router.push(`${recordPath}?observationId=${id}`);
     } else {
-      openCitation(id);
+      const citation = run.data?.citations.find((item) => item.id === id);
+      if (!citation) {
+        setError(t('sourceNeedsReview'));
+      } else if (citation.locator.kind === 'page') {
+        router.push(
+          `/sources/${citation.locator.sourceId}?versionId=${citation.locator.sourceVersionId}&pageId=${citation.locator.pageId}`,
+        );
+      } else {
+        void Linking.openURL(citation.locator.url);
+      }
     }
   };
 
-  type LoadedRecord = NonNullable<typeof record.data>;
+  const openExample = (example: CitedEntry): void => {
+    router.push(
+      `/knowledge/${example.entryId}?view=revision&revision=${example.revision}`,
+    );
+  };
 
-  // the apply button is enabled only with the current record, a selection, and no save in flight
-  const apply = async (loaded: LoadedRecord): Promise<void> => {
+  // the apply button is enabled only with the current record, a tick, and no save in flight
+  const apply = async (loaded: RecordDetail): Promise<void> => {
+    if (busy || ticked.length === 0) {
+      return;
+    }
+    const selectedProposalIds = [...ticked].sort();
+    const identity = JSON.stringify([
+      runId,
+      loaded.recordRevision,
+      selectedProposalIds,
+    ]);
+    const requestKey = applyRequestKeys.current.get(identity) ?? randomUUID();
+    applyRequestKeys.current.set(identity, requestKey);
     setBusy(true);
     setError('');
-    setApplied(false);
     try {
       const request = applyAnalysisChangesSchema.parse({
         expectedRecordRevision: loaded.recordRevision,
-        selectedProposalIds: selected.filter((id) => {
-          const proposal = run.data?.result.output?.proposedChanges.find(
-            (change) => change.id === id,
-          );
-          return proposal && isProposalCurrent(loaded, proposal);
-        }),
+        selectedProposalIds,
       });
       await api.post(`/v1/analyses/${runId}/apply`, recordDetailSchema, {
         body: request,
-        idempotencyKey: randomUUID(),
+        idempotencyKey: requestKey,
       });
       // the record key prefix also refreshes the record's change history
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record', loaded.id] }),
         queryClient.invalidateQueries({ queryKey: ['analysis', runId] }),
-        // a decided suggestion no longer names related knowledge
-        queryClient.invalidateQueries({
-          queryKey: ['record-related-knowledge'],
-        }),
       ]);
       setSelected([]);
-      setApplied(true);
+      // 套用 then shows what it wrote, in place of the 建議 segment
+      router.replace(`${recordPath}/history`);
     } catch (cause) {
       const failure = cause as Error;
-      setError(
-        'status' in failure && failure.status === 409
-          ? t('conflict')
-          : failure.message,
-      );
-      if ('status' in failure && failure.status === 409) {
+      const conflict = 'status' in failure && failure.status === 409;
+      setError(conflict ? t('conflict') : failure.message);
+      if (conflict) {
         await record.refetch();
       }
     } finally {
@@ -210,12 +354,11 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
 
   // the resolution buttons are enabled only with the record loaded and no save in flight
   const resolveAction = async (
-    loaded: LoadedRecord,
+    loaded: RecordDetail,
     actionId: string,
     state: ActionState,
     status: 'supplied' | 'dismissed',
   ): Promise<void> => {
-    const revision = state.revision;
     const note =
       (actionText as Partial<Record<string, string>>)[actionId]?.trim() ?? '';
     if (!note) {
@@ -230,13 +373,13 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
         status === 'supplied'
           ? {
               status,
-              expectedActionRevision: revision,
+              expectedActionRevision: state.revision,
               expectedRecordRevision: loaded.recordRevision,
               support: { onSiteDescription: note },
             }
           : {
               status,
-              expectedActionRevision: revision,
+              expectedActionRevision: state.revision,
               expectedRecordRevision: loaded.recordRevision,
               reason: note,
             },
@@ -289,376 +432,290 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
     }
   };
 
-  const output = run.data?.result.output;
-  const askContext = analysisAskContext(run.data, proposalId ?? selected[0], t);
+  const actionHref = (action: NextAction, mode: 'photo' | 'describe'): string =>
+    actionCaptureHref({ recordId: recordId ?? '', runId, action }, mode);
+
+  const askContext = analysisAskContext(run.data, proposalId ?? ticked[0], t);
+
+  if (!run.data || !recordId) {
+    return (
+      <Screen title={t('recordSegSuggestions')} askContext={askContext}>
+        <QueryState
+          loading={run.isPending}
+          error={run.error}
+          retry={() => void run.refetch()}>
+          {null}
+        </QueryState>
+      </Screen>
+    );
+  }
+
+  const loadedRun = run.data;
+  const completedAt =
+    job.data?.state.kind === 'succeeded'
+      ? job.data.state.completedAt
+      : undefined;
+  const subtitle =
+    loadedRun.status === 'queued' || loadedRun.status === 'running'
+      ? t('suggestionsRunning')
+      : loadedRun.status === 'failed'
+        ? t('failed')
+        : completedAt
+          ? t('suggestionsAnalysedAt', {
+              when: formatMonthDayTime(completedAt, locale),
+            })
+          : undefined;
+  const pendingActions = (output?.nextActions ?? []).filter(
+    (action) =>
+      (loadedRun.result.actionStates.find((item) => item.actionId === action.id)
+        ?.status ?? 'pending') === 'pending',
+  );
+  const valueText = (
+    change: (typeof suggestions)[number]['change'],
+    value: (typeof suggestions)[number]['change']['before'],
+  ): string => proposalValueText(change, value, locale, t, title);
 
   return (
-    <Screen
-      title={t('results')}
-      askContext={askContext}
-      scrollRef={focus.scrollRef}
-      subtitle={
-        run.data
-          ? t('runStatusVersion', {
-              status: localizeStatus(run.data.status, t),
-              version: run.data.snapshot.analysisInputVersion,
-            })
-          : undefined
-      }>
-      <QueryState
-        loading={run.isPending}
-        error={run.error}
-        retry={() => void run.refetch()}>
-        {run.data && (
-          <>
-            <View style={styles.card}>
-              <Text style={styles.heading}>
-                {run.data.status === 'partial'
-                  ? t('partial')
-                  : run.data.status === 'completed'
-                    ? t('saved')
-                    : run.data.status === 'failed'
-                      ? t('failed')
-                      : t('processing')}
+    <RecordSegmentScreen
+      testID="analysis-suggestions"
+      header={
+        <RecordSegmentHeaderContainer
+          recordId={recordId}
+          current="suggestions"
+          subtitle={subtitle}
+          askContext={askContext}
+        />
+      }
+      footer={
+        suggestions.length > 0 && (
+          <View testID="analysis-dock" style={layout.dock}>
+            <View style={layout.dockInfo} accessibilityLiveRegion="polite">
+              <Text style={layout.dockTitle}>
+                {ticked.length > 0
+                  ? t('suggestionsTicked', { count: ticked.length })
+                  : t('suggestionsNoneTicked')}
               </Text>
-              {['queued', 'running'].includes(run.data.status) && (
-                <Text style={styles.body}>{t('jobResumes')}</Text>
-              )}
-              {run.data.status === 'failed' && (
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {t('analysisFailed')}
-                </Text>
-              )}
-              <ActionButton
-                secondary
-                testID="analysis-open-record"
-                label={t('openRecord')}
-                onPress={() => router.push(`/collection/${run.data.recordId}`)}
-              />
-              {record.data?.analysisInputVersion !==
-                run.data.snapshot.analysisInputVersion && (
-                <Text style={styles.error}>{t('newEvidence')}</Text>
-              )}
-              <ActionButton
-                label={t('addEvidence')}
-                onPress={() =>
-                  router.push(`/capture?recordId=${run.data.recordId}`)
-                }
-                secondary
-              />
+              <Text style={layout.dockHint}>
+                {ticked.length > 0
+                  ? t('suggestionsWriteOnPress')
+                  : t('suggestionsTickEach')}
+              </Text>
             </View>
-            {output && (
-              <>
-                <View style={styles.card}>
-                  <Text style={styles.heading}>{t('summary')}</Text>
-                  <Text style={styles.body}>{output.summary}</Text>
-                </View>
-                <FindingGroup
-                  title={t('photoClues')}
-                  findings={output.findings.filter(
-                    (finding) => finding.kind === 'visualObservation',
-                  )}
-                  onReference={openReference}
-                />
-                <FindingGroup
-                  title={t('collectorObservations')}
-                  findings={output.findings.filter(
-                    (finding) => finding.kind === 'collectorObservation',
-                  )}
-                  onReference={openReference}
-                />
-                <FindingGroup
-                  title={t('sourceClaims')}
-                  findings={output.findings.filter(
-                    (finding) => finding.kind === 'sourceStatement',
-                  )}
-                  onReference={openReference}
-                />
-                <FindingGroup
-                  title={t('hypothesesPendingResearch')}
-                  findings={output.findings.filter(
-                    (finding) => finding.kind === 'hypothesis',
-                  )}
-                  onReference={openReference}
-                />
-                {output.uncertainties.length > 0 && (
-                  <View style={styles.card}>
-                    <Text style={styles.heading}>{t('uncertainties')}</Text>
-                    {output.uncertainties.map((value, index) => (
-                      <Text key={index} style={styles.body}>
-                        {value}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-                <View style={styles.card}>
-                  <Text style={styles.heading}>{t('tasks')}</Text>
-                  {run.data.suggestedMethods.map((method) => (
-                    <View key={method.methodId} style={styles.card}>
-                      <Text style={styles.body}>{method.titleZhHant}</Text>
-                      <ActionButton
-                        label={t('startCheck')}
-                        onPress={() =>
-                          void createCheck(
-                            method.methodId,
-                            method.methodVersionId,
-                          )
-                        }
-                        disabled={busy}
-                        secondary
-                      />
-                      <ActionButton
-                        label={t('viewMethod')}
-                        onPress={() =>
-                          router.push(
-                            `/knowledge/${method.owningEntryId}?methodVersionId=${method.methodVersionId}`,
-                          )
-                        }
-                        secondary
-                      />
-                    </View>
-                  ))}
-                  {output.nextActions.map((action) => {
-                    const state = run.data.result.actionStates.find(
-                      (item) => item.actionId === action.id,
-                    );
-                    const target = {
-                      recordId: run.data.recordId,
-                      runId,
-                      action,
-                    };
+            <ActionButton
+              testID="analysis-apply"
+              label={t('suggestionsApply', { count: ticked.length })}
+              onPress={() => record.data && void apply(record.data)}
+              disabled={busy || ticked.length === 0 || !record.data}
+            />
+          </View>
+        )
+      }>
+      <ScrollView
+        ref={focus.scrollRef}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={layout.content}>
+        {(loadedRun.status === 'queued' || loadedRun.status === 'running') && (
+          <View style={layout.inset}>
+            <Text style={styles.body}>{t('jobResumes')}</Text>
+            <ActionButton
+              secondary
+              testID="analysis-open-chat"
+              label={t('suggestionsFollowInChat')}
+              onPress={() => router.replace(`${recordPath}/messages`)}
+            />
+          </View>
+        )}
+        {loadedRun.status === 'failed' && (
+          <Text accessibilityRole="alert" style={layout.notice}>
+            {t('analysisFailed')}
+          </Text>
+        )}
+        {record.data?.analysisInputVersion !==
+          loadedRun.snapshot.analysisInputVersion &&
+          record.data && <Text style={layout.notice}>{t('newEvidence')}</Text>}
+        {staleSelection.length > 0 && (
+          <View testID="analysis-selection-conflict" style={layout.inset}>
+            <Text accessibilityRole="alert" style={layout.error}>
+              {staleSelection
+                .map(({ change }) => localizeProposalField(change.field, t))
+                .join(' · ')}
+              {'：'}
+              {t('changeStale')}
+            </Text>
+            <Text style={layout.notice}>{t('conflict')}</Text>
+          </View>
+        )}
+        {suggestions.length > 0 && (
+          <Text style={layout.intro}>
+            {t('suggestionsIntroStart')}
+            <Text style={layout.introStrong}>
+              {t('suggestionsIntroStrong')}
+            </Text>
+            {t('suggestionsIntroEnd')}
+          </Text>
+        )}
+        <View
+          testID="analysis-proposals"
+          accessibilityRole="list"
+          accessibilityLabel={t('suggestionsGroupLabel')}
+          onLayout={proposalId ? focus.onSectionLayout : undefined}>
+          {suggestions.map((suggestion) => {
+            const { change } = suggestion;
+            const focused = change.id === proposalId;
+            const example = suggestion.citationIds
+              .map((id) => cited.get(id))
+              .find((entry) => entry !== undefined);
 
-                    return (
-                      <ActionCard
-                        key={action.id}
-                        action={action}
-                        status={state?.status ?? 'pending'}
-                        note={actionText[action.id] ?? ''}
-                        onNoteChange={(value) =>
-                          setActionText((current) => ({
-                            ...current,
-                            [action.id]: value,
-                          }))
-                        }
-                        busy={busy}
-                        canResolve={Boolean(record.data)}
-                        onCapture={() =>
-                          router.push(actionCaptureHref(target, 'photo'))
-                        }
-                        onDescribe={() =>
-                          router.push(actionCaptureHref(target, 'describe'))
-                        }
-                        onOpenCheck={() =>
-                          router.push(`/checks/${action.checkId}`)
-                        }
-                        onResolve={
-                          state
-                            ? (status) =>
-                                void resolveAction(
-                                  record.data!,
-                                  action.id,
-                                  state,
-                                  status,
-                                )
-                            : undefined
-                        }
-                      />
-                    );
-                  })}
-                </View>
-                <View
-                  testID="analysis-proposals"
-                  style={styles.card}
-                  onLayout={proposalId ? focus.onSectionLayout : undefined}>
-                  <Text style={styles.heading}>{t('proposal')}</Text>
-                  {output.proposedChanges.map((change) => (
-                    <ProposalRow
-                      key={change.id}
-                      change={change}
-                      status={
-                        (run.data.result.proposalStates.find(
-                          (item) => item.proposalId === change.id,
-                        )?.status ?? 'pending') === 'pending' &&
-                        record.data &&
-                        !isProposalCurrent(record.data, change)
-                          ? 'stale'
-                          : (run.data.result.proposalStates.find(
-                              (item) => item.proposalId === change.id,
-                            )?.status ?? 'pending')
-                      }
-                      evidence={output.findings
-                        .filter((finding) =>
-                          change.findingIds.includes(finding.id),
+            return (
+              <View
+                key={change.id}
+                onLayout={focused ? focus.onProposalLayout : undefined}>
+                <SuggestionCard
+                  suggestion={suggestion}
+                  beforeText={valueText(change, change.before)}
+                  proposedText={valueText(change, change.proposed)}
+                  currentText={
+                    record.data
+                      ? valueText(
+                          change,
+                          currentFieldValue(record.data, change.field),
                         )
-                        .map((finding) => finding.text)}
-                      checked={selected.includes(change.id)}
-                      onFocusLayout={
-                        change.id === proposalId
-                          ? focus.onProposalLayout
-                          : undefined
-                      }
-                      onToggle={() =>
-                        setSelected((current) =>
-                          current.includes(change.id)
-                            ? current.filter((id) => id !== change.id)
-                            : [...current, change.id],
-                        )
-                      }
-                    />
-                  ))}
-                  <ActionButton
-                    label={t('applySelectedCount', {
-                      count: selected.length,
-                    })}
-                    onPress={() => void apply(record.data!)}
-                    disabled={busy || selected.length === 0 || !record.data}
-                  />
-                  {applied && (
-                    <>
-                      <Text
-                        accessibilityRole="alert"
-                        accessibilityLiveRegion="polite"
-                        style={styles.body}>
-                        {t('appliedToRecord')}
-                      </Text>
-                      <ActionButton
-                        secondary
-                        testID="analysis-applied-history"
-                        label={t('viewChangeHistory')}
-                        onPress={() =>
-                          router.push(
-                            `/collection/${run.data.recordId}/history`,
-                          )
-                        }
-                      />
-                    </>
-                  )}
-                </View>
-              </>
-            )}
+                      : ''
+                  }
+                  example={example}
+                  checked={ticked.includes(change.id)}
+                  canTick={Boolean(record.data) && !busy}
+                  focused={focused}
+                  onToggle={() =>
+                    setSelected((current) =>
+                      current.includes(change.id)
+                        ? current.filter((id) => id !== change.id)
+                        : [...current, change.id],
+                    )
+                  }
+                  onDiscuss={() =>
+                    router.replace(
+                      `${recordPath}/messages?runId=${encodeURIComponent(runId)}&proposalId=${encodeURIComponent(change.id)}`,
+                    )
+                  }
+                  onOpenPhoto={openEvidence}
+                  onOpenExample={openExample}
+                />
+              </View>
+            );
+          })}
+        </View>
+        {pendingActions.length > 0 && (
+          <>
+            <Text accessibilityRole="header" style={layout.sectionHeading}>
+              {t('suggestionsNextSteps')}
+            </Text>
+            {pendingActions.map((action) => {
+              const measuring = /尺|測量|\b(ruler|scale|measure)\b/i.test(
+                action.instruction,
+              );
+              const photoUri =
+                action.kind === 'capturePhoto' && !measuring
+                  ? media
+                      .find((item) => item.data?.asset.kind === 'photo')
+                      ?.data?.reads.at(0)?.url
+                  : undefined;
+
+              return (
+                <NextStepCard
+                  key={action.id}
+                  testID={`analysis-next-${action.id}`}
+                  title={action.instruction}
+                  reason={action.reason}
+                  icon={
+                    action.kind === 'describe'
+                      ? 'edit'
+                      : measuring
+                        ? 'ruler'
+                        : 'camera'
+                  }
+                  photoUri={photoUri}
+                  onPress={() =>
+                    router.push(
+                      actionHref(
+                        action,
+                        action.kind === 'describe' ? 'describe' : 'photo',
+                      ),
+                    )
+                  }
+                />
+              );
+            })}
           </>
         )}
-      </QueryState>
-      {Boolean(error) && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      )}
-    </Screen>
-  );
-};
-
-type FindingGroupProps = {
-  title: string;
-  findings: Finding[];
-  onReference: (kind: ReferenceKind, id: string) => void;
-};
-const FindingGroup: FC<FindingGroupProps> = ({
-  title,
-  findings,
-  onReference,
-}) => {
-  const { t } = useLocale();
-
-  return (
-    <View style={styles.card}>
-      <Text style={styles.heading}>{title}</Text>
-      {findings.map((finding) => (
-        <View key={finding.id} style={styles.card}>
-          <Text style={styles.body}>{finding.text}</Text>
-          <Text style={styles.secondary}>
-            {t(finding.certainty)} · {t(finding.relation)}
-          </Text>
-          {[
-            ...finding.evidenceIds.map((id) => ({
-              id,
-              kind: 'evidence' as const,
-            })),
-            ...finding.observationIds.map((id) => ({
-              id,
-              kind: 'observation' as const,
-            })),
-            ...finding.citationIds.map((id) => ({
-              id,
-              kind: 'citation' as const,
-            })),
-          ].map(({ id, kind }) => (
+        {output && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: details }}
+            testID="analysis-details-toggle"
+            onPress={() => setDetails((current) => !current)}
+            style={layout.toggle}>
+            <Text style={layout.toggleText}>
+              {details
+                ? t('suggestionsHideDetails')
+                : t('suggestionsShowDetails')}
+            </Text>
+          </Pressable>
+        )}
+        {details && (
+          <View style={layout.inset}>
+            <AnalysisDetails
+              run={loadedRun}
+              actionText={actionText}
+              onActionTextChange={(actionId, value) =>
+                setActionText((current) => ({ ...current, [actionId]: value }))
+              }
+              busy={busy}
+              canResolve={Boolean(record.data)}
+              onReference={openReference}
+              onStartCheck={(methodId, methodVersionId) =>
+                void createCheck(methodId, methodVersionId)
+              }
+              onViewMethod={(entryId, methodVersionId) =>
+                router.push(
+                  `/knowledge/${entryId}?methodVersionId=${methodVersionId}`,
+                )
+              }
+              onCapture={(actionId) => {
+                const action = output?.nextActions.find(
+                  (item) => item.id === actionId,
+                );
+                if (action) {
+                  router.push(actionHref(action, 'photo'));
+                }
+              }}
+              onDescribe={(actionId) => {
+                const action = output?.nextActions.find(
+                  (item) => item.id === actionId,
+                );
+                if (action) {
+                  router.push(actionHref(action, 'describe'));
+                }
+              }}
+              onOpenCheck={(checkId) => router.push(`/checks/${checkId}`)}
+              onResolve={(actionId, state, status) =>
+                record.data &&
+                void resolveAction(record.data, actionId, state, status)
+              }
+            />
             <ActionButton
-              key={`${kind}:${id}`}
-              label={t(referenceLabelKeys[kind], { id: id.slice(0, 8) })}
-              onPress={() => onReference(kind, id)}
+              label={t('addEvidence')}
+              onPress={() => router.push(`/capture?recordId=${recordId}`)}
               secondary
             />
-          ))}
-        </View>
-      ))}
-      {findings.length === 0 && <Text style={styles.secondary}>—</Text>}
-    </View>
-  );
-};
-
-type ProposalRowProps = {
-  change: ProposedChange;
-  status: 'pending' | 'accepted' | 'skipped' | 'stale';
-  evidence: string[];
-  checked: boolean;
-  /** present only on the proposal opened from a record's change history */
-  onFocusLayout?: (event: LayoutChangeEvent) => void;
-  onToggle: () => void;
-};
-const ProposalRow: FC<ProposalRowProps> = ({
-  change,
-  status,
-  evidence,
-  checked,
-  onFocusLayout,
-  onToggle,
-}) => {
-  const { t } = useLocale();
-  const focused = Boolean(onFocusLayout);
-
-  return (
-    <Pressable
-      testID={`analysis-proposal-${change.id}`}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked, disabled: status !== 'pending' }}
-      // the marker is a hint, not a selected state, so it never reads as a preselection
-      accessibilityHint={focused ? t('openedFromHistory') : undefined}
-      disabled={status !== 'pending'}
-      onPress={onToggle}
-      onLayout={onFocusLayout}
-      style={
-        focused
-          ? [styles.card, { borderColor: colors.jade, borderWidth: 2 }]
-          : styles.card
-      }>
-      {focused && <Text style={styles.label}>{t('openedFromHistory')}</Text>}
-      <Text style={styles.heading}>
-        {checked ? '☑' : '☐'} {localizeProposalField(change.field, t)} ·{' '}
-        {status === 'stale' ? t('staleSuggestion') : localizeStatus(status, t)}
-      </Text>
-      <ProposalValues change={change} />
-      {change.confidence && (
-        <Text style={styles.secondary}>
-          {t(
-            (
-              {
-                high: 'confidenceHigh',
-                medium: 'confidenceMedium',
-                low: 'confidenceLow',
-              } as const
-            )[change.confidence],
-          )}
-        </Text>
-      )}
-      {status === 'stale' && (
-        <Text style={styles.secondary}>{t('staleSuggestionReason')}</Text>
-      )}
-      {evidence.map((value, index) => (
-        <Text key={index} style={styles.secondary}>
-          {value}
-        </Text>
-      ))}
-    </Pressable>
+          </View>
+        )}
+        {Boolean(error) && (
+          <Text accessibilityRole="alert" style={layout.error}>
+            {error}
+          </Text>
+        )}
+      </ScrollView>
+    </RecordSegmentScreen>
   );
 };
