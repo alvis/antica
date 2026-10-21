@@ -51,6 +51,8 @@ export const recordFieldsSchema = z.strictObject({
     width: lengthMeasurementSchema.optional(),
     depth: lengthMeasurementSchema.optional(),
     diameter: lengthMeasurementSchema.optional(),
+    /** a seat's height from the floor (座高), measured apart from the overall height */
+    seatHeight: lengthMeasurementSchema.optional(),
     weight: weightMeasurementSchema.optional(),
   }),
   location: z.strictObject({
@@ -80,6 +82,10 @@ export const recordFieldsSchema = z.strictObject({
   tags: z.array(z.string()),
   description: z.string(),
   collectorJudgment: z.string().nullable(),
+  /** the piece's condition (品相) in the collector's words, such as 椅面藤屜已換; null until noted */
+  condition: z.string().nullable().optional(),
+  /** surface appearance, independent of condition and collector observations */
+  surface: z.string().nullable().optional(),
 });
 export type RecordFields = z.infer<typeof recordFieldsSchema>;
 export const recordDetailSchema = recordFieldsSchema.safeExtend({
@@ -103,7 +109,18 @@ export type RecordCreate = z.infer<typeof recordCreateSchema>;
 export const recordPatchSchema = z
   .strictObject({
     expectedRevision: revisionSchema,
-    fields: recordFieldsSchema.partial(),
+    fields: recordFieldsSchema.partial().extend({
+      dimensions: z
+        .strictObject({
+          height: lengthMeasurementSchema.nullable().optional(),
+          width: lengthMeasurementSchema.nullable().optional(),
+          depth: lengthMeasurementSchema.nullable().optional(),
+          diameter: lengthMeasurementSchema.nullable().optional(),
+          seatHeight: lengthMeasurementSchema.nullable().optional(),
+          weight: weightMeasurementSchema.nullable().optional(),
+        })
+        .optional(),
+    }),
     editDraftId: entityIdSchema.optional(),
     acceptedProposalIds: z.array(entityIdSchema).optional(),
   })

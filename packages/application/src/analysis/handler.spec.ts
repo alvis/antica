@@ -108,6 +108,7 @@ const record: RecordDetail = {
   tags: [],
   description: '',
   collectorJudgment: null,
+  condition: null,
   recordRevision: 1,
   analysisInputVersion: 2,
   evidenceVersion: 3,

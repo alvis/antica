@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { recordFieldsOf } from './fields.js';
+import { recordPatchSchema } from '@antica/contracts';
 
-import type { RecordDetail } from '@antica/contracts';
+import { adoptedFields, recordFieldsOf } from './fields.js';
+
+import type { ProposedChange, RecordDetail } from '@antica/contracts';
 
 describe('fn:recordFieldsOf', () => {
   it('should project every editable field while excluding record lifecycle state', () => {
@@ -27,6 +29,7 @@ describe('fn:recordFieldsOf', () => {
       tags: ['ceramic'],
       description: 'Glazed',
       collectorJudgment: 'Likely old',
+      condition: 'Chipped rim',
     } satisfies Pick<
       RecordDetail,
       | 'name'
@@ -42,6 +45,7 @@ describe('fn:recordFieldsOf', () => {
       | 'tags'
       | 'description'
       | 'collectorJudgment'
+      | 'condition'
     >;
     const record: RecordDetail = {
       ...fields,
@@ -59,5 +63,51 @@ describe('fn:recordFieldsOf', () => {
     };
 
     expect(recordFieldsOf(record)).toEqual(fields);
+  });
+});
+
+const proposalId = '00000000-0000-4000-8000-000000000009';
+const diameter = { value: 21.8, unit: 'cm' } as const;
+const height = { value: 4.2, unit: 'cm' } as const;
+
+describe('fn:adoptedFields', () => {
+  it('should clear every measurement a dimensions proposal leaves out', () => {
+    const change: ProposedChange = {
+      id: proposalId,
+      findingIds: [],
+      field: 'dimensions',
+      before: { height },
+      proposed: { diameter },
+    };
+
+    const result = adoptedFields(change);
+
+    expect(result).toEqual({
+      dimensions: {
+        height: null,
+        width: null,
+        depth: null,
+        diameter,
+        seatHeight: null,
+        weight: null,
+      },
+    });
+    expect(
+      recordPatchSchema.parse(
+        JSON.parse(JSON.stringify({ expectedRevision: 1, fields: result })),
+      ).fields,
+    ).toEqual(result);
+  });
+
+  it('should write any other proposal as its field alone', () => {
+    const change: ProposedChange = {
+      id: proposalId,
+      findingIds: [],
+      field: 'condition',
+      before: null,
+      proposed: '椅面藤屜已換',
+    };
+
+    expect(adoptedFields(change)).toEqual({ condition: '椅面藤屜已換' });
   });
 });

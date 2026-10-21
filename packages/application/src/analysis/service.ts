@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
-import { sourceCitationSchema } from '@antica/contracts';
+import { isProposalCurrent, sourceCitationSchema } from '@antica/contracts';
 
-import { recordFieldsOf } from '../record/fields.js';
+import { adoptedFields, recordFieldsOf } from '../record/fields.js';
 
 import type {
   ActionResolutionRequest,
@@ -13,7 +13,7 @@ import type {
   MediaAsset,
   ModelSelection,
   RecordDetail,
-  RecordFields,
+  RecordPatch,
   RequestAnalysis,
   TaskPage,
   TaskQuery,
@@ -426,12 +426,9 @@ export function createAnalysisService(
             },
           };
         }
-        const fields: Partial<RecordFields> = {};
+        let fields: RecordPatch['fields'] = {};
         for (const proposal of selected) {
-          if (
-            JSON.stringify(record[proposal.field]) !==
-            JSON.stringify(proposal.before)
-          ) {
+          if (!isProposalCurrent(record, proposal)) {
             return {
               success: false,
               error: {
@@ -441,19 +438,7 @@ export function createAnalysisService(
               },
             };
           }
-          if (proposal.field === 'name') {
-            fields.name = proposal.proposed;
-          } else if (proposal.field === 'description') {
-            fields.description = proposal.proposed;
-          } else if (proposal.field === 'materialIds') {
-            fields.materialIds = proposal.proposed;
-          } else if (proposal.field === 'period') {
-            fields.period = proposal.proposed;
-          } else if (proposal.field === 'tags') {
-            fields.tags = proposal.proposed;
-          } else {
-            fields.collectorJudgment = proposal.proposed;
-          }
+          fields = { ...fields, ...adoptedFields(proposal) };
         }
         const versions = {
           recordRevision: record.recordRevision + 1,

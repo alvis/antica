@@ -8,6 +8,8 @@ import {
 
 import { jobStatusQuery } from '../../../adapters/transcription';
 import { useAuth } from '../../../providers/AuthProvider';
+import { useLocale } from '../../../providers/LocaleProvider';
+import { recordTitle } from '../../../utils/record-title';
 
 import { analysisRunQuery } from '../../analysis/api/analysis-run-query';
 import { recordQuery } from '../../collection/api/record-query';
@@ -71,6 +73,7 @@ export interface TodayInbox {
  */
 export function useTodayInbox(): TodayInbox {
   const { api } = useAuth();
+  const { t } = useLocale();
   const records = useQuery({
     queryKey: ['records', 'today'],
     queryFn: async ({ signal }) =>
@@ -140,7 +143,7 @@ export function useTodayInbox(): TodayInbox {
     ...runQueries,
     ...conversations,
   ];
-  const items = buildTodayInbox(states, tasks.data?.items ?? []);
+  const items = buildTodayInbox(states, tasks.data?.items ?? [], t('unnamed'));
   // the record whose analysis just finished comes first; otherwise the newest analysed one
   const justAnalysed = items.find((item) => item.kind === 'analysis');
 
@@ -155,6 +158,7 @@ export function useTodayInbox(): TodayInbox {
       details.map((detail) => detail.data),
       summaries.map((_, index) => runOf(index)),
       justAnalysed?.recordId,
+      t('unnamed'),
     ),
     loading: records.isPending || tasks.isPending,
     error: records.error ?? tasks.error,
@@ -223,12 +227,14 @@ function useRecordCount(
  * @param details record details in shelf order, newest first
  * @param runs each record's latest run
  * @param preferredId the record with fresh suggestions, if any
+ * @param unnamed localized title for records without a saved name
  * @returns that record and its next step, or null while none has finished
  */
 function newestAnalysed(
   details: ReadonlyArray<RecordDetail | undefined>,
   runs: ReadonlyArray<AnalysisRunDetail | undefined>,
   preferredId: string | undefined,
+  unnamed: string,
 ): AnalysedRecord | null {
   const preferred = details.findIndex((detail) => detail?.id === preferredId);
   const index =
@@ -247,7 +253,7 @@ function newestAnalysed(
   return detail
     ? {
         recordId: detail.id,
-        name: detail.name ?? detail.code,
+        name: recordTitle(detail.name, unnamed),
         recordRevision: detail.recordRevision,
         nextStep: nextAction?.instruction,
       }

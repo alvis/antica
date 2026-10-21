@@ -21,11 +21,19 @@ export interface DemoFinding {
 export type DemoProposal = {
   readonly key: string;
   readonly findingKeys: readonly string[];
+  readonly confidence?: 'high' | 'medium' | 'low';
 } & (
   | { readonly field: 'materialIds'; readonly proposedTerms: readonly string[] }
   | { readonly field: 'period'; readonly proposed: RecordFields['period'] }
-  | { readonly field: 'tags'; readonly proposed: readonly string[] }
+  | { readonly field: 'categoryIds'; readonly proposedTerms: readonly string[] }
+  | { readonly field: 'surface'; readonly proposed: string }
   | { readonly field: 'description'; readonly appendedText: string }
+  | {
+      readonly field: 'dimensions';
+      /** measurements the proposal was made against, before the collector measured the piece */
+      readonly staleBefore: RecordFields['dimensions'];
+      readonly proposed: RecordFields['dimensions'];
+    }
   | {
       readonly field: 'name';
       /** value the proposal was made against, which no longer matches the record */
@@ -97,7 +105,7 @@ export const demoAnalyses: readonly DemoAnalysis[] = [
         kind: 'visualObservation',
         text: '釉色青灰、通體開片；淺腹、圈足，屬盤形。',
         evidenceAngles: ['正面', '開片細節'],
-        citations: [],
+        citations: [`${metGuanDish}#catalogue-identity`],
         relation: 'supports',
         certainty: 'observed',
       },
@@ -124,10 +132,7 @@ export const demoAnalyses: readonly DemoAnalysis[] = [
         kind: 'hypothesis',
         text: '外觀接近 12–13 世紀的館藏例，但外觀不能定年；需要底足與支釘痕照片。',
         evidenceAngles: ['正面', '側面'],
-        citations: [
-          `${metGuanDish}#catalogue-date`,
-          `${ruBodyGlaze}#features-evidence`,
-        ],
+        citations: [`${ruBodyGlaze}#features-evidence`],
         relation: 'context',
         certainty: 'tentative',
       },
@@ -144,34 +149,48 @@ export const demoAnalyses: readonly DemoAnalysis[] = [
     proposals: [
       {
         key: 'dish-name',
+        confidence: 'high',
         field: 'name',
         findingKeys: ['dish-form'],
         staleBefore: null,
         proposed: '青釉開片盤',
       },
       {
-        key: 'dish-tags',
-        field: 'tags',
+        key: 'dish-type',
+        confidence: 'high',
+        field: 'categoryIds',
         findingKeys: ['dish-profile'],
-        proposed: ['盤', '圈足'],
+        proposedTerms: ['盤', '圈足'],
       },
       {
         key: 'dish-materials',
+        confidence: 'medium',
         field: 'materialIds',
         findingKeys: ['dish-material'],
         proposedTerms: ['炻器', '青釉'],
       },
       {
         key: 'dish-period',
+        confidence: 'low',
         field: 'period',
         findingKeys: ['dish-period'],
         proposed: { label: '宋至元風格（待查證）', status: 'unconfirmed' },
       },
       {
         key: 'dish-surface',
-        field: 'description',
+        confidence: 'medium',
+        field: 'surface',
         findingKeys: ['dish-surface'],
-        appendedText: '冰裂紋開片，釉面溫潤。',
+        proposed: '冰裂紋開片，釉面溫潤',
+      },
+      {
+        // estimated from the photos; the collector then measured 21.8, so the design shows it 已過時
+        key: 'dish-size',
+        confidence: 'medium',
+        field: 'dimensions',
+        findingKeys: ['dish-profile'],
+        staleBefore: {},
+        proposed: { diameter: { value: 21.5, unit: 'cm' } },
       },
     ],
     nextActions: [

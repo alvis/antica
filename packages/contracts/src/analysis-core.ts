@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { answerSegmentSchema } from './knowledge-evidence.js';
 
 import { periodSchema, recordFieldsSchema } from './record.js';
+
+import type { RecordFields } from './record.js';
 import {
   entityIdSchema,
   recordVersionsSchema,
@@ -71,6 +73,8 @@ export type NextAction = z.infer<typeof nextActionSchema>;
 const proposedChangeBase = {
   id: entityIdSchema,
   findingIds: z.array(entityIdSchema),
+  /** confidence in this field suggestion, never an authenticity assessment */
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
 };
 export const proposedChangeSchema = z.discriminatedUnion('field', [
   z.strictObject({
@@ -109,8 +113,68 @@ export const proposedChangeSchema = z.discriminatedUnion('field', [
     before: recordFieldsSchema.shape.collectorJudgment,
     proposed: recordFieldsSchema.shape.collectorJudgment,
   }),
+  z.strictObject({
+    ...proposedChangeBase,
+    field: z.literal('surface'),
+    before: z.string().nullable(),
+    proposed: z.string().nullable(),
+  }),
+  z.strictObject({
+    ...proposedChangeBase,
+    field: z.literal('categoryIds'),
+    before: recordFieldsSchema.shape.categoryIds,
+    proposed: recordFieldsSchema.shape.categoryIds,
+  }),
+  z.strictObject({
+    ...proposedChangeBase,
+    field: z.literal('condition'),
+    before: z.string().nullable(),
+    proposed: z.string().nullable(),
+  }),
+  // the whole set of measurements, so a suggestion never leaves a dimension half-replaced
+  z.strictObject({
+    ...proposedChangeBase,
+    field: z.literal('dimensions'),
+    before: recordFieldsSchema.shape.dimensions,
+    proposed: recordFieldsSchema.shape.dimensions,
+  }),
 ]);
 export type ProposedChange = z.infer<typeof proposedChangeSchema>;
+
+/**
+ * writes a field value with its object keys in code-point order and absent keys left out, so equal
+ * values read the same however their keys were ordered; an unset legacy field reads as null
+ * @param value field value as saved or proposed
+ * @returns the value's canonical JSON text
+ */
+function canonicalFieldValue(value: unknown): string {
+  return JSON.stringify(value ?? null, (_key, item: unknown) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item)
+            .filter(([, entry]) => entry !== undefined)
+            .sort(([left], [right]) => (left < right ? -1 : 1)),
+        )
+      : item,
+  );
+}
+
+/**
+ * tells whether a proposal still applies: its field must hold what the proposal was made against;
+ * the server refuses to adopt an outdated one, and the app marks no field for it
+ * @param fields the record's fields as they are now
+ * @param change the proposed change
+ * @returns whether the field is unchanged since the proposal was made
+ */
+export function isProposalCurrent(
+  fields: Pick<RecordFields, ProposedChange['field']>,
+  change: ProposedChange,
+): boolean {
+  return (
+    canonicalFieldValue(fields[change.field]) ===
+    canonicalFieldValue(change.before)
+  );
+}
 export const analysisOutputSchema = z.strictObject({
   summary: z.string(),
   findings: z.array(findingSchema),

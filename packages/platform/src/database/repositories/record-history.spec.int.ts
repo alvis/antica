@@ -34,6 +34,7 @@ const fields: RecordFields = {
   tags: [],
   description: 'Collector description',
   collectorJudgment: null,
+  condition: null,
 };
 const versions = {
   recordRevision: 1,

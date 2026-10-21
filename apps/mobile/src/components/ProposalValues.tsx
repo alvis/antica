@@ -21,9 +21,10 @@ export type ProposalValuesProps = { change: ProposedChange };
  */
 export const ProposalValues: FC<ProposalValuesProps> = ({ change }) => {
   const { t } = useLocale();
-  const materials = change.field === 'materialIds';
+  const materials =
+    change.field === 'materialIds' || change.field === 'categoryIds';
   const title = useKnowledgeTitles(
-    change.field === 'materialIds'
+    change.field === 'materialIds' || change.field === 'categoryIds'
       ? [...change.before, ...change.proposed]
       : [],
   );

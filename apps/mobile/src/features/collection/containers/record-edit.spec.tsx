@@ -153,6 +153,7 @@ it('should clear known values with null or omission and leave untouched fields o
       materialIds: [],
       period: null,
       dimensions: {
+        height: null,
         diameter: { value: 160, unit: 'mm' },
         weight: { value: 320, unit: 'g' },
       },

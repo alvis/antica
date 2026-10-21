@@ -104,6 +104,8 @@ export function createRecordService(
           tags: input.tags ?? [],
           description: input.description ?? '',
           collectorJudgment: input.collectorJudgment ?? null,
+          condition: input.condition ?? null,
+          surface: input.surface ?? null,
           id: ids.create(),
           code: await unit.records.allocateCode(),
           recordRevision: 1,

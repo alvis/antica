@@ -58,10 +58,10 @@ export const RelatedKnowledgeStripCard: FC<RelatedKnowledgeStripCardProps> = ({
   image,
   onOpen,
 }) => {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const match = card.matches.at(0);
   const why = match
-    ? t('relatedBecause', { reason: describeRelatedMatch(match, t) })
+    ? t('relatedBecause', { reason: describeRelatedMatch(match, t, locale) })
     : undefined;
 
   return (

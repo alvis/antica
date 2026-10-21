@@ -4,7 +4,7 @@ import { ActionButton, styles } from '@antica/ui';
 
 import { useLocale } from '../../../providers/LocaleProvider';
 
-import { knowledgeKindKeys, relatedMatchFieldKeys } from '../related-match';
+import { knowledgeKindKeys, relatedMatchField } from '../related-match';
 
 import { KnowledgeCitations } from './KnowledgeCitations';
 
@@ -60,7 +60,7 @@ export const RelatedKnowledgeCard: FC<RelatedKnowledgeCardProps> = ({
       {card.matches.map((match, index) => (
         <Text key={index} style={styles.body}>
           {t('knowledgeMatchReason', {
-            reason: `${t(relatedMatchFieldKeys[match.field])}: ${match.label} (${match.value})`,
+            reason: `${relatedMatchField(match, t)}: ${match.label} (${match.value})`,
           })}
         </Text>
       ))}

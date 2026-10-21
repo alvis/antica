@@ -31,6 +31,10 @@ export const editingFieldSchema = z.enum([
   'period',
   'tags',
   'collectorJudgment',
+  'surface',
+  'categoryIds',
+  'condition',
+  'dimensions',
 ]);
 
 const maximumKnowledgeAttachments = 6;

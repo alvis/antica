@@ -6,11 +6,17 @@ import {
   analysisRunDetailSchema,
   editDraftGenerationSchema,
   editDraftResultSchema,
+  isProposalCurrent,
+  proposedChangeSchema,
   validateAnalysisOutput,
   validateAnalysisReferences,
 } from './analysis.js';
 
-import type { AnalysisOutput, AnalysisReferenceSet } from './analysis.js';
+import type {
+  AnalysisOutput,
+  AnalysisReferenceSet,
+  ProposedChange,
+} from './analysis.js';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const output: AnalysisOutput = {
@@ -313,6 +319,112 @@ describe('edit draft result validation', () => {
         replyZhHant: '好的',
         extra: true,
       }).success,
+    ).toBe(false);
+  });
+});
+
+const proposalId = '00000000-0000-4000-8000-000000000009';
+const diameter = { value: 21.8, unit: 'cm' } as const;
+const height = { value: 4.2, unit: 'cm' } as const;
+
+const currentFields = {
+  name: null,
+  description: '',
+  collectorJudgment: null,
+  materialIds: [],
+  categoryIds: [],
+  period: null,
+  tags: [],
+  dimensions: {},
+};
+
+describe('proposal text validation', () => {
+  it.each(['condition', 'surface'] as const)(
+    'should require both values for %s',
+    (field) => {
+      const proposal = {
+        id: proposalId,
+        findingIds: [],
+        field,
+        before: null,
+        proposed: 'Observed',
+      };
+
+      expect(proposedChangeSchema.safeParse(proposal).success).toBe(true);
+      expect(
+        proposedChangeSchema.safeParse({ ...proposal, before: undefined })
+          .success,
+      ).toBe(false);
+      expect(
+        proposedChangeSchema.safeParse({ ...proposal, proposed: undefined })
+          .success,
+      ).toBe(false);
+      expect(
+        proposedChangeSchema.safeParse({ ...proposal, proposed: null }).success,
+      ).toBe(true);
+    },
+  );
+});
+
+describe('fn:isProposalCurrent', () => {
+  it.each(['condition', 'surface'] as const)(
+    'should treat missing and null %s as the same unset value',
+    (field) => {
+      const change = {
+        id: proposalId,
+        findingIds: [],
+        field,
+        before: null,
+        proposed: 'Observed',
+      } satisfies ProposedChange;
+
+      expect(isProposalCurrent(currentFields, change)).toBe(true);
+      expect(
+        isProposalCurrent({ ...currentFields, [field]: null }, change),
+      ).toBe(true);
+      expect(
+        isProposalCurrent(
+          { ...currentFields, [field]: 'Collector edit' },
+          change,
+        ),
+      ).toBe(false);
+      expect(
+        isProposalCurrent(currentFields, { ...change, before: 'Earlier' }),
+      ).toBe(false);
+    },
+  );
+
+  it('should treat equal dimensions as current whatever order their keys were written in', () => {
+    const change: ProposedChange = {
+      id: proposalId,
+      findingIds: [],
+      field: 'dimensions',
+      before: { diameter, height },
+      proposed: { diameter: { value: 21.5, unit: 'cm' } },
+    };
+
+    expect(
+      isProposalCurrent(
+        {
+          ...currentFields,
+          dimensions: { height, diameter, weight: undefined },
+        },
+        change,
+      ),
+    ).toBe(true);
+  });
+
+  it('should treat a proposal as stale once its field moved since it was made', () => {
+    const change: ProposedChange = {
+      id: proposalId,
+      findingIds: [],
+      field: 'dimensions',
+      before: {},
+      proposed: { diameter: { value: 21.5, unit: 'cm' } },
+    };
+
+    expect(
+      isProposalCurrent({ ...currentFields, dimensions: { diameter } }, change),
     ).toBe(false);
   });
 });

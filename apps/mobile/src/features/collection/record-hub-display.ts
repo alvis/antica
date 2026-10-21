@@ -3,7 +3,11 @@ import { formatFieldValue } from '../../utils/field-value';
 import { quoteFields } from '../../utils/quote-fields';
 
 import { proposalFieldTestId } from './proposal-field-test-id';
-import { displayValue, editFieldName } from './record-edit-display';
+import {
+  displayValue,
+  editFieldName,
+  proposalFieldName,
+} from './record-edit-display';
 import { draftFromRecord, recordEditFields } from './record-edit-draft';
 import { headlineDimension } from './record-hub';
 
@@ -37,6 +41,7 @@ const dimensionLabelKeys = {
   height: 'recordDimensionHeight',
   width: 'recordDimensionWidth',
   depth: 'recordDimensionDepth',
+  seatHeight: 'recordDimensionSeatHeight',
 } as const;
 
 /** length units spelled out the way the hub reads them (公分 in Traditional Chinese) */
@@ -49,9 +54,30 @@ const lengthUnitKeys = {
 /** object types whose diameter is measured across the mouth */
 const vesselCategories = new Set(['陶瓷', 'Ceramics']);
 
+/** a measured length of the record and which one it is */
+type NamedDimension = {
+  readonly field: keyof typeof dimensionLabelKeys;
+  readonly measurement: NonNullable<RecordDetail['dimensions']['height']>;
+};
+
 /**
- * words the headline dimension for the meta line and the 尺寸 tile, such as 口徑 21.8 公分
+ * picks the dimension the title's meta line reads: a seat is placed by its seat height (座高),
+ * which the 尺寸 tile leaves to the overall measurements, else the headline dimension
+ * @param dimensions the record's measurements
+ * @returns the meta line's dimension, or undefined without one
+ */
+function metaDimension(
+  dimensions: RecordDetail['dimensions'],
+): NamedDimension | ReturnType<typeof headlineDimension> {
+  return dimensions.seatHeight
+    ? { field: 'seatHeight', measurement: dimensions.seatHeight }
+    : headlineDimension(dimensions);
+}
+
+/**
+ * words a dimension for the meta line or the 尺寸 tile, such as 口徑 21.8 公分 or 座高 51 公分
  * @param record the record
+ * @param dimension the dimension to word, if the record has one
  * @param labels label lookups
  * @param t translator
  * @param locale interface locale
@@ -59,11 +85,11 @@ const vesselCategories = new Set(['陶瓷', 'Ceramics']);
  */
 function hubDimension(
   record: RecordDetail,
+  dimension: NamedDimension | ReturnType<typeof headlineDimension>,
   labels: FieldLabels,
   t: LocaleState['t'],
   locale: LocaleState['locale'],
 ): string | undefined {
-  const dimension = headlineDimension(record.dimensions);
   if (!dimension) {
     return undefined;
   }
@@ -103,7 +129,7 @@ export function recordMeta(
 ): string {
   return [
     record.categoryIds[0] && labels.knowledge(record.categoryIds[0]),
-    hubDimension(record, labels, t, locale),
+    hubDimension(record, metaDimension(record.dimensions), labels, t, locale),
     t('recordAdded', { date: formatDate(record.createdAt, locale) }),
   ]
     .filter(Boolean)
@@ -143,7 +169,7 @@ export function primaryStatus(
       return t('recordEditsWaiting', {
         fields: quoteFields(
           [...new Set(hub.editChanges.map((change) => change.field))].map(
-            (field) => editFieldName(field, t),
+            (field) => proposalFieldName(field, t),
           ),
           t,
         ),
@@ -184,8 +210,8 @@ export function periodName(
 }
 
 /**
- * the tiles under 資料: period, materials, the headline dimension and tags, each marked when
- * a suggestion or edit card waits on it
+ * the tiles under 資料: period, materials, the headline dimension and condition (品相), each
+ * marked when a suggestion or edit card waits on it; tags stay under 顯示全部資料
  * @param record the record
  * @param labels label lookups
  * @param badges what waits on each field
@@ -227,13 +253,20 @@ export function recordFacts(
     {
       key: 'size',
       label: t('recordFactSize'),
-      value: hubDimension(record, labels, t, locale),
+      value: hubDimension(
+        record,
+        headlineDimension(record.dimensions),
+        labels,
+        t,
+        locale,
+      ),
+      badge: badges.get('dimensions'),
     },
     {
-      key: 'tags',
-      label: t('tags'),
-      value: list(record.tags),
-      badge: badges.get('tags'),
+      key: 'condition',
+      label: t('condition'),
+      value: record.condition ?? undefined,
+      badge: badges.get('condition'),
     },
   ];
 }

@@ -170,6 +170,7 @@ export function createRecordRepository(
         width: dimension('width'),
         depth: dimension('depth'),
         diameter: dimension('diameter'),
+        seatHeight: dimension('seatHeight'),
         weight: weightValue
           ? {
               value: Number(weightValue.value),
@@ -191,6 +192,8 @@ export function createRecordRepository(
       tags: tags.map((item) => item.tag),
       description: row.description,
       collectorJudgment: row.collectorJudgment,
+      condition: row.condition,
+      surface: row.surface,
       recordRevision: row.recordRevision,
       analysisInputVersion: row.analysisInputVersion,
       evidenceVersion: row.evidenceVersion,
@@ -222,7 +225,7 @@ export function createRecordRepository(
 
   async function saveRelations(
     id: string,
-    fields: Partial<RecordDetail>,
+    fields: RecordPatch['fields'],
   ): Promise<void> {
     let removedComponentIds: string[] = [];
     if (fields.components) {
@@ -289,6 +292,7 @@ export function createRecordRepository(
         'width',
         'depth',
         'diameter',
+        'seatHeight',
         'weight',
       ] as const) {
         if (!(kind in fields.dimensions)) {
@@ -399,6 +403,8 @@ export function createRecordRepository(
           locationDetail: record.location.detail,
           description: record.description,
           collectorJudgment: record.collectorJudgment,
+          condition: record.condition,
+          surface: record.surface,
           recordRevision: record.recordRevision,
           analysisInputVersion: record.analysisInputVersion,
           evidenceVersion: record.evidenceVersion,
@@ -438,6 +444,8 @@ export function createRecordRepository(
         locationDetail: fields.location?.detail,
         description: fields.description,
         collectorJudgment: fields.collectorJudgment,
+        condition: fields.condition,
+        surface: fields.surface,
         recordRevision: versions.recordRevision,
         analysisInputVersion: versions.analysisInputVersion,
         evidenceVersion: versions.evidenceVersion,

@@ -69,6 +69,28 @@ const failureInvocation: ModelInvocation = {
 };
 
 describe('fn:createAnalysisRepository', { timeout: 30_000 }, () => {
+  it('should read a pre-condition analysis snapshot without changing its frozen fields', async () => {
+    const database = await createIsolatedDatabase();
+    try {
+      const transaction = createTransactionPort(database.db);
+      const runId = await createQueuedRun(transaction, database.ownerId);
+      await database.db
+        .$executeRaw`update analysis_snapshots set content = content #- '{frozenPack,recordFields,condition}' #- '{frozenPack,recordFields,surface}' where id = (select snapshot_id from analysis_runs where id = ${runId}::uuid)`;
+      const read = await transaction.run(database.ownerId, async (unit) => ({
+        success: true as const,
+        data: await unit.analyses.get(runId),
+      }));
+      expect(
+        read.data?.requestedSnapshot.frozenPack.recordFields,
+      ).toMatchObject({ name: null });
+      expect(
+        read.data?.requestedSnapshot.frozenPack.recordFields,
+      ).not.toHaveProperty('condition');
+    } finally {
+      await database.close();
+    }
+  });
+
   it('should refuse adoption when the run no longer owns its record', async () => {
     const database = await createIsolatedDatabase();
     const transaction = createTransactionPort(database.db);
@@ -126,6 +148,7 @@ describe('fn:createAnalysisRepository', { timeout: 30_000 }, () => {
             field: 'description',
             before: 'Frozen collector description',
             proposed: 'Reviewed description',
+            confidence: 'medium',
             findingIds: [],
           },
         ],
@@ -1727,6 +1750,7 @@ describe('fn:createAnalysisRepository', { timeout: 30_000 }, () => {
         tags: [],
         description: 'Frozen collector description',
         collectorJudgment: null,
+        condition: null,
       };
       const recordId = randomUUID();
       const observed: Observation = {
@@ -2136,6 +2160,7 @@ async function createQueuedRun(
     tags: [],
     description: 'Frozen collector description',
     collectorJudgment: null,
+    condition: null,
   };
   const snapshot: RequestedAnalysisSnapshot = {
     id: randomUUID(),

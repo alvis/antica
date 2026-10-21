@@ -7,6 +7,7 @@ import { useKnowledgeTitles } from '../../../../hooks/useKnowledgeTitles';
 import { localizeProposalField } from '../../../../i18n/messages';
 import { useLocale } from '../../../../providers/LocaleProvider';
 
+import { confidenceKeys } from '../../confidence-keys';
 import { proposalFieldTestId } from '../../proposal-field-test-id';
 
 import type { FC } from 'react';
@@ -41,12 +42,12 @@ function useShownValues(change: ProposedChange): {
   proposed: FieldDisplayValue;
 } {
   const title = useKnowledgeTitles(
-    change.field === 'materialIds'
+    change.field === 'materialIds' || change.field === 'categoryIds'
       ? [...change.before, ...change.proposed]
       : [],
   );
 
-  return change.field === 'materialIds'
+  return change.field === 'materialIds' || change.field === 'categoryIds'
     ? { before: change.before.map(title), proposed: change.proposed.map(title) }
     : { before: change.before, proposed: change.proposed };
 }
@@ -96,6 +97,11 @@ export const EditCardRow: FC<EditCardRowProps> = ({
         paddingTop: 12,
       }}>
       <Text style={styles.label}>{field}</Text>
+      {change.confidence && (
+        <Text style={styles.secondary}>
+          {t(confidenceKeys[change.confidence])}
+        </Text>
+      )}
       <FieldValue label={t('previous')} value={shown.before} superseded />
       <FieldValue label={t('proposed')} value={shown.proposed} />
       {outcome === 'applied' ? (

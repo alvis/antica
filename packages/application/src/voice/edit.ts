@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 
-import { recordFieldsSchema } from '@antica/contracts';
+import { isProposalCurrent, recordPatchSchema } from '@antica/contracts';
 
 import { freezeKnowledgeEvidence } from '../knowledge/evidence.js';
 
-import { recordFieldsOf } from '../record/fields.js';
+import { adoptedFields, recordFieldsOf } from '../record/fields.js';
 
 import type {
   EditDraftAccepted,
@@ -147,13 +147,13 @@ export function createEditDraftService(
                 'Select only one change per field',
               );
             }
-            if (digest(record[change.field]) !== digest(change.before)) {
+            if (!isProposalCurrent(record, change)) {
               return failure(
                 'REVISION_CONFLICT',
                 'Proposed field changed since draft',
               );
             }
-            fields[change.field] = change.proposed;
+            Object.assign(fields, adoptedFields(change));
           }
           // a reject-only adoption leaves the record and its revision untouched
           const written =
@@ -497,7 +497,7 @@ async function writeSelected(
     readonly selectedProposalIds: readonly string[];
   },
 ): Promise<OperationResult<RecordDetail>> {
-  const parsed = recordFieldsSchema.partial().safeParse(fields);
+  const parsed = recordPatchSchema.shape.fields.safeParse(fields);
   if (!parsed.success) {
     return failure(
       'VALIDATION_FAILED',

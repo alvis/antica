@@ -60,7 +60,7 @@ const TodayKnowledgeSection: FC<{
 }> = ({ record, card }) => {
   const router = useRouter();
   const ask = useAskAssistant();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   // the card's photo spans the screen, so it takes the print-sized rendition
   const preview = useKnowledgePreview(
     card.entryId,
@@ -107,7 +107,9 @@ const TodayKnowledgeSection: FC<{
               })
             : t('todayKnowledgeWhy', {
                 record: record.name,
-                reason: match ? describeRelatedMatch(match, t) : card.title,
+                reason: match
+                  ? describeRelatedMatch(match, t, locale)
+                  : card.title,
               })
         }
         question={question}

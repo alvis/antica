@@ -37,13 +37,9 @@ export const demoConversation: DemoConversation = {
         'antica:entry:furniture:huanghuali-material#aic-huanghuali-designation',
       ],
     },
-    {
-      text: '名稱可參照同型館藏圈椅，寫成「黃花梨羅漢式圈椅」。兩項都要您逐項確認後才寫入。',
-      evidence: ['antica:entry:furniture:lohan-chair#record-identity'],
-    },
   ],
   proposals: [
-    { field: 'name', proposed: '黃花梨羅漢式圈椅' },
+    { field: 'name', proposed: '黃花梨圈椅' },
     { field: 'materialIds', proposedTerms: ['黃花梨（未經木材鑑定）'] },
   ],
 };

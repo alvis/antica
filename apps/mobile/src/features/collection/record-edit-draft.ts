@@ -12,6 +12,7 @@ export const measurementFields = [
   'width',
   'depth',
   'diameter',
+  'seatHeight',
   'weight',
 ] as const;
 
@@ -37,10 +38,13 @@ export type RecordEditDraft = {
   readonly periodTo: string;
   readonly periodStatus: PeriodStatus;
   readonly collectorJudgment: string;
+  readonly condition: string;
+  readonly surface: string;
   readonly height: MeasurementDraft;
   readonly width: MeasurementDraft;
   readonly depth: MeasurementDraft;
   readonly diameter: MeasurementDraft;
+  readonly seatHeight: MeasurementDraft;
   readonly weight: MeasurementDraft;
   readonly pieceCount: string;
   readonly tags: readonly string[];
@@ -67,6 +71,8 @@ export const recordEditFields = [
   'period',
   'collectorJudgment',
   ...measurementFields,
+  'condition',
+  'surface',
   'pieceCount',
   'tags',
   'acquiredOn',
@@ -136,10 +142,13 @@ export function draftFromRecord(record: RecordFields): RecordEditDraft {
     periodTo: period?.toYear === undefined ? '' : String(period.toYear),
     periodStatus: period?.status ?? 'collectorClaim',
     collectorJudgment: record.collectorJudgment ?? '',
+    condition: record.condition ?? '',
+    surface: record.surface ?? '',
     height: measurementDraft(dimensions.height, 'cm'),
     width: measurementDraft(dimensions.width, 'cm'),
     depth: measurementDraft(dimensions.depth, 'cm'),
     diameter: measurementDraft(dimensions.diameter, 'cm'),
+    seatHeight: measurementDraft(dimensions.seatHeight, 'cm'),
     weight: measurementDraft(dimensions.weight, 'g'),
     pieceCount: record.pieceCount === null ? '' : String(record.pieceCount),
     tags: record.tags,

@@ -105,3 +105,56 @@ it.each(['apply', 'resolve'])(
     );
   },
 );
+
+it('should disable a stale size suggestion and leave a current neighbour unselected and available', async () => {
+  const staleId = '00000000-0000-4000-8000-000000000099';
+  const proposed = {
+    ...actionableRun,
+    result: {
+      ...actionableRun.result,
+      output: {
+        ...actionableRun.result.output!,
+        proposedChanges: [
+          {
+            id: staleId,
+            field: 'dimensions',
+            before: {},
+            proposed: { diameter: { value: 21.5, unit: 'cm' } },
+            confidence: 'medium',
+            findingIds: [],
+          },
+          {
+            id: '00000000-0000-4000-8000-000000000098',
+            field: 'name',
+            before: collectionRecord.name,
+            proposed: 'Suggested dish',
+            confidence: 'high',
+            findingIds: [],
+          },
+        ],
+      },
+    },
+  };
+  const record = {
+    ...collectionRecord,
+    dimensions: { diameter: { value: 21.8, unit: 'cm' } },
+  };
+  const view = await renderMobile(<AnalysisContainer runId={runId} />, {
+    get: async (path) => (path.startsWith('/v1/analyses/') ? proposed : record),
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId(`analysis-proposal-${staleId}`)).toBeDisabled(),
+  );
+  const boxes = screen.getAllByRole('checkbox');
+  expect(boxes[1]).not.toBeChecked();
+  expect(screen.getByText(/Outdated/)).toBeTruthy();
+  await fireEvent.press(boxes[0]);
+  expect(view.commands).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole('button', { name: 'Apply selected changes (0)' }),
+  ).toBeDisabled();
+  await fireEvent.press(boxes[1]);
+  expect(
+    screen.getByRole('button', { name: 'Apply selected changes (1)' }),
+  ).toBeEnabled();
+});

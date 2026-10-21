@@ -5,8 +5,11 @@ import { assert, expect } from 'vitest';
 import { createKnowledgeService } from '@antica/application/server';
 import { recordDetailSchema } from '@antica/contracts';
 
+import type { RequestedAnalysisSnapshot } from '@antica/application/ports';
 import type {
   KnowledgeContentEnvelopeV2,
+  ModelInvocation,
+  ProposedChange,
   RecordCreate,
   RecordDetail,
 } from '@antica/contracts';
@@ -70,6 +73,166 @@ export async function createRelatedEntry(
   assert(result.success, JSON.stringify(result));
 
   return result.data.id;
+}
+
+/** the development analysis model a seeded run names */
+const analysisSelection = {
+  role: 'analysis' as const,
+  modelId: 'development:evidence-v1',
+  profileVersion: '1',
+};
+
+/** how the seeded run's output was produced */
+const analysisInvocation: ModelInvocation = {
+  requestedModelId: analysisSelection.modelId,
+  effectiveModelId: analysisSelection.modelId,
+  provider: 'development',
+  providerModelVersion: null,
+  adapterKind: 'development',
+  capabilities: {
+    textInput: true,
+    imageInput: true,
+    audioInput: false,
+    structuredOutput: true,
+    toolCalling: false,
+  },
+  role: 'analysis',
+  profileVersion: analysisSelection.profileVersion,
+  promptVersion: 'analysis-prompt-v1',
+  schemaVersion: 'analysis-output-v1',
+  effectiveOptions: {},
+  latencyMs: 1,
+  usage: { inputTokens: null, outputTokens: null },
+  finishReason: null,
+  citationCheck: { valid: true, rejectedReferenceIds: [] },
+};
+
+/**
+ * completes an analysis of the record whose suggestions wait undecided, making it the record's
+ * latest run, through the production analysis repository
+ * @param fixture authenticated fixture and live database
+ * @param record record the analysis froze
+ * @param proposedChanges the run's suggestions
+ * @returns the run identity and the stored suggestion identities, which the run scopes, in order
+ */
+export async function completeSuggestions(
+  fixture: HttpFixture,
+  record: RecordDetail,
+  proposedChanges: readonly ProposedChange[],
+): Promise<{ readonly runId: string; readonly proposalIds: string[] }> {
+  const db = fixture.runtime.database.db;
+  const { userId } = await db.session.findFirstOrThrow();
+  const now = new Date().toISOString();
+  const runId = randomUUID();
+  const jobId = randomUUID();
+  const snapshot: RequestedAnalysisSnapshot = {
+    id: randomUUID(),
+    recordId: record.id,
+    recordRevision: record.recordRevision,
+    analysisInputVersion: record.analysisInputVersion,
+    evidenceVersion: record.evidenceVersion,
+    assetIds: [],
+    evidenceIds: [],
+    observationIds: [],
+    checkIds: [],
+    frozenPack: {
+      recordFields: {
+        name: record.name,
+        unitKind: record.unitKind,
+        components: record.components,
+        pieceCount: record.pieceCount,
+        categoryIds: record.categoryIds,
+        materialIds: record.materialIds,
+        period: record.period,
+        dimensions: record.dimensions,
+        location: record.location,
+        acquisition: record.acquisition,
+        tags: record.tags,
+        description: record.description,
+        collectorJudgment: record.collectorJudgment,
+        condition: record.condition,
+      },
+      media: [],
+      evidence: [],
+      observations: [],
+      checks: [],
+    },
+    createdAt: now,
+  };
+  const result = await fixture.runtime.transaction.run(userId, async (unit) => {
+    await unit.jobs.create({
+      id: jobId,
+      kind: 'analysis',
+      resourceId: runId,
+      state: { kind: 'queued' },
+      createdAt: now,
+      updatedAt: now,
+      result: null,
+    });
+    await unit.analyses.create({
+      id: runId,
+      jobId,
+      recordId: record.id,
+      requestedSnapshot: snapshot,
+      modelSelection: analysisSelection,
+      input: null,
+      retrievalSnapshot: null,
+      output: null,
+      invocation: null,
+      failureAudits: [],
+      suggestedMethodVersions: [],
+      status: 'queued',
+    });
+    await unit.analyses.saveOutput(
+      runId,
+      {
+        summary: 'Seeded suggestions',
+        findings: [],
+        uncertainties: [],
+        suggestedMethodIds: [],
+        nextActions: [],
+        proposedChanges: [...proposedChanges],
+      },
+      [],
+      analysisInvocation,
+      'completed',
+    );
+    const saved = await unit.analyses.get(runId);
+
+    return {
+      success: true as const,
+      data: (saved?.output?.proposedChanges ?? []).map(({ id }) => id),
+    };
+  });
+  assert(result.success, JSON.stringify(result));
+
+  return { runId, proposalIds: result.data };
+}
+
+/**
+ * records the collector skipping one suggestion, as the suggestions screen does
+ * @param fixture authenticated fixture and live database
+ * @param runId run that made the suggestion
+ * @param proposalId skipped suggestion
+ */
+export async function skipSuggestion(
+  fixture: HttpFixture,
+  runId: string,
+  proposalId: string,
+): Promise<void> {
+  const { userId } =
+    await fixture.runtime.database.db.session.findFirstOrThrow();
+  const result = await fixture.runtime.transaction.run(userId, async (unit) => {
+    await unit.analyses.appendAdoption(
+      runId,
+      proposalId,
+      'skipped',
+      randomUUID(),
+    );
+
+    return { success: true as const, data: undefined };
+  });
+  assert(result.success, JSON.stringify(result));
 }
 
 /**

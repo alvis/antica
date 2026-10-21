@@ -1,5 +1,7 @@
 import { parseField } from './record-edit-values';
 
+import type { ProposedChange } from '@antica/contracts';
+
 import type { PlainMessageKey, Translate } from '../../i18n/messages';
 import type { FieldDisplayValue } from '../../utils/field-value';
 
@@ -59,7 +61,10 @@ const fieldNameKeys = {
   width: 'width',
   depth: 'depth',
   diameter: 'diameter',
+  seatHeight: 'seatHeight',
   weight: 'weight',
+  condition: 'condition',
+  surface: 'surface',
   pieceCount: 'pieceCount',
   tags: 'tags',
   acquiredOn: 'acquiredOn',
@@ -81,4 +86,18 @@ const fieldNameKeys = {
  */
 export function editFieldName(field: RecordEditField, t: Translate): string {
   return t(fieldNameKeys[field]);
+}
+
+/**
+ * names the field a suggestion or edit card changes as the editor names it; a size suggestion
+ * changes the whole set of measurements, which the editor splits into one field per dimension
+ * @param field the proposed change's field
+ * @param t translation function for message keys
+ * @returns the localized field name
+ */
+export function proposalFieldName(
+  field: ProposedChange['field'],
+  t: Translate,
+): string {
+  return field === 'dimensions' ? t('recordFactSize') : editFieldName(field, t);
 }

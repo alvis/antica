@@ -577,6 +577,7 @@ describe('fn:freezeKnowledgeEvidence', () => {
       matches: [
         {
           field: 'name' as const,
+          source: 'record' as const,
           value: 'vase',
           topicId: null,
           label: 'vase',

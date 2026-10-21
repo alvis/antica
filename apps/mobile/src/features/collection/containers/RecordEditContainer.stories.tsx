@@ -37,6 +37,7 @@ const unknownRecord = recordDetailSchema.parse({
   tags: [],
   description: '',
   collectorJudgment: null,
+  condition: null,
 });
 
 /** the same record after another device renamed it */

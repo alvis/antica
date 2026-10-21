@@ -1,6 +1,6 @@
 import { draftKeys, lengthUnits, weightUnits } from './record-edit-draft';
 
-import type { Measurement, RecordFields } from '@antica/contracts';
+import type { Measurement, RecordPatch } from '@antica/contracts';
 
 import type { PlainMessageKey } from '../../i18n/messages';
 import type { PeriodValue, PurchaseValue } from '../../utils/field-value';
@@ -179,7 +179,10 @@ const parsers: Readonly<Record<RecordEditField, Parser>> = {
   width: (draft) => parseMeasurement(draft.width, lengthUnits),
   depth: (draft) => parseMeasurement(draft.depth, lengthUnits),
   diameter: (draft) => parseMeasurement(draft.diameter, lengthUnits),
+  seatHeight: (draft) => parseMeasurement(draft.seatHeight, lengthUnits),
   weight: (draft) => parseMeasurement(draft.weight, weightUnits),
+  surface: (draft) => ({ ok: true, value: optionalText(draft.surface) }),
+  condition: (draft) => ({ ok: true, value: optionalText(draft.condition) }),
   pieceCount: parsePieceCount,
   tags: (draft) => ({ ok: true, value: draft.tags }),
   acquiredOn: parseAcquiredOn,
@@ -252,19 +255,4 @@ export function sameField(
 }
 
 /** the record fields a measurement, acquisition, or location field belongs to */
-export type RecordFieldsPatch = Partial<
-  Pick<
-    RecordFields,
-    | 'name'
-    | 'categoryIds'
-    | 'materialIds'
-    | 'period'
-    | 'collectorJudgment'
-    | 'pieceCount'
-    | 'tags'
-    | 'description'
-    | 'dimensions'
-    | 'acquisition'
-    | 'location'
-  >
->;
+export type RecordFieldsPatch = RecordPatch['fields'];

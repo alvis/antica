@@ -16,6 +16,7 @@ import {
   mediaDetailSchema,
   recordCheckSchema,
   recordDetailSchema,
+  isProposalCurrent,
 } from '@antica/contracts';
 import { ActionButton, colors, styles } from '@antica/ui';
 
@@ -170,7 +171,12 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
     try {
       const request = applyAnalysisChangesSchema.parse({
         expectedRecordRevision: loaded.recordRevision,
-        selectedProposalIds: selected,
+        selectedProposalIds: selected.filter((id) => {
+          const proposal = run.data?.result.output?.proposedChanges.find(
+            (change) => change.id === id,
+          );
+          return proposal && isProposalCurrent(loaded, proposal);
+        }),
       });
       await api.post(`/v1/analyses/${runId}/apply`, recordDetailSchema, {
         body: request,
@@ -180,6 +186,10 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record', loaded.id] }),
         queryClient.invalidateQueries({ queryKey: ['analysis', runId] }),
+        // a decided suggestion no longer names related knowledge
+        queryClient.invalidateQueries({
+          queryKey: ['record-related-knowledge'],
+        }),
       ]);
       setSelected([]);
       setApplied(true);
@@ -466,9 +476,15 @@ export const AnalysisContainer: FC<AnalysisContainerProps> = ({
                       key={change.id}
                       change={change}
                       status={
-                        run.data.result.proposalStates.find(
+                        (run.data.result.proposalStates.find(
                           (item) => item.proposalId === change.id,
-                        )?.status ?? 'pending'
+                        )?.status ?? 'pending') === 'pending' &&
+                        record.data &&
+                        !isProposalCurrent(record.data, change)
+                          ? 'stale'
+                          : (run.data.result.proposalStates.find(
+                              (item) => item.proposalId === change.id,
+                            )?.status ?? 'pending')
                       }
                       evidence={output.findings
                         .filter((finding) =>
@@ -583,7 +599,7 @@ const FindingGroup: FC<FindingGroupProps> = ({
 
 type ProposalRowProps = {
   change: ProposedChange;
-  status: 'pending' | 'accepted' | 'skipped';
+  status: 'pending' | 'accepted' | 'skipped' | 'stale';
   evidence: string[];
   checked: boolean;
   /** present only on the proposal opened from a record's change history */
@@ -619,9 +635,25 @@ const ProposalRow: FC<ProposalRowProps> = ({
       {focused && <Text style={styles.label}>{t('openedFromHistory')}</Text>}
       <Text style={styles.heading}>
         {checked ? '☑' : '☐'} {localizeProposalField(change.field, t)} ·{' '}
-        {localizeStatus(status, t)}
+        {status === 'stale' ? t('staleSuggestion') : localizeStatus(status, t)}
       </Text>
       <ProposalValues change={change} />
+      {change.confidence && (
+        <Text style={styles.secondary}>
+          {t(
+            (
+              {
+                high: 'confidenceHigh',
+                medium: 'confidenceMedium',
+                low: 'confidenceLow',
+              } as const
+            )[change.confidence],
+          )}
+        </Text>
+      )}
+      {status === 'stale' && (
+        <Text style={styles.secondary}>{t('staleSuggestionReason')}</Text>
+      )}
       {evidence.map((value, index) => (
         <Text key={index} style={styles.secondary}>
           {value}

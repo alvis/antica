@@ -83,6 +83,12 @@ function createFixture(
       const updated = {
         ...current,
         ...input.fields,
+        dimensions: Object.fromEntries(
+          Object.entries({
+            ...current.dimensions,
+            ...input.fields.dimensions,
+          }).filter(([, value]) => value !== null),
+        ),
         ...versions,
         updatedAt: now,
       };
@@ -177,6 +183,7 @@ function existingRecord(): RecordDetail {
     tags: [],
     description: '',
     collectorJudgment: null,
+    condition: null,
     recordRevision: 1,
     analysisInputVersion: 1,
     evidenceVersion: 1,

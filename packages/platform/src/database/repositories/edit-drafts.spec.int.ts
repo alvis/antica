@@ -44,6 +44,25 @@ async function inRolledBackTransaction(
 }
 
 describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
+  it('should read and apply a ready draft whose frozen fields predate condition', async () => {
+    await inRolledBackTransaction(async (tx) => {
+      const seeded = await seedThreeProposalDraft(tx);
+      await tx.$executeRaw`update edit_draft_runs set snapshot = snapshot #- '{fields,condition}' #- '{fields,surface}' where id = ${seeded.editDraftId}::uuid`;
+      const read = await seeded.repository.get(seeded.editDraftId);
+      expect(read?.detail.snapshot.fields.name).toBe('Vase');
+      expect(read?.detail.result?.proposedChanges[0]?.confidence).toBe('high');
+      expect(read?.detail.snapshot.fields).not.toHaveProperty('condition');
+      expect(
+        await seeded.repository.markApplied(
+          seeded.editDraftId,
+          read!.detail.revision,
+          [seeded.nameId],
+          seeded.now,
+        ),
+      ).not.toBeNull();
+    });
+  });
+
   it('should preserve frozen inputs and apply generated proposals incrementally with revision checks', async () => {
     await inRolledBackTransaction(async (tx) => {
       const ownerId = randomUUID();
@@ -89,6 +108,7 @@ describe('fn:createEditDraftRepository', { timeout: 30_000 }, () => {
         tags: [],
         description: 'Original description',
         collectorJudgment: null,
+        condition: null,
       };
       const versions = {
         recordRevision: 1,
@@ -345,6 +365,7 @@ async function seedThreeProposalDraft(tx: Transaction) {
           tags: [],
           description: '',
           collectorJudgment: null,
+          condition: null,
         },
         transcriptionVersions: [],
         observationIds: [],
@@ -386,6 +407,7 @@ async function seedThreeProposalDraft(tx: Transaction) {
         field: 'name',
         before: 'Vase',
         proposed: 'Celadon vase',
+        confidence: 'high',
         findingIds: [],
       },
       {

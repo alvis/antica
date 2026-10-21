@@ -115,7 +115,15 @@ function patch(server: RecordServer, options: unknown): RecordDetail {
       retryable: true,
     });
   }
-  server.change(input.fields);
+  server.change({
+    ...input.fields,
+    dimensions: Object.fromEntries(
+      Object.entries({
+        ...server.record.dimensions,
+        ...input.fields.dimensions,
+      }).filter(([, value]) => value !== null),
+    ),
+  });
 
   return server.record;
 }

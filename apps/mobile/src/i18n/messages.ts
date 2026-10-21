@@ -86,6 +86,10 @@ const proposalFieldKeys = {
   period: 'period',
   tags: 'tags',
   collectorJudgment: 'collectorJudgment',
+  condition: 'condition',
+  surface: 'surface',
+  categoryIds: 'type',
+  dimensions: 'recordFactSize',
 } as const satisfies Record<string, PlainMessageKey>;
 
 /**

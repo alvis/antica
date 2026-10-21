@@ -283,7 +283,9 @@ it('should show a record, open capture, and open the manual editor', async () =>
         ? collectionRecord
         : hubReads(path),
   });
-  expect(await screen.findByRole('header', { name: 'A-001' })).toBeTruthy();
+  expect(
+    await screen.findByRole('header', { name: 'Unnamed item' }),
+  ).toBeTruthy();
   // without a photo there is nothing to analyse yet
   expect(screen.getByRole('button', { name: 'Start analysis' })).toBeDisabled();
   expect(screen.getByTestId('record-analysis-status-unanalysed')).toBeTruthy();
@@ -380,7 +382,7 @@ it('should leave unknown details out instead of filling them in', async () => {
 
   const facts = await screen.findByTestId('record-fields');
   // each unknown fact reads as not filled in rather than guessed
-  for (const fact of ['period', 'material', 'size', 'tags']) {
+  for (const fact of ['period', 'material', 'size', 'condition']) {
     expect(within(facts).getByTestId(`record-fact-${fact}`)).toHaveTextContent(
       /Not filled in$/,
     );

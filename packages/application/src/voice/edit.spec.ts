@@ -67,6 +67,7 @@ function record(): RecordDetail {
     tags: [],
     description: '',
     collectorJudgment: null,
+    condition: null,
     recordRevision: 1,
     analysisInputVersion: 1,
     evidenceVersion: 1,
@@ -857,6 +858,48 @@ describe('fn:createEditDraftService skipped proposals', () => {
       [draftId, proposalId, 'skipped', expect.any(String)],
     ]);
     expect(ports.receipts.size).toBe(1);
+  });
+
+  it('should preserve dimension clearing through draft adoption validation', async () => {
+    const height = { value: 4.2, unit: 'cm' } as const;
+    const diameter = { value: 21.5, unit: 'cm' } as const;
+    const ports = fixture({
+      record: { ...record(), dimensions: { height } },
+      patchResult: { ...record(), recordRevision: 2, dimensions: { diameter } },
+      run: readyRun([
+        {
+          id: proposalId,
+          field: 'dimensions',
+          before: { height },
+          proposed: { diameter },
+          findingIds: [],
+        },
+      ]),
+    });
+
+    expect(await ports.service.apply(ownerId, draftId, apply)).toMatchObject({
+      success: true,
+      data: { record: { dimensions: { diameter } } },
+    });
+    expect(ports.patch).toHaveBeenCalledWith(
+      recordId,
+      {
+        expectedRevision: 1,
+        fields: {
+          dimensions: {
+            height: null,
+            width: null,
+            depth: null,
+            diameter,
+            seatHeight: null,
+            weight: null,
+          },
+        },
+        editDraftId: draftId,
+        acceptedProposalIds: [proposalId],
+      },
+      expect.any(Object),
+    );
   });
 
   it('should adopt a confirmed proposal and skip a rejected one in one adoption', async () => {

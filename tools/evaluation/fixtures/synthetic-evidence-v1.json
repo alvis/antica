@@ -70,7 +70,8 @@
     },
     "tags": [],
     "description": "Authored synthetic evaluation record",
-    "collectorJudgment": null
+    "collectorJudgment": null,
+    "condition": null
   },
   "methods": []
 }
