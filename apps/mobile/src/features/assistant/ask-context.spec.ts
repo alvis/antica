@@ -14,11 +14,11 @@ describe('fn:summarizeAskContext', () => {
   it.each<{ context: AskContext; card: [string, string, string] }>([
     {
       context: { kind: 'record', recordId: 'f3a9c2d18b', code: 'AC-0001' },
-      card: ['關於這件藏品', 'AC-0001', '附上：藏品 AC-0001'],
+      card: ['關於這件藏品', '未命名藏品', '附上：藏品 AC-0001'],
     },
     {
       context: { kind: 'record', recordId: 'f3a9c2d18b' },
-      card: ['關於這件藏品', 'f3a9c2d1', '附上：藏品 f3a9c2d1'],
+      card: ['關於這件藏品', '未命名藏品', '附上：藏品 f3a9c2d1'],
     },
     {
       context: {

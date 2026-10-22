@@ -159,7 +159,11 @@ export function useStartAnalysis(
       }
       // the record now names the new run, so its analysis state follows it on return
       await queryClient.invalidateQueries({ queryKey: ['record', record.id] });
-      router.push(`/analysis/${accepted.runId}`);
+      // the analysis runs in the record's 對話 segment, which links to its suggestions once done; the
+      // record names the run only once it finishes, so 對話 is told which run to follow
+      router.push(
+        `/collection/${encodeURIComponent(record.id)}/messages?startedRunId=${encodeURIComponent(accepted.runId)}`,
+      );
     } catch (cause) {
       setError(
         describeMessageError(cause, t, {

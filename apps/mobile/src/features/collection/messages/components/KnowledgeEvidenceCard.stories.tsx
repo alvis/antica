@@ -1,5 +1,4 @@
-import { savedPreferences } from '../../../../i18n/preferences.spec.fixtures';
-import { LocaleProvider } from '../../../../providers/LocaleProvider';
+import { MobileStoryShell } from '../../../../mobile.stories.fixtures';
 
 import { historicalAnswer } from '../containers/record-messages-knowledge.spec.fixtures';
 
@@ -11,11 +10,8 @@ const meta = {
   title: 'Mobile/Features/Collection/KnowledgeEvidenceCard',
   component: KnowledgeEvidenceCard,
   decorators: [
-    (story) => (
-      <LocaleProvider preferences={savedPreferences('en')}>
-        {story()}
-      </LocaleProvider>
-    ),
+    // the card previews each entry's live photo and quote; frozen sources show without them
+    (story) => <MobileStoryShell responses={{}}>{story()}</MobileStoryShell>,
   ],
   args: { message: historicalAnswer },
 } satisfies Meta<typeof KnowledgeEvidenceCard>;

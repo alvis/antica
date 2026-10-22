@@ -83,6 +83,13 @@ jest.mock(
     }) satisfies Partial<typeof import('../../../../adapters/media-upload')>,
 );
 
+/** opens the 相關知識 tray, which the composer keeps collapsed until asked */
+async function openRelatedTray(): Promise<void> {
+  await fireEvent.press(
+    await screen.findByTestId('record-messages-related-toggle'),
+  );
+}
+
 it('should discard frozen suggestions and current selections when restoring a failed message', async () => {
   const failed = {
     ...entry('collector', 'Explain the surface', { status: 'failed' }),
@@ -97,6 +104,7 @@ it('should discard frozen suggestions and current selections when restoring a fa
       post: async () => ({}),
     },
   );
+  await openRelatedTray();
   await fireEvent.press(
     await screen.findByTestId(`record-related-attach-${relatedCard.entryId}`),
   );

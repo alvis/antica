@@ -2,7 +2,7 @@
 # card; a labelled 「」 request gets one card with name and period rows; the
 # collector confirms the name, rejects the period, and applies; the period row
 # stays locked as not applied, the record reflects only the confirmed field, its
-# change history lists the name as accepted and the period as skipped, and the
+# change history lists the accepted name, omits the skipped period, and the
 # history links back to the requesting message, which opens fully in view.
 # Replies come from the deterministic development model through the local drain
 # loop, so their text is the same in every interface language. Controls and
@@ -74,12 +74,12 @@ appId: ${APP_ID}
     when:
       true: ${APP_LOCALE == 'en'}
     commands:
-      - assertVisible: Suggested changes
+      - assertVisible: 'Suggested changes · 2'
 - runFlow:
     when:
       true: ${APP_LOCALE == 'zh-Hant'}
     commands:
-      - assertVisible: 建議變更
+      - assertVisible: '修改建議 · 2 項'
 - assertVisible:
     id: 'record-message-card-confirm-name-.*'
 - assertVisible:
@@ -87,12 +87,12 @@ appId: ${APP_ID}
 - assertNotVisible:
     id: 'record-message-card-applied-.*'
 
-# 3. Confirm the name, reject the period, then apply both decisions. The name
-#    is applied, the period stays locked as not applied, and no toggle remains.
-#    The related-knowledge tray covers the thread's lower part, where the
-#    hierarchy still lists the card's controls as visible, so the name is
-#    centred and the period and apply controls are tapped with the thread
-#    dragged to its end, where the card's foot sits above the tray.
+# 3. Confirm the name, reject the period, then apply both decisions. Writing
+#    stays blocked until every row is decided. The name is applied, the
+#    period stays locked as not applied, and no choice remains. The
+#    related-knowledge tray is closed, so it covers none of the card.
+- assertNotVisible:
+    id: record-messages-related
 - scrollUntilVisible:
     element:
       id: 'record-message-card-confirm-name-.*'
@@ -101,15 +101,25 @@ appId: ${APP_ID}
 - waitForAnimationToEnd
 - tapOn:
     id: 'record-message-card-confirm-name-.*'
-- repeat:
-    times: 3
-    commands:
-      - swipe:
-          start: 50%, 52%
-          end: 50%, 24%
-- waitForAnimationToEnd
+- assertVisible:
+    id: 'record-message-card-confirmed-name-.*'
+- scrollUntilVisible:
+    element:
+      id: 'record-message-card-reject-period-.*'
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: 'record-message-card-apply-.*'
+    enabled: false
 - tapOn:
     id: 'record-message-card-reject-period-.*'
+- scrollUntilVisible:
+    element:
+      id: 'record-message-card-apply-.*'
+    direction: DOWN
+- assertVisible:
+    id: 'record-message-card-apply-.*'
+    enabled: true
 - tapOn:
     id: 'record-message-card-apply-.*'
 - extendedWaitUntil:
@@ -138,7 +148,7 @@ appId: ${APP_ID}
     timeout: 60000
 - assertNotVisible: .*${NEW_PERIOD}.*
 
-# 5. The change history lists the accepted name and the skipped period, and
+# 5. The change history lists the accepted name, omits the skipped period, and
 #    links back to the requesting message.
 - scrollUntilVisible:
     element:
@@ -152,7 +162,7 @@ appId: ${APP_ID}
     timeout: 60000
 - assertVisible:
     id: 'record-history-entry-.*-name-accepted'
-- assertVisible:
+- assertNotVisible:
     id: 'record-history-entry-.*-period-skipped'
 - tapOn:
     id: 'record-history-entry-.*-name-source'

@@ -15,6 +15,7 @@ import {
   renderMobile,
   savedLanguage,
 } from '../../../mobile.spec.fixtures';
+import { formatDateTime } from '../../../utils/calendar';
 
 import {
   dated,
@@ -33,6 +34,7 @@ import {
   tagged,
   taggedByMessage,
 } from './record-history.spec.fixtures';
+import { hubReads } from './record.spec.fixtures';
 import { RecordHistoryContainer } from './RecordHistoryContainer';
 
 import type { RecordHistoryEntry } from '@antica/contracts';
@@ -57,6 +59,40 @@ function page(
 }
 
 /**
+ * answers the history reads with the given pages and the header's record reads with the fixtures
+ * @param read answers each history read by its path
+ * @returns a reader for every path the screen reads
+ */
+function withRecord(
+  read: (path: string) => Promise<unknown>,
+): (path: string) => Promise<unknown> {
+  return async (path) => {
+    if (path.startsWith(historyPath)) {
+      return read(path);
+    }
+    if (path.startsWith('/v1/knowledge/')) {
+      // an unread title uses a localized fallback
+      throw new Error('Knowledge unavailable');
+    }
+
+    return path === `/v1/records/${collectionRecord.id}`
+      ? collectionRecord
+      : hubReads(path);
+  };
+}
+
+/**
+ * lists the history reads made so far, in order
+ * @param reads the harness's read spy
+ * @returns the path of every history read
+ */
+function historyReads(reads: { mock: { calls: unknown[][] } }): unknown[] {
+  return reads.mock.calls
+    .map(([path]) => path)
+    .filter((path) => String(path).startsWith(historyPath));
+}
+
+/**
  * renders the history screen of the fixture record
  * @param read answers each history read by its path
  * @returns the test harness
@@ -66,7 +102,7 @@ async function renderHistory(
 ): ReturnType<typeof renderMobile> {
   return renderMobile(
     <RecordHistoryContainer recordId={collectionRecord.id} />,
-    { get: read },
+    { get: withRecord(read) },
   );
 }
 
@@ -96,46 +132,59 @@ it('should show each change with its field, values, decision, time, and source',
     ]),
   );
   await screen.findByTestId('record-history');
-  const time = new Intl.DateTimeFormat('en', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(Date.parse(renamed.occurredAt));
+  const time = formatDateTime(renamed.occurredAt, 'en');
 
-  expect(view.reads.mock.calls[0]?.[0]).toBe(`${historyPath}?limit=20`);
-  expect(entryText(renamed)).toContain('Name · Accepted');
+  expect(historyReads(view.reads)[0]).toBe(`${historyPath}?limit=20`);
+  expect(entryText(renamed)).toContain(
+    'Applied the analysis suggestion “Name”',
+  );
   expect(entryText(renamed)).toContain(time);
-  expect(entryText(renamed)).toContain('Before | (empty) | After');
-  expect(entryText(renamed)).toContain('Blue-and-white vase');
-  expect(entryText(renamed)).toContain('Suggested by an analysis');
-  expect(entryText(describedByVoice)).toContain('Description · Skipped');
-  expect(entryText(describedByVoice)).toContain(longDescription);
-  expect(entryText(describedByVoice)).toContain('Edited by voice or message');
+  expect(entryText(renamed)).toContain('Not filled in → Blue-and-white vase');
+  expect(entryText(renamed)).toContain('Open this analysis');
+  expect(
+    screen.queryByTestId(`record-history-entry-${describedByVoice.id}`),
+  ).toBeNull();
+  expect(screen.queryByText(longDescription)).toBeNull();
+  expect(
+    screen.getByText('8 changes · each leads back to its source'),
+  ).toBeVisible();
   expect(
     screen.queryByTestId(
       `record-history-entry-${describedByVoice.id}-description-source`,
     ),
   ).toBeNull();
   expect(entryText(dated)).toContain(
-    'Qing · unconfirmed | After | Kangxi (1662–1722) · collector’s claim',
+    'Qing → Kangxi (1662–1722) · collector’s claim',
   );
   expect(entryText(datedFrom)).toContain(
-    'Late Qing (1850–unknown) · unconfirmed',
+    'Not filled in → Late Qing (1850–unknown) · unconfirmed',
   );
   expect(entryText(datedUntil)).toContain(
-    'Early Qing (unknown–1700) · unconfirmed',
+    'Not filled in → Early Qing (unknown–1700) · unconfirmed',
   );
   expect(entryText(tagged)).toContain('vase, porcelain');
-  expect(entryText(material)).toContain(historyMaterialId);
-  expect(entryText(judged)).toContain('Possibly later | After | (empty)');
+  // unknown knowledge values remain readable without internal identifiers
+  await waitFor(() => expect(entryText(material)).toContain('Unknown'));
+  expect(entryText(material)).not.toContain(historyMaterialId.slice(0, 8));
+  expect(entryText(judged)).toContain('Possibly later → Not filled in');
+  for (const [entry, field, status] of [
+    [renamed, 'name', 'accepted'],
+    [material, 'material-ids', 'accepted'],
+    [judged, 'collector-judgment', 'accepted'],
+  ] as const) {
+    expect(
+      screen.getByTestId(`record-history-entry-${entry.id}-${field}-${status}`),
+    ).toBeTruthy();
+  }
   expect(screen.queryByTestId('record-history-load-more')).toBeNull();
   expect(
     screen.getByLabelText(
-      `Name · Accepted, ${time}. Before: (empty). After: Blue-and-white vase. Suggested by an analysis`,
+      `Name · Accepted, ${time}. Before: Not filled in. After: Blue-and-white vase. Suggested by an analysis`,
     ),
   ).toBeTruthy();
   expect(
     screen.getByTestId(`record-history-entry-${renamed.id}-name-source`),
-  ).toHaveAccessibleName(`Open the suggestion: Name, ${time}`);
+  ).toHaveTextContent('Open this analysis');
 });
 
 it('should open the analysis proposal behind a change', async () => {
@@ -145,7 +194,8 @@ it('should open the analysis proposal behind a change', async () => {
     await screen.findByTestId(`record-history-entry-${renamed.id}-name-source`),
   );
 
-  expect(view.router.push).toHaveBeenCalledWith(
+  // the source replaces the segment, so back still returns to the record
+  expect(view.router.replace).toHaveBeenCalledWith(
     `/analysis/${historyRunId}?proposalId=${historyProposalId}`,
   );
 });
@@ -161,10 +211,13 @@ it('should open the message that requested an edit, and offer nothing for a voic
     ),
   );
 
-  expect(view.router.push).toHaveBeenCalledWith(
+  expect(view.router.replace).toHaveBeenCalledWith(
     `/collection/${collectionRecord.id}/messages?messageId=${historyMessageId}`,
   );
-  expect(entryText(taggedByMessage)).toContain('Edited by voice or message');
+  expect(entryText(taggedByMessage)).toContain(
+    'Wrote “Tags” after confirming in Chat',
+  );
+  expect(entryText(taggedByMessage)).toContain('Open this conversation');
   expect(
     screen.queryByTestId(
       `record-history-entry-${describedByVoice.id}-description-source`,
@@ -191,7 +244,7 @@ it('should load older changes through the cursor and stop at the last page', asy
   expect(
     await screen.findByTestId(`record-history-entry-${dated.id}`),
   ).toBeTruthy();
-  expect(view.reads.mock.calls[1]?.[0]).toBe(
+  expect(historyReads(view.reads)[1]).toBe(
     `${historyPath}?limit=20&cursor=older%2Fpage`,
   );
   expect(screen.getByTestId(`record-history-entry-${renamed.id}`)).toBeTruthy();
@@ -251,14 +304,13 @@ it('should keep the shown changes and offer a retry when a background refresh fa
   expect(screen.getByTestId(`record-history-entry-${renamed.id}`)).toBeTruthy();
 });
 
-it('should explain an empty history', async () => {
+it('should show only the record’s creation when no change was decided', async () => {
   await renderHistory(async () => page([]));
 
-  expect(
-    await screen.findByText(
-      'No suggestions have been accepted or skipped yet.',
-    ),
-  ).toBeTruthy();
+  expect(await screen.findByTestId('record-history-created')).toHaveTextContent(
+    /Record added/,
+  );
+  expect(screen.queryAllByTestId(/^record-history-entry-/)).toHaveLength(0);
 });
 
 it('should retry a history that could not be read', async () => {
@@ -289,17 +341,18 @@ it('should show the history of the routed record in Traditional Chinese', async 
   const view = await renderMobile(
     <RecordHistoryRoute />,
     {
-      get: async () => page([describedByVoice, tagged], 'older'),
+      get: withRecord(async () => page([describedByVoice, tagged], 'older')),
     },
     savedLanguage('zh-Hant'),
   );
 
-  await waitFor(() =>
-    expect(entryText(describedByVoice)).toContain('描述·已略過'),
-  );
-  expect(entryText(describedByVoice)).toContain('透過語音或訊息編輯');
+  await screen.findByTestId(`record-history-entry-${tagged.id}`);
+  expect(
+    screen.queryByTestId(`record-history-entry-${describedByVoice.id}`),
+  ).toBeNull();
+  expect(screen.getByText('1 筆變更 · 每筆都可回到來源')).toBeVisible();
   expect(entryText(tagged)).toContain('vase、porcelain');
-  expect(screen.getByText('變更紀錄')).toBeTruthy();
+  expect(screen.getByLabelText('變更紀錄')).toBeTruthy();
   expect(screen.getByText('顯示較早的變更')).toBeTruthy();
-  expect(view.reads.mock.calls[0]?.[0]).toContain(historyPath);
+  expect(historyReads(view.reads)[0]).toContain(historyPath);
 });

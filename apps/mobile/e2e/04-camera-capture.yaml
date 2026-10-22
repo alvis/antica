@@ -77,20 +77,37 @@ appId: ${APP_ID}
       id: record-media-.*-(uploaded|processing|ready)
     direction: DOWN
     timeout: 30000
-# B06: Analyse starts one run and opens it.
+# B06: Analyse starts one run and follows it in the record's 對話 segment,
+# then opens the run's 建議 segment once the drain loop completes it. With no
+# collector observations this model returns zero proposals, so no empty-list link is offered.
 - scrollUntilVisible:
     element:
       id: record-analyse
     direction: UP
 - tapOn:
     id: record-analyse
+- extendedWaitUntil:
+    visible:
+      id: record-analysis-thread-finished
+    timeout: 120000
+- assertNotVisible:
+    id: analysis-open-suggestions
+- tapOn:
+    id: record-segment-suggestions
 # C04: the development model suggests one describe action without a check;
-# its card follows the result sections once the drain loop completes the run.
+# its card sits in the analysis details under the suggestions.
 # Selectors name the first card, so a second suggested action cannot match.
 - extendedWaitUntil:
     visible:
-      id: analysis-open-record
+      id: analysis-suggestions
     timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: analysis-details-toggle
+    direction: DOWN
+    timeout: 60000
+- tapOn:
+    id: analysis-details-toggle
 - scrollUntilVisible:
     element:
       id: 'analysis-action-describe-.*'
@@ -130,8 +147,15 @@ appId: ${APP_ID}
 # second answer; nothing re-runs the analysis by itself.
 - extendedWaitUntil:
     visible:
-      id: analysis-open-record
+      id: analysis-suggestions
     timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: analysis-details-toggle
+    direction: DOWN
+    timeout: 60000
+- tapOn:
+    id: analysis-details-toggle
 - scrollUntilVisible:
     element:
       id: 'analysis-action-status-supplied-.*'

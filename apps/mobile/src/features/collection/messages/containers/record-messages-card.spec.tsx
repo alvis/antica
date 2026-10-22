@@ -88,6 +88,7 @@ jest.mock(
 
 const applyPath = `/v1/edit-drafts/${draftId}/apply`;
 const changes = [nameChange, periodChange, tagsChange, descriptionChange];
+const conflictStatus = 409;
 
 /**
  * renders the message area around one assistant reply with an edit card
@@ -102,7 +103,7 @@ async function renderCard(
   const view = await renderMobile(<RecordMessagesRoute />, {
     get: async (path) =>
       path === `/v1/records/${recordId}`
-        ? collectionRecord
+        ? { ...collectionRecord, description: 'Old words' }
         : page([entry('collector', '「青花瓶」名稱'), reply]),
     post: apply,
   });
@@ -112,16 +113,11 @@ async function renderCard(
 }
 
 /**
- * reads the checked state of a confirm or reject choice
- * @param testID automation identifier of the choice
- * @returns whether the choice is checked
+ * presses the button with the given automation identifier
+ * @param testID automation identifier
  */
-function checked(testID: string): boolean | undefined {
-  const { accessibilityState } = screen.getByTestId(testID).props as {
-    accessibilityState?: { checked?: boolean };
-  };
-
-  return accessibilityState?.checked;
+async function press(testID: string): Promise<void> {
+  await fireEvent.press(screen.getByTestId(testID));
 }
 
 it('should show every proposed field with nothing preselected, apply confirmed fields, and skip rejected ones', async () => {
@@ -130,53 +126,67 @@ it('should show every proposed field with nothing preselected, apply confirmed f
   );
   const card = screen.getByTestId(`record-message-card-${draftId}`);
 
+  expect(within(card).getByText('Suggested changes · 4')).toBeTruthy();
   expect(
-    within(card).getByText('Nothing changes until you tap “Apply decisions”.'),
-  ).toBeTruthy();
+    screen.getByTestId(`record-message-card-status-ready-${draftId}`),
+  ).toHaveTextContent('Written only after each row is confirmed');
   expect(within(card).getByText('Blue vase')).toBeTruthy();
   expect(
     within(card).getByText('Kangxi (1662–1722) · unconfirmed'),
   ).toBeTruthy();
   expect(within(card).getByText('porcelain, blue-and-white')).toBeTruthy();
   expect(within(card).getByText('Old words')).toBeTruthy();
-  expect(within(card).getAllByText('(empty)')).toHaveLength(3);
+  expect(within(card).getAllByText('Not filled in')).toHaveLength(3);
   expect(
     screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
   ).toHaveAccessibleName('Confirm: Name');
   for (const change of changes) {
     const row = `${proposalFieldTestId(change.field)}-${change.id}`;
-    expect(checked(`record-message-card-confirm-${row}`)).toBe(false);
-    expect(checked(`record-message-card-reject-${row}`)).toBe(false);
+    expect(
+      screen.getByTestId(`record-message-card-confirm-${row}`),
+    ).toBeEnabled();
+    expect(
+      screen.getByTestId(`record-message-card-reject-${row}`),
+    ).toBeEnabled();
+    expect(
+      screen.queryByTestId(`record-message-card-confirmed-${row}`),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(`record-message-card-rejected-${row}`),
+    ).toBeNull();
   }
   const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
   expect(apply).toBeDisabled();
-  expect(apply).toHaveAccessibleName('Apply decisions (0)');
+  expect(apply).toHaveAccessibleName('4 still to decide');
 
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
-  );
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-period-${periodChangeId}`),
-  );
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-reject-period-${periodChangeId}`),
-  );
-  await fireEvent.press(
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
+  // a changed mind: confirm, undo, then reject
+  await press(`record-message-card-confirm-period-${periodChangeId}`);
+  await press(`record-message-card-undo-period-${periodChangeId}`);
+  await press(`record-message-card-reject-period-${periodChangeId}`);
+  // an undone row is undecided again
+  await press(`record-message-card-confirm-tags-${tagsChangeId}`);
+  await press(`record-message-card-undo-tags-${tagsChangeId}`);
+  expect(
+    screen.getByTestId(`record-message-card-rejected-period-${periodChangeId}`),
+  ).toBeTruthy();
+  expect(
+    screen.queryByTestId(
+      `record-message-card-confirmed-period-${periodChangeId}`,
+    ),
+  ).toBeNull();
+  expect(
     screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
+  ).toBeEnabled();
+  expect(apply).toBeDisabled();
+  expect(apply).toHaveAccessibleName('2 still to decide');
+
+  await press(`record-message-card-reject-tags-${tagsChangeId}`);
+  await press(
+    `record-message-card-reject-${proposalFieldTestId(descriptionChange.field)}-${descriptionChange.id}`,
   );
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
-  );
-  expect(checked(`record-message-card-reject-period-${periodChangeId}`)).toBe(
-    true,
-  );
-  expect(checked(`record-message-card-confirm-period-${periodChangeId}`)).toBe(
-    false,
-  );
-  expect(checked(`record-message-card-confirm-tags-${tagsChangeId}`)).toBe(
-    false,
-  );
-  expect(apply).toHaveAccessibleName('Apply decisions (2)');
+  expect(apply).toBeEnabled();
+  expect(apply).toHaveAccessibleName('Write 1 confirmed change');
 
   await fireEvent.press(apply);
   await waitFor(() => expect(sentTo(view.commands, applyPath)).toHaveLength(1));
@@ -187,17 +197,75 @@ it('should show every proposed field with nothing preselected, apply confirmed f
     expectedDraftRevision: 4,
     expectedRecordRevision: collectionRecord.recordRevision,
     selectedProposalIds: [nameChangeId],
-    skippedProposalIds: [periodChangeId],
+    skippedProposalIds: [periodChangeId, tagsChangeId, descriptionChange.id],
   });
   await waitFor(() =>
-    expect(checked(`record-message-card-confirm-name-${nameChangeId}`)).toBe(
-      false,
-    ),
+    expect(
+      screen.queryByTestId(
+        `record-message-card-confirmed-name-${nameChangeId}`,
+      ),
+    ).toBeNull(),
   );
   expect(
     view.reads.mock.calls.filter(([path]) => path === `/v1/records/${recordId}`)
       .length,
   ).toBeGreaterThan(1);
+});
+
+it('should keep the saved chair title until the confirmed name is written', async () => {
+  const chairName = {
+    ...nameChange,
+    field: 'name' as const,
+    before: '紅木圈椅',
+    proposed: '黃花梨圈椅',
+  };
+  let record = { ...collectionRecord, name: chairName.before };
+  let reply = entry('assistant', 'Suggested changes.', {
+    proposedChanges: [chairName, periodChange],
+  });
+  let finish: () => void = () => undefined;
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}` ? record : page([reply]),
+    post: async () =>
+      new Promise((resolve) => {
+        finish = () => {
+          record = {
+            ...record,
+            name: chairName.proposed,
+            recordRevision: record.recordRevision + 1,
+          };
+          reply = {
+            ...reply,
+            draft: {
+              ...reply.draft,
+              status: 'applied',
+              appliedProposalIds: [nameChangeId],
+              skippedProposalIds: [periodChangeId],
+            },
+          };
+          resolve({});
+        };
+      }),
+  });
+
+  expect(
+    await screen.findByRole('header', { name: chairName.before }),
+  ).toBeTruthy();
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
+  expect(view.commands).not.toHaveBeenCalled();
+  expect(screen.queryByRole('header', { name: chairName.proposed })).toBeNull();
+  await press(`record-message-card-reject-period-${periodChangeId}`);
+  await press(`record-message-card-apply-${draftId}`);
+  await waitFor(() => expect(view.commands).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('header', { name: chairName.before })).toBeTruthy();
+
+  await act(async () => finish());
+
+  expect(
+    await screen.findByRole('header', { name: chairName.proposed }),
+  ).toBeTruthy();
+  expect(screen.queryByRole('header', { name: chairName.before })).toBeNull();
 });
 
 it('should lock the choices while an apply is in flight', async () => {
@@ -209,16 +277,12 @@ it('should lock the choices while an apply is in flight', async () => {
         finish = () => resolve({});
       }),
   );
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
-  );
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
 
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-apply-${draftId}`),
-  );
+  await press(`record-message-card-apply-${draftId}`);
 
   expect(
-    screen.getByTestId(`record-message-card-reject-name-${nameChangeId}`),
+    screen.getByTestId(`record-message-card-undo-name-${nameChangeId}`),
   ).toBeDisabled();
   expect(
     screen.getByTestId(`record-message-card-apply-${draftId}`),
@@ -241,23 +305,21 @@ it('should mark applied and skipped rows of a partly settled card as locked', as
     }),
   );
 
-  expect(screen.getByText('Some changes applied')).toBeTruthy();
+  expect(
+    screen.getByTestId(`record-message-card-status-partly-applied-${draftId}`),
+  ).toBeTruthy();
   expect(
     screen.getByTestId(`record-message-card-applied-name-${nameChangeId}`),
-  ).toHaveTextContent('✓ Applied');
+  ).toHaveTextContent('Written');
   expect(
     screen.getByTestId(`record-message-card-skipped-period-${periodChangeId}`),
-  ).toHaveTextContent('✕ Not applied');
-  expect(
-    screen.getByTestId(`record-message-card-skipped-period-${periodChangeId}`),
-  ).toHaveAccessibleName('Not applied');
+  ).toHaveTextContent('Skipped, not written');
   for (const locked of [`name-${nameChangeId}`, `period-${periodChangeId}`]) {
-    expect(
-      screen.queryByTestId(`record-message-card-confirm-${locked}`),
-    ).toBeNull();
-    expect(
-      screen.queryByTestId(`record-message-card-reject-${locked}`),
-    ).toBeNull();
+    for (const control of ['confirm', 'reject', 'undo']) {
+      expect(
+        screen.queryByTestId(`record-message-card-${control}-${locked}`),
+      ).toBeNull();
+    }
   }
   expect(
     screen.queryByTestId(`record-message-card-skipped-tags-${tagsChangeId}`),
@@ -265,9 +327,9 @@ it('should mark applied and skipped rows of a partly settled card as locked', as
   expect(
     screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
   ).toBeEnabled();
-  expect(
-    screen.getByTestId(`record-message-card-apply-${draftId}`),
-  ).toBeDisabled();
+  const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
+  expect(apply).toBeDisabled();
+  expect(apply).toHaveAccessibleName('1 still to decide');
 });
 
 it.each([
@@ -275,32 +337,32 @@ it.each([
     status: 'applied',
     appliedProposalIds: [nameChangeId],
     skippedProposalIds: [periodChangeId],
-    text: 'All changes decided; some not applied',
+    text: 'Done',
     state: 'resolved',
   },
   {
     status: 'applied',
     appliedProposalIds: [nameChangeId, periodChangeId],
     skippedProposalIds: [],
-    text: 'All changes applied',
+    text: 'Done',
     state: 'applied',
   },
   {
     status: 'partially_applied',
     appliedProposalIds: [nameChangeId],
     skippedProposalIds: [],
-    text: 'Some changes applied',
+    text: 'Written only after each row is confirmed',
     state: 'partly-applied',
   },
   {
     status: 'partially_applied',
     appliedProposalIds: [],
     skippedProposalIds: [periodChangeId],
-    text: 'Some changes decided',
+    text: 'Written only after each row is confirmed',
     state: 'partly-decided',
   },
 ] as const)(
-  'should say “$text” for a $status card with $appliedProposalIds.length applied and $skippedProposalIds.length skipped',
+  'should mark a $status card with $appliedProposalIds.length applied and $skippedProposalIds.length skipped as $state',
   async ({ status, appliedProposalIds, skippedProposalIds, text, state }) => {
     await renderCard(
       entry('assistant', 'Two changes.', {
@@ -317,24 +379,27 @@ it.each([
   },
 );
 
-it('should enable the apply action only while a field is confirmed or rejected', async () => {
+it('should enable the apply action only once every row is decided, and block it again on undo', async () => {
   await renderCard(
     entry('assistant', 'Two changes.', {
       proposedChanges: [nameChange, periodChange],
     }),
   );
   const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
-  const reject = screen.getByTestId(
-    `record-message-card-reject-period-${periodChangeId}`,
-  );
 
   expect(apply).toBeDisabled();
-  await fireEvent.press(reject);
-  expect(apply).toBeEnabled();
-  expect(apply).toHaveAccessibleName('Apply decisions (1)');
-  await fireEvent.press(reject);
+  await press(`record-message-card-reject-period-${periodChangeId}`);
   expect(apply).toBeDisabled();
-  expect(apply).toHaveAccessibleName('Apply decisions (0)');
+  expect(apply).toHaveAccessibleName('1 still to decide');
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
+  expect(apply).toBeEnabled();
+  expect(apply).toHaveAccessibleName('Write 1 confirmed change');
+  await press(`record-message-card-undo-name-${nameChangeId}`);
+  expect(apply).toBeDisabled();
+  expect(apply).toHaveAccessibleName('1 still to decide');
+  expect(
+    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
+  ).toBeEnabled();
 });
 
 it('should skip rejected fields without selecting any and reload only the messages', async () => {
@@ -348,13 +413,12 @@ it('should skip rejected fields without selecting any and reload only the messag
   const recordPath = `/v1/records/${recordId}`;
   await waitFor(() => expect(reads(recordPath)).toBe(1));
   const threadBefore = reads(messagesPath);
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-reject-period-${periodChangeId}`),
-  );
+  await press(`record-message-card-reject-name-${nameChangeId}`);
+  await press(`record-message-card-reject-period-${periodChangeId}`);
+  const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
+  expect(apply).toHaveAccessibleName('Skip all · write nothing');
 
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-apply-${draftId}`),
-  );
+  await fireEvent.press(apply);
   await waitFor(() =>
     expect(reads(messagesPath)).toBeGreaterThan(threadBefore),
   );
@@ -365,7 +429,7 @@ it('should skip rejected fields without selecting any and reload only the messag
     expectedDraftRevision: 4,
     expectedRecordRevision: collectionRecord.recordRevision,
     selectedProposalIds: [],
-    skippedProposalIds: [periodChangeId],
+    skippedProposalIds: [nameChangeId, periodChangeId],
   });
   expect(reads(recordPath)).toBe(1);
 });
@@ -379,7 +443,10 @@ it('should show a fully applied card without an apply action', async () => {
     }),
   );
 
-  expect(screen.getByText('All changes applied')).toBeTruthy();
+  expect(screen.getByText('Wrote Name')).toBeTruthy();
+  expect(
+    screen.getByTestId(`record-message-card-history-${draftId}`),
+  ).toBeTruthy();
   expect(
     screen.queryByTestId(`record-message-card-apply-${draftId}`),
   ).toBeNull();
@@ -390,7 +457,7 @@ it('should show a stale field inline, reload the record and messages, and rebuil
     entry('assistant', 'Rename it?', { proposedChanges: [nameChange] }),
     async () => {
       throw apiError(
-        409,
+        conflictStatus,
         'REVISION_CONFLICT',
         'Proposed field changed since draft',
       );
@@ -399,13 +466,9 @@ it('should show a stale field inline, reload the record and messages, and rebuil
   const threadReads = (): number =>
     view.reads.mock.calls.filter(([path]) => path === messagesPath).length;
   const before = threadReads();
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
-  );
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
 
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-apply-${draftId}`),
-  );
+  await press(`record-message-card-apply-${draftId}`);
 
   expect(
     await screen.findByTestId(`record-message-card-error-${draftId}`),
@@ -413,9 +476,12 @@ it('should show a stale field inline, reload the record and messages, and rebuil
     'The item changed after this suggestion. The latest values were reloaded; review them before applying.',
   );
   await waitFor(() => expect(threadReads()).toBeGreaterThan(before));
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-apply-${draftId}`),
+  await waitFor(() =>
+    expect(
+      screen.getByTestId(`record-message-card-apply-${draftId}`),
+    ).toBeEnabled(),
   );
+  await press(`record-message-card-apply-${draftId}`);
   await waitFor(() => expect(sentTo(view.commands, applyPath)).toHaveLength(2));
   const [first, second] = sentTo(view.commands, applyPath);
   expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
@@ -430,23 +496,23 @@ it('should retry an interrupted apply under the same key until the choice change
       throw new TypeError('Network request failed');
     },
   );
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-name-${nameChangeId}`),
-  );
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
+  await press(`record-message-card-reject-tags-${tagsChangeId}`);
   const apply = screen.getByTestId(`record-message-card-apply-${draftId}`);
 
   await fireEvent.press(apply);
   expect(
     await screen.findByTestId(`record-message-card-error-${draftId}`),
   ).toHaveTextContent('Connect to the internet and retry.');
+  await waitFor(() => expect(apply).toBeEnabled());
   await fireEvent.press(apply);
   await waitFor(() => expect(sentTo(view.commands, applyPath)).toHaveLength(2));
-  await fireEvent.press(
-    screen.getByTestId(`record-message-card-confirm-tags-${tagsChangeId}`),
-  );
+  await waitFor(() => expect(apply).toBeEnabled());
+  await press(`record-message-card-undo-tags-${tagsChangeId}`);
   expect(
     screen.queryByTestId(`record-message-card-error-${draftId}`),
   ).toBeNull();
+  await press(`record-message-card-confirm-tags-${tagsChangeId}`);
   await fireEvent.press(apply);
   await waitFor(() => expect(sentTo(view.commands, applyPath)).toHaveLength(3));
 
@@ -496,10 +562,84 @@ it('should keep a card’s choices when its list cell is unmounted and mounted a
   await act(async () => view.client.invalidateQueries());
 
   await screen.findByTestId(`record-message-card-${draftId}`);
-  expect(checked(`record-message-card-confirm-name-${nameChangeId}`)).toBe(
-    true,
-  );
-  expect(checked(`record-message-card-confirm-period-${periodChangeId}`)).toBe(
-    false,
-  );
+  expect(
+    screen.getByTestId(`record-message-card-confirmed-name-${nameChangeId}`),
+  ).toBeTruthy();
+  expect(
+    screen.getByTestId(`record-message-card-confirm-period-${periodChangeId}`),
+  ).toBeEnabled();
+});
+
+it('should identify a stale confirmed field, block writing it, and still allow skipping it', async () => {
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}`
+        ? { ...collectionRecord, name: 'Saved elsewhere', recordRevision: 2 }
+        : page([
+            entry('assistant', 'Two changes.', {
+              proposedChanges: [nameChange, periodChange],
+            }),
+          ]),
+  });
+  await screen.findByTestId(`record-message-card-${draftId}`);
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
+  await press(`record-message-card-reject-period-${periodChangeId}`);
+
+  expect(
+    screen.getByTestId(`record-message-card-apply-${draftId}`),
+  ).toBeDisabled();
+  expect(
+    screen.getByTestId(`record-message-card-stale-${draftId}`),
+  ).toHaveTextContent(/Name/);
+  expect(view.commands).not.toHaveBeenCalled();
+
+  await press(`record-message-card-undo-name-${nameChangeId}`);
+  await press(`record-message-card-reject-name-${nameChangeId}`);
+  expect(
+    screen.getByTestId(`record-message-card-apply-${draftId}`),
+  ).toBeEnabled();
+  await press(`record-message-card-apply-${draftId}`);
+  await waitFor(() => expect(sentTo(view.commands, applyPath)).toHaveLength(1));
+  expect(sentTo(view.commands, applyPath)[0].body).toMatchObject({
+    expectedRecordRevision: 2,
+    selectedProposalIds: [],
+    skippedProposalIds: [nameChangeId, periodChangeId],
+  });
+});
+
+it('should refetch a conflicting record and block the newly stale confirmed row', async () => {
+  let record = { ...collectionRecord };
+  const reply = entry('assistant', 'Rename it?', {
+    proposedChanges: [nameChange],
+  });
+  const view = await renderMobile(<RecordMessagesRoute />, {
+    get: async (path) =>
+      path === `/v1/records/${recordId}` ? record : page([reply]),
+    post: async () => {
+      record = { ...record, name: 'Saved elsewhere', recordRevision: 2 };
+      throw apiError(
+        conflictStatus,
+        'REVISION_CONFLICT',
+        'Proposed field changed since draft',
+      );
+    },
+  });
+  await screen.findByTestId(`record-message-card-${draftId}`);
+  await press(`record-message-card-confirm-name-${nameChangeId}`);
+  expect(
+    screen.getByTestId(`record-message-card-apply-${draftId}`),
+  ).toBeEnabled();
+
+  await press(`record-message-card-apply-${draftId}`);
+  await screen.findByTestId(`record-message-card-error-${draftId}`);
+  expect(
+    await screen.findByRole('header', { name: 'Saved elsewhere' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByTestId(`record-message-card-apply-${draftId}`),
+  ).toBeDisabled();
+  expect(
+    screen.getByTestId(`record-message-card-stale-${draftId}`),
+  ).toHaveTextContent(/Name/);
+  expect(sentTo(view.commands, applyPath)).toHaveLength(1);
 });

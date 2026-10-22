@@ -17,3 +17,11 @@ export async function getItemAsync(key: string): Promise<string | null> {
 export async function setItemAsync(key: string, value: string): Promise<void> {
   values.set(key, value);
 }
+
+/**
+ * removes an in-memory Storybook fixture value
+ * @param key fixture storage key
+ */
+export async function deleteItemAsync(key: string): Promise<void> {
+  values.delete(key);
+}

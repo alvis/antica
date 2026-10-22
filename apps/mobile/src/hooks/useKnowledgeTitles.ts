@@ -3,31 +3,33 @@ import { useQueries } from '@tanstack/react-query';
 import { knowledgeDetailSchema } from '@antica/contracts';
 
 import { useAuth } from '../providers/AuthProvider';
-import { shortId } from '../utils/short-id';
+import { useLocale } from '../providers/LocaleProvider';
 
 /**
  * reads the titles of knowledge entries, such as object types and materials
  * @param ids knowledge entries to name; repeats are read once
- * @returns the title of an entry, or a short identifier until it is read
+ * @returns the title, a loading placeholder, or a localized unavailable label
  */
 export function useKnowledgeTitles(
   ids: readonly string[],
 ): (id: string) => string {
   const { api } = useAuth();
+  const { t } = useLocale();
+  const uniqueIds = [...new Set(ids)];
   const knowledge = useQueries({
-    queries: [...new Set(ids)].map((id) => ({
+    queries: uniqueIds.map((id) => ({
       queryKey: ['knowledge-detail', id],
       queryFn: async ({ signal }: { signal: AbortSignal }) =>
         api.get(`/v1/knowledge/${id}`, knowledgeDetailSchema, signal),
     })),
   });
   const titles = new Map(
-    knowledge.flatMap((item) =>
-      item.data
-        ? [[item.data.entry.id, item.data.entry.content.titleZhHant]]
-        : [],
-    ),
+    knowledge.map((item, index) => [
+      uniqueIds[index],
+      item.data?.entry.content.titleZhHant ??
+        t(item.isError ? 'unknown' : 'loading'),
+    ]),
   );
 
-  return (id) => titles.get(id) ?? shortId(id);
+  return (id) => titles.get(id) ?? t('unknown');
 }

@@ -233,15 +233,20 @@ type Story = StoryObj<typeof meta>;
 export const CompletedWithProposals = {
   render: (args) => <CompletedAnalysisStory {...args} />,
   play: async ({ canvasElement }) => {
-    const checkbox = await findStoryElement(canvasElement, '[role="checkbox"]');
+    // a tick waits for the record, which tells whether the field is still current
+    const checkbox = await findStoryElement(
+      canvasElement,
+      '[role="checkbox"]:not([aria-disabled="true"])',
+    );
     checkbox.click();
     const apply = await findStoryElement(
       canvasElement,
-      '[role="button"][aria-label*="Apply selected changes (1)"]',
+      '[role="button"][aria-label*="Apply 1"]',
     );
     apply.click();
     await findStoryText(canvasElement, 'POST /v1/analyses/');
-    await findStoryText(canvasElement, 'Accepted');
+    // the refreshed run tags the written suggestion as applied
+    await findStoryText(canvasElement, 'Applied');
   },
 } satisfies Story;
 
@@ -284,6 +289,13 @@ export const ActionCardsInTraditionalChinese = {
     </MobileStoryShell>
   ),
   play: async ({ canvasElement }) => {
+    // actions live with the full analysis, behind its toggle
+    (
+      await findStoryElement(
+        canvasElement,
+        '[data-testid="analysis-details-toggle"]',
+      )
+    ).click();
     await findStoryText(canvasElement, '補拍底部全貌');
     await findStoryElement(
       canvasElement,
@@ -320,6 +332,13 @@ export const SuppliedActionsReopened = {
     </MobileStoryShell>
   ),
   play: async ({ canvasElement }) => {
+    // actions live with the full analysis, behind its toggle
+    (
+      await findStoryElement(
+        canvasElement,
+        '[data-testid="analysis-details-toggle"]',
+      )
+    ).click();
     await findStoryElement(
       canvasElement,
       `[data-testid="analysis-action-status-supplied-${photoActionId}"]`,

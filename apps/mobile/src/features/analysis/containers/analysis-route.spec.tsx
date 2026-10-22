@@ -7,6 +7,11 @@ import AnalysisRoute from '../../../app/(private)/analysis/[runId]';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
 import { run, runId } from '../../../saved-analysis.spec.fixtures';
 
+import {
+  openAnalysisDetails,
+  withFinishedJob,
+} from '../containers/analysis.spec.fixtures';
+
 jest.mock(
   '../../../providers/AuthProvider',
   () =>
@@ -41,9 +46,11 @@ jest.mocked(useLocalSearchParams).mockReturnValue({ runId });
 
 it('should show the saved result selected by the analysis route', async () => {
   const view = await renderMobile(<AnalysisRoute />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path === `/v1/analyses/${runId}` ? run : collectionRecord,
+    ),
   });
+  await openAnalysisDetails();
 
   await waitFor(() =>
     expect(

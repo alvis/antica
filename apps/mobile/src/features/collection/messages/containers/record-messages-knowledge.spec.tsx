@@ -82,6 +82,13 @@ jest.mock(
     }) satisfies Partial<typeof import('../../../../adapters/media-upload')>,
 );
 
+/** opens the 相關知識 tray, which the composer keeps collapsed until asked */
+async function openRelatedTray(): Promise<void> {
+  await fireEvent.press(
+    await screen.findByTestId('record-messages-related-toggle'),
+  );
+}
+
 it('should attach visibly, remove, and send only the explicitly chosen claim', async () => {
   const view = await renderMobile(
     <RecordMessagesContainer recordId={recordId} />,
@@ -96,6 +103,7 @@ it('should attach visibly, remove, and send only the explicitly chosen claim', a
       post: async () => ({}),
     },
   );
+  await openRelatedTray();
   await fireEvent.press(
     await screen.findByTestId(`record-related-attach-${relatedCard.entryId}`),
   );
@@ -150,6 +158,7 @@ it('should preserve an identical retry key and renew it when attachments change'
       },
     },
   );
+  await openRelatedTray();
   await fireEvent.press(
     await screen.findByTestId(`record-related-attach-${relatedCard.entryId}`),
   );
@@ -195,6 +204,7 @@ it('should keep one visible chip when the selected candidate is pressed twice', 
       post: async () => ({}),
     },
   );
+  await openRelatedTray();
   await fireEvent.press(
     await screen.findByTestId(`record-related-claim-${relatedCard.entryId}`),
   );
@@ -239,6 +249,7 @@ it.each([
         post: async () => ({}),
       },
     );
+    await openRelatedTray();
     await screen.findByTestId(`record-related-attach-${relatedCard.entryId}`);
     for (let index = 0; index <= limit; index += 1) {
       const entryId = distinctEntries

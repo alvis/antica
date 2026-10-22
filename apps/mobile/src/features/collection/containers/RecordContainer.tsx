@@ -87,7 +87,7 @@ const verifiedStates: ReadonlySet<unknown> = new Set([
   'ready',
 ]);
 
-/** the hub's in-place segments; 建議, 對話 and 紀錄 open their own screens */
+/** the hub's own sections; 建議, 對話 and 紀錄 open in place over it with a compact header */
 type Segment = 'data' | 'checks';
 
 /** how many thumbnails show before the strip counts the rest */
@@ -173,9 +173,15 @@ const RecordHubScreen: FC<{
   router: ReturnType<typeof useRouter>;
 }> = ({ hub, record, router }) => {
   const recordId = record.id;
-  const { observationId, checkId } = useLocalSearchParams<{
+  const {
+    observationId,
+    checkId,
+    segment: segmentParam,
+  } = useLocalSearchParams<{
     observationId?: string;
     checkId?: string;
+    /** the section a segment bar elsewhere asked for, such as 查驗 */
+    segment?: string;
   }>();
   const { api } = useAuth();
   const { t, locale } = useLocale();
@@ -186,7 +192,13 @@ const RecordHubScreen: FC<{
   const scrolledObservation = useRef<string | null>(null);
   const [error, setError] = useState('');
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [segment, setSegment] = useState<Segment>('data');
+  const [segment, setSegment] = useState<Segment>(
+    segmentParam === 'checks' ? 'checks' : 'data',
+  );
+  // 資料 and 查驗 in another segment's bar return here and pick the section
+  useEffect(() => {
+    setSegment(segmentParam === 'checks' ? 'checks' : 'data');
+  }, [segmentParam]);
   const [allFields, setAllFields] = useState(false);
   const [overHero, setOverHero] = useState(true);
   const [focused, setFocused] = useState(true);

@@ -1,68 +1,94 @@
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, styles } from '@antica/ui';
+import { AssistantSeal, theme } from '@antica/ui';
+
+import { splitDiscussContext } from '../discuss-context';
 
 import type { FC } from 'react';
 
-import type { RecordMessageAuthor } from '@antica/contracts';
-
-/** properties for one message of the conversation */
+/** properties for one of the collector's messages */
 export type MessageBubbleProps = {
   messageId: string;
-  author: RecordMessageAuthor;
   /** translated name of the author */
   authorLabel: string;
   body: string;
 };
 
-const bubbleStyles = {
-  collector: {
+const layout = StyleSheet.create({
+  column: {
     alignSelf: 'flex-end',
-    backgroundColor: colors.jade,
-    borderColor: colors.jade,
+    maxWidth: '86%',
+    alignItems: 'flex-end',
+    gap: theme.space[6],
   },
-  assistant: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.card,
-    borderColor: colors.border,
+  attached: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space[6],
+    paddingVertical: theme.space[10],
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.card,
+    borderWidth: theme.border.control.width,
+    borderColor: theme.border.control.color,
+    backgroundColor: theme.color.bg.surface,
   },
-} as const;
+  attachedText: {
+    flex: 1,
+    ...theme.font.face('sans', '700'),
+    fontSize: 12,
+    lineHeight: 16.8,
+    color: theme.color.assistant.onSoft,
+  },
+  bubble: {
+    paddingVertical: theme.space[10],
+    paddingHorizontal: 14,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 4,
+    backgroundColor: theme.color.chat.bubble,
+  },
+  body: {
+    ...theme.type.body,
+    color: theme.color.chat.onBubble,
+  },
+});
 
 /**
- * renders a collector or assistant message, aligned and colored by its author
+ * the collector's message (v5 `.me`): a green bubble on the right; a message sent while discussing
+ * a suggestion carries that suggestion above it
  * @param props message properties
  * @param props.messageId message identifier used for its automation identifier
- * @param props.author who wrote the message
  * @param props.authorLabel translated name of the author
  * @param props.body message text
- * @returns a speech bubble aligned to its author's side
+ * @returns the message
  */
 export const MessageBubble: FC<MessageBubbleProps> = ({
   messageId,
-  author,
   authorLabel,
   body,
 }) => {
-  const textColor = author === 'collector' ? colors.card : colors.text;
+  const { context, text } = splitDiscussContext(body);
 
   return (
     <View
       testID={`record-message-bubble-${messageId}`}
       accessible
       accessibilityRole="text"
-      accessibilityLabel={`${authorLabel}: ${body}`}
-      style={[
-        {
-          maxWidth: '85%',
-          borderWidth: 1,
-          borderRadius: 12,
-          padding: 12,
-          gap: 4,
-        },
-        bubbleStyles[author],
-      ]}>
-      <Text style={[styles.label, { color: textColor }]}>{authorLabel}</Text>
-      <Text style={[styles.body, { color: textColor }]}>{body}</Text>
+      accessibilityLabel={`${authorLabel}: ${[context, text].filter(Boolean).join('\n')}`}
+      style={layout.column}>
+      {context && (
+        <View style={layout.attached}>
+          <AssistantSeal size="mini" />
+          <Text style={layout.attachedText}>{context}</Text>
+        </View>
+      )}
+      {Boolean(text) && (
+        <View style={layout.bubble}>
+          <Text style={layout.body}>{text}</Text>
+        </View>
+      )}
     </View>
   );
 };

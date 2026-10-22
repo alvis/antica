@@ -7,7 +7,12 @@ import { colors, theme } from '@antica/ui';
 import { collectionRecord, renderMobile } from '../../../mobile.spec.fixtures';
 import { runId } from '../../../saved-analysis.spec.fixtures';
 
-import { actionId, actionableRun } from './analysis.spec.fixtures';
+import {
+  actionId,
+  actionableRun,
+  openAnalysisDetails,
+  withFinishedJob,
+} from './analysis.spec.fixtures';
 import { AnalysisContainer } from './AnalysisContainer';
 
 jest.mock(
@@ -82,9 +87,11 @@ async function openRun(
   run: ReturnType<typeof runWith>,
 ): Promise<Awaited<ReturnType<typeof renderMobile>>> {
   const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/') ? run : collectionRecord,
+    ),
   });
+  await openAnalysisDetails();
   await waitFor(() =>
     expect(screen.getByTestId(`analysis-action-${actionId}`)).toBeTruthy(),
   );
@@ -177,3 +184,32 @@ it.each([
     expect(view.patches).not.toHaveBeenCalled();
   },
 );
+
+it('should offer a pending action as a next step that opens its capture mode', async () => {
+  const view = await renderMobile(<AnalysisContainer runId={runId} />, {
+    get: withFinishedJob(async (path) =>
+      path.startsWith('/v1/analyses/')
+        ? runWith({ kind: 'capturePhoto', instruction: 'Photograph the base' })
+        : collectionRecord,
+    ),
+  });
+
+  await fireEvent.press(await screen.findByTestId(`analysis-next-${actionId}`));
+
+  expect(view.router.push).toHaveBeenCalledWith(
+    `/capture?recordId=${collectionRecord.id}&runId=${runId}&actionId=${actionId}`,
+  );
+});
+
+it('should drop a settled action from the next steps', async () => {
+  await renderMobile(<AnalysisContainer runId={runId} />, {
+    get: withFinishedJob(async (path) =>
+      path.startsWith('/v1/analyses/')
+        ? runWith({}, 'supplied')
+        : collectionRecord,
+    ),
+  });
+
+  await screen.findByTestId('analysis-details-toggle');
+  expect(screen.queryByTestId(`analysis-next-${actionId}`)).toBeNull();
+});

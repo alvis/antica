@@ -91,7 +91,7 @@ export function summarizeAskContext(
     case 'record':
       return {
         kicker: t('askAboutRecord'),
-        name: context.name ?? context.code ?? shortId(context.recordId),
+        name: context.name ?? t('unnamed'),
         detail: t('askAttachedRecord', {
           id: context.code ?? shortId(context.recordId),
         }),

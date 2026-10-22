@@ -9,7 +9,14 @@ import * as evidenceStories from '../../collection/messages/components/Knowledge
 import * as citationStories from './KnowledgeCitations.stories';
 import * as cardStories from './RelatedKnowledgeCard.stories';
 
-jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
+// stories that preview live knowledge read through a transport that never answers
+jest.mock('../../../providers/AuthProvider', () => ({
+  AuthProvider: ({ children }: { children: unknown }) => children,
+  useAuth: () => ({
+    api: { get: async () => new Promise(() => undefined) },
+    userId: '00000000-0000-4000-8000-000000000099',
+  }),
+}));
 
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
 

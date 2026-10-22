@@ -91,7 +91,7 @@ const meta = {
   argTypes: {
     recordId: {
       control: 'text',
-      description: 'Record whose accepted and skipped suggestions are listed.',
+      description: 'Record whose written changes are listed.',
     },
   },
 } satisfies Meta<typeof RecordHistoryContainer>;
@@ -107,7 +107,14 @@ export const ChangesWithOlderPage = {
   ),
   play: async ({ canvasElement }) => {
     await findStoryText(canvasElement, 'Late Qing blue-and-white bowl');
-    await findStoryText(canvasElement, 'Edited by voice or message');
+    await findStoryText(canvasElement, 'Wrote “Tags” after confirming in Chat');
+    if (
+      canvasElement.querySelector(
+        `[data-testid="record-history-entry-${describedByVoice.id}"]`,
+      )
+    ) {
+      throw new Error('Skipped suggestions must stay out of change history.');
+    }
     await findStoryElement(
       canvasElement,
       `[data-testid="record-history-entry-${taggedByMessage.id}-tags-source"]`,
@@ -139,7 +146,7 @@ export const ChangesInTraditionalChinese = {
     </MobileStoryShell>
   ),
   play: async ({ canvasElement }) => {
-    await findStoryText(canvasElement, '名稱·已採納');
-    await findStoryText(canvasElement, '透過語音或訊息編輯');
+    await findStoryText(canvasElement, '套用分析建議「名稱」');
+    await findStoryText(canvasElement, '經對話確認寫入「標籤」');
   },
 } satisfies Story;

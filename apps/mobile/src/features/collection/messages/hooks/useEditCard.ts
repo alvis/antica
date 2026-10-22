@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { randomUUID } from 'expo-crypto';
 
-import { editDraftApplySchema } from '@antica/contracts';
+import { editDraftApplySchema, isProposalCurrent } from '@antica/contracts';
 
 import { recordQuery } from '../../api/record-query';
 
@@ -16,7 +16,7 @@ import {
 } from '../api/record-messages';
 
 import type { ApiTransport } from '@antica/client';
-import type { RecordMessageEntry } from '@antica/contracts';
+import type { RecordDetail, RecordMessageEntry } from '@antica/contracts';
 
 import type { MessageKey } from '../../../../i18n/messages';
 
@@ -29,15 +29,19 @@ import type {
 /** per-field choices on an edit card and the action that settles the decided ones */
 export interface EditCard {
   decisions: EditCardState['decisions'];
-  /** sets a field's choice, or clears it when the same choice is made again */
-  decide: (proposalId: string, decision: ProposalDecision) => void;
+  /** sets a field's choice, or clears it (復原) with undefined */
+  decide: (proposalId: string, decision: ProposalDecision | undefined) => void;
   /** proposals confirmed and not yet settled */
   confirmedIds: string[];
   /** proposals rejected and not yet settled */
   rejectedIds: string[];
+  /** proposals not settled that the collector has not decided yet */
+  undecidedIds: string[];
+  /** open proposals whose fields changed since the assistant read them */
+  staleIds: string[];
   applying: boolean;
   error: string;
-  /** applies the confirmed proposals and skips the rejected ones; absent while none is decided or the record is not shown */
+  /** applies the confirmed proposals and skips the rejected ones; absent until every row is decided, or while the record is not shown */
   apply?: () => Promise<void>;
 }
 
@@ -47,8 +51,8 @@ export interface EditCardOptions {
   recordId: string;
   /** assistant reply whose draft proposes the changes */
   entry: RecordMessageEntry;
-  /** revision of the record the screen currently shows */
-  recordRevision: number | undefined;
+  /** record the screen currently shows, including current field values */
+  record: RecordDetail | undefined;
   /** the card's state, held by the conversation so it survives list virtualisation */
   state: EditCardState;
   update: EditCardUpdate;
@@ -61,7 +65,7 @@ export interface EditCardOptions {
  * @param options.api authenticated API transport
  * @param options.recordId record the proposals change
  * @param options.entry assistant reply whose draft proposes the changes
- * @param options.recordRevision revision of the record the screen currently shows
+ * @param options.record record the screen currently shows
  * @param options.state the card's lifted state
  * @param options.update replaces the card's lifted state
  * @param options.t translation function for message keys
@@ -71,7 +75,7 @@ export function useEditCard({
   api,
   recordId,
   entry,
-  recordRevision,
+  record,
   state,
   update,
   t,
@@ -93,16 +97,25 @@ export function useEditCard({
     (id) => state.decisions[id] === 'rejected',
   );
 
-  const decide = (proposalId: string, decision: ProposalDecision): void => {
+  const undecidedIds = openIds.filter((id) => !state.decisions[id]);
+  const staleIds = draft.proposedChanges
+    .filter(
+      (change) =>
+        openIds.includes(change.id) &&
+        record &&
+        !isProposalCurrent(record, change),
+    )
+    .map((change) => change.id);
+
+  const decide = (
+    proposalId: string,
+    decision: ProposalDecision | undefined,
+  ): void => {
     update((current) => ({
       ...current,
       request: null,
       error: '',
-      decisions: {
-        ...current.decisions,
-        [proposalId]:
-          current.decisions[proposalId] === decision ? undefined : decision,
-      },
+      decisions: { ...current.decisions, [proposalId]: decision },
     }));
   };
 
@@ -151,13 +164,18 @@ export function useEditCard({
     decide,
     confirmedIds,
     rejectedIds,
+    undecidedIds,
+    staleIds,
     applying: state.applying,
     error: state.error,
+    // each row needs its own decision before anything is written (v2 edit card)
     apply:
-      recordRevision !== undefined &&
-      confirmedIds.length + rejectedIds.length > 0 &&
+      record !== undefined &&
+      openIds.length > 0 &&
+      undecidedIds.length === 0 &&
+      !confirmedIds.some((id) => staleIds.includes(id)) &&
       !state.applying
-        ? async () => apply(recordRevision)
+        ? async () => apply(record.recordRevision)
         : undefined,
   };
 }

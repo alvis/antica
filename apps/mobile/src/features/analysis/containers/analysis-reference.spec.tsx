@@ -14,6 +14,7 @@ import {
 import { media } from '../../media/containers/media.spec.fixtures';
 
 import { AnalysisContainer } from './AnalysisContainer';
+import { openAnalysisDetails, withFinishedJob } from './analysis.spec.fixtures';
 
 jest.mock('../../../providers/AuthProvider', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
@@ -28,13 +29,15 @@ it.each(['Evidence 10000000', 'Citation 30000000'])(
   'should report unavailable %s without inventing a navigation target',
   async (label) => {
     const view = await renderMobile(<AnalysisContainer runId={runId} />, {
-      get: async (path) =>
+      get: withFinishedJob(async (path) =>
         path.startsWith('/v1/analyses/')
           ? { ...mixed, citations: [] }
           : path.startsWith('/v1/media/')
             ? media
             : collectionRecord,
+      ),
     });
+    await openAnalysisDetails();
     await waitFor(() =>
       expect(screen.getByRole('button', { name: label })).toBeTruthy(),
     );
@@ -65,13 +68,15 @@ it('should open the exact retrieved web citation URL', async () => {
     })),
   });
   await renderMobile(<AnalysisContainer runId={runId} />, {
-    get: async (path) =>
+    get: withFinishedJob(async (path) =>
       path.startsWith('/v1/analyses/')
         ? webRun
         : path.startsWith('/v1/media/')
           ? media
           : collectionRecord,
+    ),
   });
+  await openAnalysisDetails();
   await waitFor(() =>
     expect(
       screen.getByRole('button', { name: 'Citation 30000000' }),
